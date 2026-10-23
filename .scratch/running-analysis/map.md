@@ -29,12 +29,12 @@ Label: wayfinder:map
 - [有氧能力、训练负荷、成绩预测的算法调研](issues/02-analysis-methods.md)：推荐同心率 GAP 配速 + EF/decoupling；Banister TRIMP + CTL/ATL/TSB；VDOT 为主、Riegel 对照，全马加跑量修正；需要实测 HRmax、LTHR 和手工比赛清单。
 - [Rust 导入 CLI 如何调用 Garmin 接口](issues/10-rust-api-coverage.md)：Personal API 用 `reqwest` 手写（没有现成 crate，spec 缺 `operationId`）；三项 Garmin 指标交给 `uv run` 调用的 Python 小脚本，不在 Rust 里重写登录；FIT 用 `fitparser`，原始字节先落盘。
 - [试拉一小批真实数据](issues/03-trial-pull.md)：Personal API 约 200 次请求没有被限流，活动最早到 2021-08-06（约 1000–1500 条），下载的 FIT 与原始文件逐字节一致；`garminconnect` 的 mobile 登录被 429，但退到后备策略后登录成功，三项指标都拿到了。
+- [存储方案](issues/04-storage.md)：原始档案（FIT、JSON）原样存在仓库外的数据目录，是事实来源；分析库用 SQLite（WAL），Rust 定义 schema 并写入，Python 只读，可随时从原始档案重建；全部活动类型入库，逐秒数据用一张长表。
 
 ## Not yet specified
 
 - **数据质量与清洗**：光电心率异常、GPS 漂移、手表暂停/自动暂停、跑步机活动。看过真实数据之后才能说清楚要处理哪些问题。
 - **外部因素校正**：温度、坡度、海拔对"同心率下配速"的影响要校正到什么程度。要等有氧能力的指标定义下来。
-- **项目骨架与依赖**：Rust 侧（crate 选型，如 FIT 解析、HTTP 客户端）和 Python 侧（版本、包管理如 `uv`、DataFrame 库）怎么组织在一个仓库里。取决于存储方案和数据形态。
 
 ## Out of scope
 
