@@ -21,7 +21,7 @@ Blocked by: none
 
 ## Answer
 
-2026-10-23 看过原型后确定。原型在丢弃用的分支 `prototype/dashboard`（commit `9cf22b6`），不合并进 main：`.scratch/running-analysis/prototype/dashboard.html` 是静态 HTML 原型，`streamlit/app.py` 是 Streamlit 对照版。两者都用合成数据。查看方法：`git worktree add ../garmin-proto prototype/dashboard`，再在浏览器打开 `dashboard.html?variant=A`。
+2026-10-23 看过原型后确定。原型在丢弃用的分支 `prototype/dashboard`（commit `8013fab`），不合并进 main：`.scratch/running-analysis/prototype/dashboard.html` 是静态 HTML 原型，`streamlit/app.py` 是 Streamlit 对照版。两者都用合成数据。查看方法：`git worktree add ../garmin-proto prototype/dashboard`，再在浏览器打开 `dashboard.html?variant=A`。
 
 **视觉方向**：报纸体育版的数据图形。新闻纸色的底、墨黑文字，红色只用于批注和警告；标题用衬线字（Noto Serif SC），正文和数字用 IBM Plex Sans + Noto Sans SC，数字用 tabular-nums。每张图最多 2 条编辑式批注。上次打开之后变化的数字旁边加红点，可以一键"全部标为已读"。产品背景和优先级写在根目录 `PRODUCT.md`。
 

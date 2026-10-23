@@ -27,4 +27,4 @@ Blocked by: none
 ## Comments
 
 - 2026-10-23：research subagent 尝试把报告写入文件时被 harness 拦截（"Subagents should return findings as text, not write report files"），所以分支 `research/analysis-methods` 目前是空的。报告全文保留在 charting session 的对话里。
-- 2026-10-23 更正：报告后来已由主 session 写入分支 `research/analysis-methods`（commit `7f4c407`），上面"分支是空的"已过时。
+- 2026-10-23 更正：报告后来已由主 session 写入分支 `research/analysis-methods`（commit `25730f8`），上面"分支是空的"已过时。

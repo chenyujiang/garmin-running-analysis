@@ -17,7 +17,7 @@ Blocked by: none
 
 ## Answer
 
-详细调研（每条附来源）：分支 `research/garmin-data-access` 的 `research/garmin-data-access.md`（commit `4aacaa5`，仅本地）。
+详细调研（每条附来源）：分支 `research/garmin-data-access` 的 `research/garmin-data-access.md`（commit `031a024`，仅本地）。
 
 - **主力途径：官方 Garmin Connect Personal API**（2026-10-21 发布，官方 Python 客户端 `garmin/connect-personal-api-python` v1.0.0）。只读；API key（有效期 30 天至 1 年）换 24 小时 access token，无 refresh token。覆盖活动列表/详情、FIT 下载（zip）、HRV、睡眠、每日汇总（含 `restingHeartRate`）。**不含** Training Status、VO2max 趋势、Race Predictor。
 - **`garth` 已弃用**（2026-03-28），因 Garmin 改了登录流程，自 2026-03-17 起新登录被 Cloudflare 429。
