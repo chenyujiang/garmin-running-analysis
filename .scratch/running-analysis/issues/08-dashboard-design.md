@@ -17,3 +17,4 @@ Blocked by: none
 ## Comments
 
 - 2026-10-23：要展示的指标已经定下来，见 [有氧能力指标的定义](06-aerobic-metric.md) 和 [训练负荷模型与成绩预测方法](07-load-and-prediction.md)：有氧能力周趋势（附每周平均温度）、EF、decoupling；CTL/ATL/TSB 和"负荷突增"提示；周跑量；各距离成绩预测（含"过期"状态和 Garmin 参照值）。
+- 2026-10-23（来自 [项目骨架与依赖](11-project-skeleton.md)）：计算逻辑放在 `analysis/src/running/` 包里，仪表盘直接复用。分析侧用 polars 和 DuckDB，不依赖 pandas；分析库在数据目录的 `running.sqlite`，只读打开。
