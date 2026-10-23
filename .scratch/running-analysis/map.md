@@ -30,6 +30,7 @@ Label: wayfinder:map
 - [Rust 导入 CLI 如何调用 Garmin 接口](issues/10-rust-api-coverage.md)：Personal API 用 `reqwest` 手写（没有现成 crate，spec 缺 `operationId`）；三项 Garmin 指标交给 `uv run` 调用的 Python 小脚本，不在 Rust 里重写登录；FIT 用 `fitparser`，原始字节先落盘。
 - [试拉一小批真实数据](issues/03-trial-pull.md)：Personal API 约 200 次请求没有被限流，活动最早到 2021-08-06（约 1000–1500 条），下载的 FIT 与原始文件逐字节一致；`garminconnect` 的 mobile 登录被 429，但退到后备策略后登录成功，三项指标都拿到了。
 - [存储方案](issues/04-storage.md)：原始档案（FIT、JSON）原样存在仓库外的数据目录，是事实来源；分析库用 SQLite（WAL），Rust 定义 schema 并写入，Python 只读，可随时从原始档案重建；全部活动类型入库，逐秒数据用一张长表。
+- [回填与增量同步策略](issues/05-sync-strategy.md)：导入 CLI 只有 `sync`、`login`、`rebuild` 三个命令；手动触发；串行限速，靠原始档案是否已存在来续传，不存进度；每次重拉最近 7 天的数据以接住修正；429 立即停止并冷却 24 小时，两个数据源互不影响。
 
 ## Not yet specified
 
