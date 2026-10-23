@@ -16,4 +16,4 @@ Blocked by: 01
 
 ## Comments
 
-- 2026-10-23：用户已在 Garmin Connect 创建 Personal API key。key 的保存位置和有效期待记录。
+- 2026-10-23：用户已在 Garmin Connect 创建 Personal API key，存于仓库根目录 `.env`（已被 `.gitignore` 排除）。有效期待记录。
