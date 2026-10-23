@@ -13,3 +13,7 @@ Blocked by: none
 - 原型要能回答：Streamlit 这类现成框架能不能达到这个设计，还是需要自己写前端。这一点决定技术栈。
 
 具体指标公式还没定（见 [有氧能力指标的定义](06-aerobic-metric.md)、[训练负荷模型与成绩预测方法](07-load-and-prediction.md)），原型里先用示意数据。
+
+## Comments
+
+- 2026-10-23：要展示的指标已经定下来，见 [有氧能力指标的定义](06-aerobic-metric.md) 和 [训练负荷模型与成绩预测方法](07-load-and-prediction.md)：有氧能力周趋势（附每周平均温度）、EF、decoupling；CTL/ATL/TSB 和"负荷突增"提示；周跑量；各距离成绩预测（含"过期"状态和 Garmin 参照值）。

@@ -32,6 +32,7 @@ Label: wayfinder:map
 - [存储方案](issues/04-storage.md)：原始档案（FIT、JSON）原样存在仓库外的数据目录，是事实来源；分析库用 SQLite（WAL），Rust 定义 schema 并写入，Python 只读，可随时从原始档案重建；全部活动类型入库，逐秒数据用一张长表。
 - [回填与增量同步策略](issues/05-sync-strategy.md)：导入 CLI 只有 `sync`、`login`、`rebuild` 三个命令；手动触发；串行限速，靠原始档案是否已存在来续传，不存进度；每次重拉最近 7 天的数据以接住修正；429 立即停止并冷却 24 小时，两个数据源互不影响。
 - [有氧能力指标的定义](issues/06-aerobic-metric.md)：主指标是参考心率 145 bpm 下的 GAP 配速（每次跑步在稳态段上拟合速度–心率直线）；只算户外路跑；坡度用 Minetti 校正，温度第一版不校正只显示；按周取中位数，加 4 周滚动趋势线。
+- [训练负荷模型与成绩预测方法](issues/07-load-and-prediction.md)：所有带心率的活动都算逐秒 Banister TRIMP（HRmax 192、HRrest 55 固定，参数按生效日期配置），CTL 42/ATL 7/TSB 只作相对指标；周跑量按自然周统计全部跑步；成绩预测用手工 `races.csv`，VDOT 为主、Riegel 对照，全马加周跑量修正，Garmin 预测作参照。
 
 ## Not yet specified
 
