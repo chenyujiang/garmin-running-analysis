@@ -10,7 +10,8 @@ Label: wayfinder:map
 
 - 领域：个人运动数据分析，单用户，本机运行。
 - 账号：Garmin Connect 国际版（garmin.com），未开 MFA。
-- 语言：Python。探索阶段用 Jupyter notebook；另做一个本机仪表盘。
+- 语言：数据导入 CLI（拉取、解析 FIT、写入存储）用 Rust，用户想借此学 Rust；分析部分用 Python。两边只通过存储交换数据。
+- 分析：探索阶段用 Jupyter notebook；另做一个本机仪表盘。
 - 设计：涉及界面的 ticket 一律调用 `impeccable`。
 - 数据获取：接受非官方库的风险，需限速；手动导出 FIT / 账号数据导出作为后备。（具体途径见 Decisions so far。）
 - 凭据：只在本机存 token / API key，密码不落盘。
@@ -30,7 +31,7 @@ Label: wayfinder:map
 
 - **数据质量与清洗**：光电心率异常、GPS 漂移、手表暂停/自动暂停、跑步机活动。看过真实数据之后才能说清楚要处理哪些问题。
 - **外部因素校正**：温度、坡度、海拔对"同心率下配速"的影响要校正到什么程度。要等有氧能力的指标定义下来。
-- **项目骨架与依赖**：Python 版本、包管理（如 `uv`）、DataFrame 库、FIT 解析库。取决于存储方案和数据形态。
+- **项目骨架与依赖**：Rust 侧（crate 选型，如 FIT 解析、HTTP 客户端）和 Python 侧（版本、包管理如 `uv`、DataFrame 库）怎么组织在一个仓库里。取决于存储方案和数据形态。
 
 ## Out of scope
 
