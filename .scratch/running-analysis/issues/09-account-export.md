@@ -13,3 +13,4 @@ Blocked by: none
 ## Comments
 
 - 2026-10-23（来自 [项目骨架与依赖](11-project-skeleton.md)）：数据目录由环境变量 `RUNNING_DATA_DIR` 指定，默认 `%USERPROFILE%\running-data`。导出包解压到其中的 `raw/export/<导出日期>/`。
+- 2026-10-24：不阻塞任何 ticket，也不阻塞地图收尾。用户去 Garmin 网站申请导出，导出包到了之后再记录 Answer 并关闭这个 ticket。
