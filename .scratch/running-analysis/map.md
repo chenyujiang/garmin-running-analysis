@@ -28,6 +28,7 @@ Label: wayfinder:map
 - [Garmin Connect 数据获取途径调研](issues/01-garmin-data-access.md)：官方 Personal API 做主力（活动、FIT、HRV、睡眠、静息心率）；`garminconnect` 只补 Training Load / VO2max / Race Predictor；账号数据导出作原始 FIT 存档；`garth` 已弃用。
 - [有氧能力、训练负荷、成绩预测的算法调研](issues/02-analysis-methods.md)：推荐同心率 GAP 配速 + EF/decoupling；Banister TRIMP + CTL/ATL/TSB；VDOT 为主、Riegel 对照，全马加跑量修正；需要实测 HRmax、LTHR 和手工比赛清单。
 - [Rust 导入 CLI 如何调用 Garmin 接口](issues/10-rust-api-coverage.md)：Personal API 用 `reqwest` 手写（没有现成 crate，spec 缺 `operationId`）；三项 Garmin 指标交给 `uv run` 调用的 Python 小脚本，不在 Rust 里重写登录；FIT 用 `fitparser`，原始字节先落盘。
+- [试拉一小批真实数据](issues/03-trial-pull.md)：Personal API 约 200 次请求没有被限流，活动最早到 2021-08-06（约 1000–1500 条），下载的 FIT 与原始文件逐字节一致；`garminconnect` 的 mobile 登录被 429，但退到后备策略后登录成功，三项指标都拿到了。
 
 ## Not yet specified
 

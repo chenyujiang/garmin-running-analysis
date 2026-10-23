@@ -1,3 +1,4 @@
 .env
 .claude/
 .scratch/running-analysis/trial/data/
+__pycache__/
