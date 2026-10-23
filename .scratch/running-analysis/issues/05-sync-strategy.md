@@ -12,3 +12,4 @@ Blocked by: 01, 03, 10
 - 增量触发：手动跑命令，还是 Windows 任务计划程序定时跑。
 - 怎么判断"新数据"：按活动 ID、按日期，健康数据（HRV、睡眠）事后被 Garmin 修正时怎么处理。
 - token 过期或接口失效时的行为和后备（手动导出）。
+- Training Status / VO2max / Race Predictor 由 Rust CLI 调一个 Python 小脚本获取（见 [Rust 导入 CLI 如何调用 Garmin 接口](10-rust-api-coverage.md)）。这个脚本的登录状态和 Personal API 的 token 缓存是分开的，要分别处理过期和 429 的情况。

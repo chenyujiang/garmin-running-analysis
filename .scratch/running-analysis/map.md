@@ -16,6 +16,7 @@ Label: wayfinder:map
 - 数据获取：接受非官方库的风险，需限速；手动导出 FIT / 账号数据导出作为后备。（具体途径见 Decisions so far。）
 - 凭据：只在本机存 token / API key，密码不落盘。
 - 数据范围：跑步活动（要逐秒数据流，不只是汇总）+ HRV、静息心率、睡眠。约 5 年历史，全部要。
+- 用户晚上睡觉不戴手表：HRV 和睡眠实际上没有数据（试拉时最近 30 天全为空）；静息心率只来自白天佩戴，部分天缺失。
 - 同步：先一次性回填全部历史，之后增量同步。
 - 算法：Garmin 自带指标（Training Load、VO2max、Race Predictor）作参照，主模型自己算（透明、可调）。
 - 每次 session 参考：`grilling`、`domain-modeling`；术语见根目录 `GLOSSARY.md`。
@@ -26,6 +27,7 @@ Label: wayfinder:map
 
 - [Garmin Connect 数据获取途径调研](issues/01-garmin-data-access.md)：官方 Personal API 做主力（活动、FIT、HRV、睡眠、静息心率）；`garminconnect` 只补 Training Load / VO2max / Race Predictor；账号数据导出作原始 FIT 存档；`garth` 已弃用。
 - [有氧能力、训练负荷、成绩预测的算法调研](issues/02-analysis-methods.md)：推荐同心率 GAP 配速 + EF/decoupling；Banister TRIMP + CTL/ATL/TSB；VDOT 为主、Riegel 对照，全马加跑量修正；需要实测 HRmax、LTHR 和手工比赛清单。
+- [Rust 导入 CLI 如何调用 Garmin 接口](issues/10-rust-api-coverage.md)：Personal API 用 `reqwest` 手写（没有现成 crate，spec 缺 `operationId`）；三项 Garmin 指标交给 `uv run` 调用的 Python 小脚本，不在 Rust 里重写登录；FIT 用 `fitparser`，原始字节先落盘。
 
 ## Not yet specified
 
