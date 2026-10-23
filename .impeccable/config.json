@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "cream-palette",
+        "value": "*",
+        "files": [
+          ".scratch/running-analysis/prototype/dashboard.html"
+        ],
+        "createdAt": "2026-10-23T10:08:00.112Z",
+        "reason": "ticket 08 brief: visual direction A (newspaper sports section, newsprint paper) pins this background; user accepted the recommended direction"
+      }
+    ]
+  }
+}

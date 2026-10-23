@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>跑步记录 · 仪表盘原型</title>
+<!--
+  PROTOTYPE, throwaway (wayfinder ticket 08, 分析仪表盘的设计).
+  Three structurally different layouts of the dashboard in the "sports-page data graphics"
+  direction, switchable via ?variant=A|B|C, plus ?state=normal|empty|stale.
+  All data below is synthetic (示意数据), generated in the browser. Open the file directly.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #f3efe6;
+  --paper-2: #e9e3d6;
+  --rule: #d2c9b7;
+  --rule-strong: #1c1a17;
+  --ink: #1c1a17;
+  --ink-2: #4a453d;
+  --ink-3: #6b6458;
+  --red: #b0281f;
+  --red-wash: #f3ddd5;
+  --fit: #1f3d63;
+  --fat: #a5641a;
+  --form-pos: #3f6b4f;
+  --form-neg: #b0281f;
+  --temp: #a39a8a;
+  --dot: #8f8676;
+  --sans: "IBM Plex Sans", "Noto Sans SC", system-ui, sans-serif;
+  --serif: "Noto Serif SC", "Songti SC", serif;
+}
+* { box-sizing: border-box; }
+html { background: var(--paper); color: var(--ink); }
+body { margin: 0; font: 15px/1.55 var(--sans); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+::selection { background: var(--red); color: var(--paper); }
+:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--rule); border: 2px solid var(--paper); border-radius: 6px; }
+::-webkit-scrollbar-track { background: var(--paper); }
+a { color: inherit; text-underline-offset: 3px; text-decoration-color: var(--rule); }
+button { font: inherit; color: inherit; }
+code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.92em; background: var(--paper-2); padding: 1px 5px; border-radius: 3px; }
+
+/* ---------- shell ---------- */
+.topbar { display: flex; align-items: center; gap: 28px; padding: 0 32px; height: 56px; border-bottom: 2px solid var(--rule-strong); }
+.brand { font: 900 21px/1 var(--serif); letter-spacing: 0.02em; }
+.nav { display: flex; gap: 4px; }
+.nav a, .rail a { text-decoration: none; padding: 6px 12px; border-radius: 4px; color: var(--ink-2); }
+.nav a:hover, .rail a:hover { background: var(--paper-2); color: var(--ink); }
+.nav a[aria-current], .rail a[aria-current] { color: var(--ink); font-weight: 600; background: var(--paper-2); }
+.sync { margin-left: auto; color: var(--ink-3); font-size: 13px; display: flex; gap: 16px; align-items: center; }
+.btn { border: 1px solid var(--rule); background: transparent; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 13px; color: var(--ink-2); }
+.btn:hover { border-color: var(--ink-3); color: var(--ink); }
+.page { max-width: 1320px; margin: 0 auto; padding: 28px 32px 120px; }
+
+/* ---------- type ---------- */
+.headline { font: 900 30px/1.25 var(--serif); margin: 0 0 6px; letter-spacing: 0.01em; text-wrap: balance; }
+.headline.alert { color: var(--red); }
+.dek { color: var(--ink-2); margin: 0; max-width: 62ch; }
+h2 { font: 600 19px/1.3 var(--serif); margin: 0; }
+h3 { font: 600 15px/1.3 var(--sans); margin: 0; }
+.sec-head { display: flex; align-items: baseline; gap: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--rule-strong); margin-bottom: 14px; }
+.sec-head .tools { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+.muted { color: var(--ink-3); }
+.small { font-size: 13px; }
+.num { font-family: var(--sans); font-weight: 600; }
+.big { font: 600 34px/1 var(--sans); letter-spacing: -0.01em; }
+
+/* ---------- controls ---------- */
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 3px 10px; font-size: 13px; cursor: pointer; color: var(--ink-2); }
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+details.how { font-size: 13px; color: var(--ink-2); }
+details.how summary { cursor: pointer; color: var(--ink-3); list-style: none; text-decoration: underline; text-decoration-color: var(--rule); text-underline-offset: 3px; }
+details.how summary::-webkit-details-marker { display: none; }
+details.how[open] summary { color: var(--ink); }
+details.how .body { margin-top: 8px; padding: 10px 12px; background: var(--paper-2); border-radius: 4px; max-width: 70ch; }
+
+/* ---------- "changed since last visit" ---------- */
+.new { position: relative; }
+.new::after { content: ""; position: absolute; top: 2px; right: -9px; width: 6px; height: 6px; border-radius: 50%; background: var(--red); }
+body.seen .new::after { display: none; }
+
+/* ---------- charts ---------- */
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.chart text { font: 12px var(--sans); fill: var(--ink-3); font-variant-numeric: tabular-nums; }
+.note { position: absolute; font-size: 12.5px; line-height: 1.4; color: var(--ink-2); }
+.note b { color: var(--red); font-weight: 600; display: block; }
+.note.red { color: var(--red); }
+.legend { display: flex; gap: 16px; font-size: 13px; color: var(--ink-2); flex-wrap: wrap; }
+.legend i { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+.legend i.dotk { width: 7px; height: 7px; border: 0; border-radius: 50%; background: var(--dot); }
+.legend i.bar { height: 9px; border: 0; width: 9px; }
+
+/* ---------- tables ---------- */
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th { text-align: left; font-weight: 500; color: var(--ink-3); font-size: 12.5px; padding: 4px 8px 6px; border-bottom: 1px solid var(--rule); }
+td { padding: 7px 8px; border-bottom: 1px solid var(--rule); }
+td.r, th.r { text-align: right; }
+tr.garmin td { color: var(--ink-3); }
+.stale-wrap td.pred { color: var(--ink-3); text-decoration: line-through; text-decoration-color: var(--rule); }
+
+/* ---------- variant A ---------- */
+.a-band { display: grid; grid-template-columns: 1.35fr 1fr 0.95fr; gap: 0; border-bottom: 1px solid var(--rule-strong); margin-bottom: 32px; }
+.a-band > section { padding: 4px 28px 24px; }
+.a-band > section + section { border-left: 1px solid var(--rule); }
+.a-band > section:first-child { padding-left: 0; }
+.a-band > section:last-child { padding-right: 0; }
+.a-lower { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 36px; }
+.stat-line { display: flex; gap: 22px; margin: 12px 0 10px; flex-wrap: wrap; }
+.stat-line div { display: flex; flex-direction: column; }
+.stat-line span.l { font-size: 12.5px; color: var(--ink-3); }
+
+/* ---------- variant B ---------- */
+.b-shell { display: grid; grid-template-columns: 216px 1fr; min-height: calc(100vh - 56px); }
+.rail { border-right: 1px solid var(--rule); padding: 24px 14px; display: flex; flex-direction: column; gap: 2px; }
+.rail a { display: flex; justify-content: space-between; align-items: center; }
+.rail .badge { font-size: 12px; color: var(--paper); background: var(--red); border-radius: 9px; padding: 0 7px; font-weight: 600; }
+.rail hr { border: 0; border-top: 1px solid var(--rule); margin: 14px 4px; }
+.b-main { padding: 28px 40px 120px; max-width: 1180px; }
+.b-grid { display: grid; grid-template-columns: 1fr 300px; gap: 40px; margin-top: 24px; }
+.marker { font: 600 11px/18px var(--sans); fill: var(--paper); }
+ol.notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+ol.notes li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; font-size: 13.5px; color: var(--ink-2); }
+ol.notes .k { width: 18px; height: 18px; border-radius: 50%; background: var(--red); color: var(--paper); font: 600 11px/18px var(--sans); text-align: center; }
+ol.notes b { color: var(--ink); font-weight: 600; }
+
+/* ---------- variant C ---------- */
+.c-top { display: grid; grid-template-columns: 1fr auto; gap: 32px; align-items: end; padding-bottom: 18px; border-bottom: 2px solid var(--rule-strong); }
+.c-pred { display: flex; gap: 26px; }
+.c-pred div { display: flex; flex-direction: column; align-items: flex-end; }
+.c-pred .l { font-size: 12.5px; color: var(--ink-3); }
+.c-toolbar { display: flex; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--rule); position: sticky; top: 0; background: var(--paper); z-index: 2; }
+.c-readout { margin-left: auto; font-size: 13px; color: var(--ink-2); display: flex; gap: 18px; min-height: 20px; }
+.c-readout b { color: var(--ink); font-weight: 600; }
+.c-panel { display: grid; grid-template-columns: 150px 1fr; border-bottom: 1px solid var(--rule); }
+.c-panel .lab { padding: 14px 16px 0 0; }
+.c-panel .lab h3 { margin-bottom: 4px; }
+.c-stack { position: relative; }
+.xhair { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0; }
+
+/* ---------- empty state ---------- */
+.empty { max-width: 640px; margin: 72px 0; }
+.empty ol { padding-left: 20px; color: var(--ink-2); }
+.empty li { margin: 6px 0; }
+
+/* ---------- prototype switcher (not part of the design) ---------- */
+.proto-bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: #111; color: #fff; border-radius: 999px; box-shadow: 0 6px 24px rgba(0,0,0,.28); font: 13px system-ui, sans-serif; z-index: 50; }
+.proto-bar button, .proto-bar select { background: #2a2a2a; color: #fff; border: 0; border-radius: 999px; padding: 5px 10px; cursor: pointer; font: inherit; }
+.proto-bar .lbl { padding: 0 10px; min-width: 170px; text-align: center; }
+
+@media (max-width: 980px) {
+  .a-band, .a-lower, .b-grid { grid-template-columns: 1fr; }
+  .a-band > section { padding: 16px 0; border-left: 0 !important; }
+  .b-shell { grid-template-columns: 1fr; }
+  .rail { flex-direction: row; border-right: 0; border-bottom: 1px solid var(--rule); overflow-x: auto; }
+  .rail hr { display: none; }
+  .c-panel { grid-template-columns: 1fr; }
+  .c-top { grid-template-columns: 1fr; }
+  .page, .b-main { padding-left: 18px; padding-right: 18px; }
+  .topbar { padding: 0 18px; gap: 14px; }
+  .nav { display: none; }
+  .a-band > *, .a-lower > *, .b-grid > *, .c-top > * { min-width: 0; }
+  .headline { font-size: 24px; }
+  table { display: block; overflow-x: auto; }
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="proto-bar" aria-label="原型切换（不属于设计）">
+  <button id="prev" aria-label="上一个变体">‹</button>
+  <span class="lbl" id="vlabel"></span>
+  <button id="next" aria-label="下一个变体">›</button>
+  <select id="state" aria-label="数据状态">
+    <option value="normal">正常数据</option>
+    <option value="stale">预测过期</option>
+    <option value="empty">尚未同步</option>
+  </select>
+</div>
+<script>
+"use strict";
+// ======================================================================
+// Synthetic data (示意数据). Shapes follow tickets 06 and 07; values are made up.
+// ======================================================================
+const DAY = 864e5;
+const T0 = Date.UTC(2021, 7, 2);          // Monday 2021-08-02, first week
+const TODAY = Date.UTC(2026, 9, 23);      // Friday
+const LAST = TODAY - DAY;                 // last synced day
+const LAST_VISIT = Date.UTC(2026, 9, 18);
+const P = { hrMax: 192, hrRest: 55, lthr: 170, refHr: 145 };
+
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+let rand = rng(20261023);
+const gauss = () => { let u = 0, v = 0; while (!u) u = rand(); while (!v) v = rand(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+const doy = d => (d - Date.UTC(new Date(d).getUTCFullYear(), 0, 1)) / DAY;
+const ymd = d => new Date(d).toISOString().slice(0, 10);
+const md = d => { const x = new Date(d); return `${x.getUTCMonth() + 1} 月 ${x.getUTCDate()} 日`; };
+const trimpOf = (min, hr) => { const x = (hr - P.hrRest) / (P.hrMax - P.hrRest); return min * x * 0.64 * Math.exp(1.92 * x); };
+
+const RACES_ALL = [
+  { date: Date.UTC(2023, 9, 15), name: "城市半马", dist: 21097.5, time: 6730 },
+  { date: Date.UTC(2024, 10, 10), name: "秋季半马", dist: 21097.5, time: 6270 },
+  { date: Date.UTC(2025, 3, 13), name: "春季 10K", dist: 10000, time: 2800 },
+  { date: Date.UTC(2026, 2, 15), name: "城市半马", dist: 21097.5, time: 5930 },
+  { date: Date.UTC(2026, 8, 13), name: "环湖 10K", dist: 10000, time: 2660 },
+];
+
+function aerobicBase(d) {               // seconds per km at reference HR, before season and noise
+  const yrs = (d - T0) / (365.25 * DAY);
+  return 392 - 90 * (1 - Math.exp(-yrs / 4));
+}
+function tempOf(d) { return 14 + 10 * Math.cos(2 * Math.PI * (doy(d) - 200) / 365); }
+
+function genData(state) {
+  rand = rng(20261023);            // same synthetic data on every render
+  if (state === "empty") return null;
+  const races = state === "stale" ? RACES_ALL.slice(0, 4) : RACES_ALL;
+  const days = [], weeks = [];
+  let ctl = 8, atl = 8;
+  for (let w = T0; w <= LAST; w += 7 * DAY) {
+    const yrs = (w - T0) / (365.25 * DAY);
+    const block = Math.floor((w - T0) / (7 * DAY)) % 4;
+    let K = (19 + 26 * (1 - Math.exp(-yrs / 2.2))) * (block === 3 ? 0.68 : 1 + 0.06 * block) * (1 + 0.12 * gauss());
+    if (w === Date.UTC(2026, 9, 5)) K = 9;      // sick week
+    const binge = w >= Date.UTC(2026, 9, 12);    // jump straight back in after being sick
+    if (binge) K = 88;
+    const pattern = binge ? [0, 1, 2, 3, 4, 5, 6] : K < 24 ? [1, 3, 6] : K < 40 ? [1, 3, 5, 6] : [0, 1, 3, 5, 6];
+    const nRuns = pattern.length;
+    const tempW = tempOf(w + 3 * DAY) + 1.5 * gauss();
+    const season = 0.9 * Math.max(0, tempW - 12);
+    const aerW = aerobicBase(w) + season + 4.5 * gauss();
+    let km = 0, trimp = 0, runs = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = w + i * DAY;
+      if (d > LAST) break;
+      let dTrimp = 0, dKm = 0;
+      const k = pattern.indexOf(i);
+      const sick = w === Date.UTC(2026, 9, 5) && i > 1;
+      if (k >= 0 && !sick) {
+        const long = i === 6;
+        const runKm = long ? K * 0.34 : K * 0.66 / (nRuns - 1);
+        const tempo = k === 1 && nRuns >= 4;
+        const hr = tempo ? 163 + 3 * gauss() : long ? 147 + 3 * gauss() : 141 + 4 * gauss();
+        const pace = aerW + (tempo ? -38 : long ? 12 : 8);
+        const walk = 1 + 0.03 * rand();         // walking seconds count toward TRIMP, not distance
+        dKm = runKm; dTrimp = trimpOf(runKm * pace / 60 * walk, hr); runs++;
+      }
+      if (i === 2 && rand() < 0.35) dTrimp += trimpOf(55, 122);  // cycling: load, no running distance
+      for (const r of races) if (r.date === d) { dKm = r.dist / 1000; dTrimp = trimpOf(r.time / 60, 176); runs++; }
+      const tsb = ctl - atl;
+      ctl += (dTrimp - ctl) / 42; atl += (dTrimp - atl) / 7;
+      days.push({ d, trimp: dTrimp, km: dKm, ctl, atl, tsb });
+      km += dKm; trimp += dTrimp;
+    }
+    const blank = runs < 2 || rand() < 0.06;
+    weeks.push({ d: w, km, trimp, runs, temp: tempW, aer: blank ? null : aerW });
+  }
+  // 4-week rolling median of the weekly aerobic value
+  weeks.forEach((wk, i) => {
+    const xs = weeks.slice(Math.max(0, i - 3), i + 1).map(x => x.aer).filter(x => x != null).sort((a, b) => a - b);
+    wk.aerRoll = xs.length >= 2 ? (xs.length % 2 ? xs[(xs.length - 1) / 2] : (xs[xs.length / 2 - 1] + xs[xs.length / 2]) / 2) : null;
+  });
+  const longRuns = [
+    { d: Date.UTC(2026, 9, 18), km: 21.8, min: 126, ef: 1.52, dec: 6.8 },
+    { d: Date.UTC(2026, 8, 27), km: 19.5, min: 110, ef: 1.58, dec: 3.1 },
+    { d: Date.UTC(2026, 8, 20), km: 18.2, min: 101, ef: 1.57, dec: 2.4 },
+    { d: Date.UTC(2026, 8, 6), km: 17.0, min: 95, ef: 1.55, dec: 4.2 },
+    { d: Date.UTC(2026, 7, 30), km: 16.4, min: 93, ef: 1.51, dec: 5.9 },
+  ];
+  return { days, weeks, races, longRuns, pred: predict(races, weeks) };
+}
+
+// ---------- prediction (ticket 07): VDOT primary, Riegel comparison ----------
+function vdot(dist, sec) { const t = sec / 60, v = dist / t; return (-4.6 + 0.182258 * v + 0.000104 * v * v) / (0.8 + 0.1894393 * Math.exp(-0.012778 * t) + 0.2989558 * Math.exp(-0.1932605 * t)); }
+function vdotTime(V, dist) { let lo = 300, hi = 36000; for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (vdot(dist, m) > V) lo = m; else hi = m; } return (lo + hi) / 2; }
+function predict(races, weeks) {
+  const recent = races.filter(r => TODAY - r.date <= 183 * DAY);
+  const last = races[races.length - 1];
+  const basis = (recent.length ? recent : [last]).reduce((a, b) => vdot(b.dist, b.time) > vdot(a.dist, a.time) ? b : a);
+  const V = vdot(basis.dist, basis.time);
+  const xs = races.map(r => Math.log(r.dist)), ys = races.map(r => Math.log(r.time));
+  const mx = xs.reduce((a, b) => a + b) / xs.length, my = ys.reduce((a, b) => a + b) / ys.length;
+  const k = xs.reduce((s, x, i) => s + (x - mx) * (ys[i] - my), 0) / xs.reduce((s, x) => s + (x - mx) ** 2, 0);
+  const vol8 = weeks.slice(-9, -1).reduce((s, w) => s + w.km, 0) / 8;
+  const dists = [["5K", 5000, 1288], ["10K", 10000, 2702], ["半马", 21097.5, 5990], ["全马", 42195, 14453]];
+  return {
+    stale: !recent.length, basis, V, k, vol8,
+    rows: dists.map(([label, dist, garmin]) => {
+      const v = vdotTime(V, dist), rg = basis.time * Math.pow(dist / basis.dist, k);
+      const adj = dist > 40000 ? Math.max(0, (55 - vol8) * 14) : 0;  // illustrative mileage penalty
+      return { label, dist, vdot: v + adj, adj, riegel: rg, garmin };
+    }),
+  };
+}
+
+// ---------- formatting ----------
+function fmtDur(s) { s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return h ? `${h}:${String(m).padStart(2, "0")}:${String(x).padStart(2, "0")}` : `${m}:${String(x).padStart(2, "0")}`; }
+const fmtPace = s => s == null ? "—" : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+const f1 = x => x.toFixed(1);
+const f0 = x => Math.round(x).toString();
+const signed = x => (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(Math.round(x));
+
+// ======================================================================
+// SVG chart helper. Notes are HTML laid over the SVG so they wrap.
+// ======================================================================
+function chart(o) {
+  const W = o.width, H = o.height, m = Object.assign({ t: 14, r: 16, b: 26, l: 46 }, o.m || {});
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const sx = d => m.l + (d - o.x0) / (o.x1 - o.x0) * iw;
+  const sy = v => { const f = (v - o.y0) / (o.y1 - o.y0); return o.invert ? m.t + f * ih : m.t + ih - f * ih; };
+  let s = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${o.label || ""}">`;
+  for (const v of o.yTicks || []) {
+    const y = sy(v);
+    s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y}" y2="${y}" stroke="${v === 0 && o.zero ? "var(--ink-3)" : "var(--rule)"}" stroke-width="1"/>`;
+    s += `<text x="${m.l - 8}" y="${y + 4}" text-anchor="end">${(o.yFmt || f0)(v)}</text>`;
+  }
+  if (!o.noX) {
+    const span = o.x1 - o.x0, stepM = span > 900 * DAY ? 12 : span > 400 * DAY ? 3 : span > 150 * DAY ? 1 : 0;
+    const dt = new Date(o.x0); let cur = Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() + 1, 1);
+    if (stepM === 0) { for (let d = o.x0 + ((7 - new Date(o.x0).getUTCDay() + 1) % 7) * DAY; d <= o.x1; d += 14 * DAY) s += xt(d, md(d).replace(" 月 ", "/").replace(" 日", "")); }
+    else for (; cur <= o.x1; cur = Date.UTC(new Date(cur).getUTCFullYear(), new Date(cur).getUTCMonth() + stepM, 1)) {
+      const x = new Date(cur), lab = x.getUTCMonth() === 0 ? `${x.getUTCFullYear()}` : stepM >= 12 ? `${x.getUTCFullYear()}` : `${x.getUTCMonth() + 1}月`;
+      if (stepM >= 12 && x.getUTCMonth() !== 0) { cur = Date.UTC(x.getUTCFullYear() + 1, 0, 1); if (cur > o.x1) break; }
+      s += xt(cur, stepM >= 12 ? `${new Date(cur).getUTCFullYear()}` : lab);
+    }
+  }
+  function xt(d, lab) { const x = sx(d); return `<line x1="${x}" x2="${x}" y1="${H - m.b}" y2="${H - m.b + 4}" stroke="var(--ink-3)"/><text x="${x}" y="${H - m.b + 17}" text-anchor="middle">${lab}</text>`; }
+  for (const e of o.events || []) { const x = sx(e.d); s += `<line x1="${x}" x2="${x}" y1="${m.t}" y2="${H - m.b}" stroke="var(--ink)" stroke-width="1" stroke-dasharray="1 3"/>`; }
+  for (const sr of o.series) {
+    const pts = sr.data.filter(p => p.d >= o.x0 && p.d <= o.x1);
+    if (sr.type === "bar") {
+      const bw = Math.max(1, (sx(o.x0 + (sr.step || 7 * DAY)) - sx(o.x0)) * 0.72);
+      for (const p of pts) if (p.v != null) { const y = sy(p.v), y0 = sy(0); s += `<rect x="${sx(p.d) + (sr.offset || 0)}" y="${Math.min(y, y0)}" width="${bw}" height="${Math.abs(y0 - y)}" fill="${p.c || sr.color}"/>`; }
+    } else if (sr.type === "dots") {
+      for (const p of pts) if (p.v != null) s += `<circle cx="${sx(p.d)}" cy="${sy(p.v)}" r="${sr.r || 2.2}" fill="${sr.color}"/>`;
+    } else if (sr.type === "area0") {
+      for (const sign of [1, -1]) {
+        let d = `M${sx(pts[0].d)},${sy(0)}`;
+        for (const p of pts) d += `L${sx(p.d)},${sy(sign > 0 ? Math.max(0, p.v) : Math.min(0, p.v))}`;
+        d += `L${sx(pts[pts.length - 1].d)},${sy(0)}Z`;
+        s += `<path d="${d}" fill="${sign > 0 ? sr.pos : sr.neg}" opacity="0.85"/>`;
+      }
+    } else {
+      let d = "", pen = false;
+      for (const p of pts) { if (p.v == null) { pen = false; continue; } d += `${pen ? "L" : "M"}${sx(p.d).toFixed(1)},${sy(p.v).toFixed(1)}`; pen = true; }
+      s += `<path d="${d}" fill="none" stroke="${sr.color}" stroke-width="${sr.w || 2}" stroke-linejoin="round" ${sr.dash ? `stroke-dasharray="${sr.dash}"` : ""}/>`;
+    }
+  }
+  // margin notes with leader lines; markers for numbered notes
+  let notes = "";
+  const placed = [];
+  for (const [i, n] of (o.notes || []).entries()) {
+    const px = sx(n.d), py = n.v == null ? m.t + 6 : sy(n.v);
+    if (n.key) {
+      s += `<circle cx="${px}" cy="${py}" r="9" fill="var(--red)"/><text class="marker" x="${px}" y="${py + 4}" text-anchor="middle" style="fill:var(--paper);font-weight:600;font-size:11px">${n.key}</text>`;
+      continue;
+    }
+    let ty = Math.max(m.t, py - 10);
+    for (const q of placed) if (Math.abs(ty - q) < (n.h || 52)) ty = q + (n.h || 52);
+    placed.push(ty);
+    s += `<circle cx="${px}" cy="${py}" r="4.5" fill="none" stroke="var(--red)" stroke-width="1.5"/>`;
+    s += `<polyline points="${px + 5},${py} ${W - m.r + 6},${ty + 8} ${W - m.r + 12},${ty + 8}" fill="none" stroke="var(--red)" stroke-width="1"/>`;
+    notes += `<div class="note" style="left:${(W - m.r + 16) / W * 100}%;top:${ty / H * 100}%;width:${(m.r - 18) / W * 100}%">${n.html}</div>`;
+  }
+  s += `<line class="xhair" x1="0" x2="0" y1="${m.t}" y2="${H - m.b}"/>`;
+  s += `</svg>`;
+  return { html: `<div class="chart" style="aspect-ratio:${W}/${H}">${s}${notes}</div>`, sx, sy, m, W };
+}
+
+// ======================================================================
+// Derived views shared by the variants
+// ======================================================================
+function view(D) {
+  const last = D.days[D.days.length - 1];
+  const ratio = last.atl / last.ctl;
+  let onset = null;
+  for (let i = D.days.length - 1; i >= D.days.length - 21; i--) { if (D.days[i].atl / D.days[i].ctl > 1.5) onset = D.days[i].d; else if (onset) break; }
+  const wkThis = D.weeks[D.weeks.length - 1], wkPrev = D.weeks[D.weeks.length - 2], wkPrev2 = D.weeks[D.weeks.length - 3];
+  const roll7 = D.days.slice(-7).reduce((s, x) => s + x.km, 0);
+  const aerNow = [...D.weeks].reverse().find(w => w.aerRoll != null);
+  const aerYearAgo = D.weeks.filter(w => w.d <= aerNow.d - 364 * DAY && w.aerRoll != null).pop();
+  const newRuns = D.days.filter(x => x.d >= LAST_VISIT && x.km > 0).length;
+  const tsbWord = last.tsb < -25 ? "疲劳累积" : last.tsb < -10 ? "正在训练" : last.tsb < 5 ? "平衡" : "恢复充分";
+  return { last, ratio, onset, wkThis, wkPrev, wkPrev2, roll7, aerNow, aerYearAgo, newRuns, tsbWord, pred: D.pred };
+}
+
+const HOW = {
+  load: `每秒 TRIMP = Δt × HRr × 0.64 × e<sup>1.92·HRr</sup>，HRr = (心率 − 55) / (192 − 55)。所有带心率的活动都计入，没有心率的活动记为缺失。CTL 是 42 天指数加权平均，ATL 是 7 天；TSB = 昨天的 CTL − 昨天的 ATL。ATL/CTL 超过 1.5 时提示负荷突增。数值只作相对比较。`,
+  km: `周一到周日的自然周。只算"跑"的秒数对应的距离：步频 10 秒平滑后 ≥ 140 spm 算跑；路跑、跑步机、越野跑都计入。`,
+  aer: `参考心率 145 bpm 下的跑步配速。每次户外路跑在稳态段上拟合"坡度校正速度 ~ 心率"直线，取 145 bpm 处的值；坡度用 Minetti 公式校正。每周取中位数，少于 2 次有效跑步的周留空；趋势线是 4 周滚动中位数。温度未校正，只作参照。`,
+  pred: `用最近 6 个月内最好的一场全力比赛算 VDOT（Daniels），推算各距离成绩。Riegel 用全部比赛拟合的个人指数作对照。全马按近 8 周平均周跑量加修正。Garmin 的预测只作参照。没有 6 个月内的比赛时标为过期。`,
+};
+function paceAxis(ws) {
+  const v = ws.map(w => w.aer).filter(x => x != null), lo = Math.floor(Math.min(...v) / 10) * 10, hi = Math.ceil(Math.max(...v) / 10) * 10;
+  const st = hi - lo > 60 ? 20 : 10, ticks = [];
+  for (let t = lo; t <= hi; t += st) ticks.push(t);
+  return { y0: hi, y1: lo, yTicks: ticks };
+}
+const HOW_LABEL = { load: "负荷怎么算的", km: "跑量怎么算的", aer: "有氧能力怎么算的", pred: "预测怎么算的" };
+const how = k => `<details class="how"><summary>${HOW_LABEL[k]}</summary><div class="body">${HOW[k]}</div></details>`;
+
+function predTable(V) {
+  const p = V.pred;
+  return `<table class="${p.stale ? "stale-wrap" : ""}">
+    <thead><tr><th>距离</th><th class="r">VDOT</th><th class="r">Riegel</th><th class="r">Garmin</th></tr></thead>
+    <tbody>${p.rows.map(r => `<tr><td>${r.label}</td><td class="r pred num">${fmtDur(r.vdot)}</td><td class="r pred">${fmtDur(r.riegel)}</td><td class="r muted">${fmtDur(r.garmin)}</td></tr>`).join("")}</tbody></table>`;
+}
+function predCaption(V) {
+  const p = V.pred, b = p.basis;
+  return p.stale
+    ? `<p class="small" style="color:var(--red);margin:10px 0 0"><b>预测已过期。</b>最近一场全力比赛是 ${ymd(b.date)} 的${b.name}，已超过 6 个月。下一场比赛后填进 <code>races.csv</code>。</p>`
+    : `<p class="small muted" style="margin:10px 0 0">依据：${ymd(b.date)} ${b.name} ${fmtDur(b.time)}，VDOT ${p.V.toFixed(1)}。Riegel 个人指数 ${p.k.toFixed(3)}（${D.races.length} 场比赛拟合）。全马含跑量修正 +${fmtDur(p.rows[3].adj)}（近 8 周平均 ${f0(p.vol8)} km）。</p>`;
+}
+
+// ======================================================================
+// Variant A: status band on top, full-width aerobic trend, details below
+// ======================================================================
+function renderA(D, V, ui) {
+  const L = V.last, spike = V.ratio > 1.5;
+  const d12 = D.days.slice(-84), x0 = d12[0].d, x1 = LAST;
+  const load = chart({
+    width: 560, height: 190, x0, x1, y0: 0, y1: 100, yTicks: [0, 25, 50, 75, 100],
+    m: { r: 150, l: 34 }, label: "近 12 周 CTL 与 ATL",
+    series: [{ data: d12.map(x => ({ d: x.d, v: x.ctl })), color: "var(--fit)", w: 2.2 }, { data: d12.map(x => ({ d: x.d, v: x.atl })), color: "var(--fat)", w: 1.6 }],
+    notes: spike ? [{ d: V.onset, v: D.days.find(x => x.d === V.onset).atl, html: `<b>${md(V.onset)}起</b>ATL/CTL 超过 1.5。前一周病休只跑了 ${f0(V.wkPrev2.km)} km。` }] : [],
+  });
+  const tsb = chart({
+    width: 560, height: 78, x0, x1, y0: -40, y1: 20, yTicks: [-30, 0], zero: true, m: { r: 150, l: 34, t: 6 }, yFmt: v => v === 0 ? "0" : signed(v),
+    series: [{ type: "area0", data: d12.map(x => ({ d: x.d, v: x.tsb })), pos: "var(--form-pos)", neg: "var(--form-neg)" }], label: "TSB",
+  });
+  const wk = D.weeks.slice(-12);
+  const kmc = chart({
+    width: 380, height: 190, x0: wk[0].d, x1: wk[wk.length - 1].d + 7 * DAY, y0: 0, y1: 70, yTicks: [0, 20, 40, 60], m: { l: 30, r: 8 },
+    series: [{ type: "bar", data: wk.map((w, i) => ({ d: w.d, v: w.km, c: i === wk.length - 1 ? "var(--ink-3)" : "var(--ink)" })) }], label: "近 12 周周跑量",
+  });
+
+  const ranges = { "半年": 183, "1 年": 365, "2 年": 730, "全部": 9999 };
+  const span = ranges[ui.range] * DAY, ax0 = Math.max(T0, LAST - span);
+  const aw = D.weeks.filter(w => w.d >= ax0);
+  const aerNotes = [];
+  for (const r of D.races) if (r.date >= ax0) { const w = aw.find(x => x.d <= r.date && r.date < x.d + 7 * DAY); if (w && w.aerRoll) aerNotes.push({ d: r.date, v: w.aerRoll, html: `<b>${r.name}</b>${ymd(r.date)}，${fmtDur(r.time)}` }); }
+  const summer = aw.filter(w => new Date(w.d).getUTCMonth() === 6 && w.aerRoll).slice(-1)[0];
+  if (summer) aerNotes.push({ summer: true, d: summer.d, v: summer.aerRoll, html: `<b>夏季变慢</b>周均温 ${f0(summer.temp)}°C，配速慢了约 ${f0(0.9 * (summer.temp - 12))} 秒/km。温度未校正。` });
+  // pace axis inverted: faster (smaller) is up
+  const aerInv = chart({
+    width: 1256, height: 330, x0: ax0, x1: LAST, ...paceAxis(aw), yFmt: fmtPace,
+    m: { r: 230, l: 50 }, label: "有氧能力趋势", events: D.races.filter(r => r.date >= ax0).map(r => ({ d: r.date })),
+    series: [{ type: "dots", data: aw.map(w => ({ d: w.d, v: w.aer })), color: "var(--dot)" }, { data: aw.map(w => ({ d: w.d, v: w.aerRoll })), color: "var(--ink)", w: 2.4 }],
+    notes: [aerNotes.filter(n => !n.summer).pop(), aerNotes.find(n => n.summer)].filter(Boolean),
+  });
+  const temp = chart({
+    width: 1256, height: 70, x0: ax0, x1: LAST, y0: 0, y1: 30, yTicks: [0, 25], yFmt: v => `${v}°`, m: { r: 230, l: 50, t: 4 }, noX: false,
+    series: [{ type: "bar", data: aw.map(w => ({ d: w.d, v: w.temp })), color: "var(--temp)" }], label: "每周平均温度",
+  });
+  const diff = V.aerYearAgo ? V.aerNow.aerRoll - V.aerYearAgo.aerRoll : 0;
+
+  return `
+  ${topbar("总览")}
+  <main class="page">
+    <div class="a-band">
+      <section>
+        <h1 class="headline ${spike ? "alert" : ""}">${spike ? `负荷突增：ATL 是 CTL 的 ${V.ratio.toFixed(1)} 倍` : `训练负荷${V.tsbWord}`}</h1>
+        <p class="dek">${spike ? `病休一周后直接跑了 ${f0(V.wkPrev.km)} km。接下来几天降一点量，让 TSB 回到 −20 以上。` : `CTL 稳定，TSB 在正常训练区间。`}</p>
+        <div class="stat-line">
+          <div><span class="l">CTL 体能</span><span class="big new" style="color:var(--fit)">${f0(L.ctl)}</span></div>
+          <div><span class="l">ATL 疲劳</span><span class="big new" style="color:var(--fat)">${f0(L.atl)}</span></div>
+          <div><span class="l">TSB 状态</span><span class="big new" style="color:${L.tsb < 0 ? "var(--red)" : "var(--form-pos)"}">${signed(L.tsb)}</span></div>
+        </div>
+        ${load.html}${tsb.html}
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+          <div class="legend"><span><i style="border-color:var(--fit)"></i>CTL 42 天</span><span><i style="border-color:var(--fat)"></i>ATL 7 天</span><span><i class="bar" style="background:var(--form-neg)"></i>TSB</span></div>${how("load")}
+        </div>
+      </section>
+      <section>
+        <h2>周跑量</h2>
+        <div class="stat-line">
+          <div><span class="l">本周（周一至今）</span><span class="big new">${f1(V.wkThis.km)}<span class="small muted"> km</span></span></div>
+          <div><span class="l">上周</span><span class="big new">${f1(V.wkPrev.km)}<span class="small muted"> km</span></span></div>
+          <div><span class="l">滚动 7 天</span><span class="big">${f1(V.roll7)}<span class="small muted"> km</span></span></div>
+        </div>
+        ${kmc.html}
+        <div style="display:flex;justify-content:space-between;margin-top:6px"><span class="small muted">只算跑的距离，走路不计。本周未完。</span>${how("km")}</div>
+      </section>
+      <section>
+        <h2>成绩预测</h2>
+        <div style="margin-top:12px">${predTable(V)}</div>
+        ${predCaption(V)}
+        <div style="margin-top:8px">${how("pred")}</div>
+      </section>
+    </div>
+
+    <section>
+      <div class="sec-head">
+        <h2>有氧能力：心率 145 时的跑步配速</h2>
+        <span class="muted small">越高越快</span>
+        <div class="tools">
+          <div class="seg" role="group" aria-label="时间范围">${Object.keys(ranges).map(k => `<button data-range="${k}" aria-pressed="${k === ui.range}">${k}</button>`).join("")}</div>
+          ${how("aer")}
+        </div>
+      </div>
+      <p class="dek" style="margin-bottom:14px">最近 4 周 <span class="num new">${fmtPace(V.aerNow.aerRoll)} /km</span>，一年前 <span class="num">${fmtPace(V.aerYearAgo && V.aerYearAgo.aerRoll)} /km</span>，${diff < 0 ? `快了 ${f0(-diff)} 秒` : `慢了 ${f0(diff)} 秒`}。</p>
+      ${aerInv.html}
+      <div class="small muted" style="margin:6px 0 2px 50px">每周平均温度</div>
+      ${temp.html}
+      <div class="legend" style="margin-top:8px"><span><i class="dotk"></i>每周中位数（空白 = 有效跑步少于 2 次）</span><span><i style="border-color:var(--ink)"></i>4 周滚动中位数</span><span><i style="border-top:1px dotted var(--ink)"></i>比赛</span></div>
+    </section>
+
+    <div class="a-lower">
+      <section>
+        <div class="sec-head"><h2>长距离的心率漂移</h2><span class="muted small">60 分钟以上的跑步</span></div>
+        ${longRunTable(D)}
+      </section>
+      <section>
+        <div class="sec-head"><h2>最近的比赛</h2><span class="muted small">来自 <code>races.csv</code></span></div>
+        ${raceTable(D)}
+      </section>
+    </div>
+  </main>`;
+}
+
+function longRunTable(D) {
+  return `<table><thead><tr><th>日期</th><th class="r">距离</th><th class="r">时长</th><th class="r">EF</th><th class="r">decoupling</th></tr></thead><tbody>
+  ${D.longRuns.map(r => `<tr><td>${ymd(r.d)}</td><td class="r">${f1(r.km)} km</td><td class="r">${fmtDur(r.min * 60)}</td><td class="r">${r.ef.toFixed(2)}</td><td class="r" style="${r.dec > 5 ? "color:var(--red);font-weight:600" : ""}">${f1(r.dec)}%</td></tr>`).join("")}
+  </tbody></table><p class="small muted">decoupling 超过 5% 标红：后半程同配速下心率明显漂高。</p>`;
+}
+function raceTable(D) {
+  return `<table><thead><tr><th>日期</th><th>比赛</th><th class="r">成绩</th><th class="r">VDOT</th></tr></thead><tbody>
+  ${[...D.races].reverse().map(r => `<tr><td>${ymd(r.date)}</td><td>${r.name}</td><td class="r num">${fmtDur(r.time)}</td><td class="r">${vdot(r.dist, r.time).toFixed(1)}</td></tr>`).join("")}
+  </tbody></table>`;
+}
+
+function topbar(cur, withNav = true) {
+  const items = ["总览", "有氧能力", "训练负荷", "比赛"];
+  return `<header class="topbar"><span class="brand">跑步记录</span>
+    ${withNav ? `<nav class="nav" aria-label="主导航">${items.map(i => `<a href="#" ${i === cur ? 'aria-current="page"' : ""}>${i}</a>`).join("")}</nav>` : ""}
+    <div class="sync">${D ? `<span>数据截至 ${ymd(LAST)} · 自 ${md(LAST_VISIT)}上次打开后新增 ${VIEW.newRuns} 次跑步</span><button class="btn" data-seen>全部标为已读</button>` : `<span>尚未同步</span>`}</div></header>`;
+}
+
+// ======================================================================
+// Variant B: side rail, one section per page, numbered notes beside the chart
+// ======================================================================
+function renderB(D, V, ui) {
+  const sec = ui.section;
+  const nav = [["负荷", "训练负荷", V.ratio > 1.5 ? "!" : ""], ["有氧", "有氧能力", ""], ["比赛", "成绩预测", V.pred.stale ? "过期" : ""]];
+  let body = "";
+  if (sec === "负荷") {
+    const d = D.days.slice(-182), x0 = d[0].d;
+    const spikeDay = V.onset && D.days.find(x => x.d === V.onset);
+    const peak = d.reduce((a, b) => b.ctl > a.ctl ? b : a);
+    const load = chart({
+      width: 820, height: 280, x0, x1: LAST, y0: 0, y1: 100, yTicks: [0, 25, 50, 75, 100], label: "近半年 CTL 与 ATL",
+      series: [{ data: d.map(x => ({ d: x.d, v: x.ctl })), color: "var(--fit)", w: 2.4 }, { data: d.map(x => ({ d: x.d, v: x.atl })), color: "var(--fat)", w: 1.5 }],
+      notes: [{ d: peak.d, v: peak.ctl, key: 1 }, ...(spikeDay ? [{ d: spikeDay.d, v: spikeDay.atl, key: 2 }] : [])],
+    });
+    const tsb = chart({ width: 820, height: 110, x0, x1: LAST, y0: -40, y1: 25, yTicks: [-30, -15, 0, 15], zero: true, yFmt: v => v === 0 ? "0" : signed(v), m: { t: 6 }, series: [{ type: "area0", data: d.map(x => ({ d: x.d, v: x.tsb })), pos: "var(--form-pos)", neg: "var(--form-neg)" }] });
+    const wk = D.weeks.slice(-26);
+    const kmc = chart({ width: 820, height: 150, x0, x1: LAST, y0: 0, y1: 70, yTicks: [0, 30, 60], m: { t: 8 }, series: [{ type: "bar", data: wk.map((w, i) => ({ d: w.d, v: w.km, c: i === wk.length - 1 ? "var(--ink-3)" : "var(--ink)" })) }] });
+    body = `
+      <h1 class="headline ${V.ratio > 1.5 ? "alert" : ""}">${V.ratio > 1.5 ? `负荷突增：ATL 是 CTL 的 ${V.ratio.toFixed(1)} 倍` : `训练负荷${V.tsbWord}`}</h1>
+      <p class="dek">CTL <b class="num new" style="color:var(--fit)">${f0(V.last.ctl)}</b> · ATL <b class="num new" style="color:var(--fat)">${f0(V.last.atl)}</b> · TSB <b class="num new" style="color:var(--red)">${signed(V.last.tsb)}</b> · 本周 <b class="num new">${f1(V.wkThis.km)} km</b>，上周 <b class="num">${f1(V.wkPrev.km)} km</b></p>
+      <div class="b-grid">
+        <div>
+          <div class="sec-head"><h3>CTL / ATL（近半年）</h3><div class="tools"><div class="legend"><span><i style="border-color:var(--fit)"></i>CTL</span><span><i style="border-color:var(--fat)"></i>ATL</span></div></div></div>
+          ${load.html}
+          <div class="sec-head" style="margin-top:20px"><h3>TSB</h3></div>${tsb.html}
+          <div class="sec-head" style="margin-top:20px"><h3>周跑量（km）</h3><span class="muted small">只算跑的距离</span></div>${kmc.html}
+        </div>
+        <aside>
+          <div class="sec-head"><h3>批注</h3></div>
+          <ol class="notes">
+            <li><span class="k">1</span><span><b>${md(peak.d)}：CTL 最高 ${f0(peak.ctl)}</b><br>春季半马备赛期的顶点。</span></li>
+            ${spikeDay ? `<li><span class="k">2</span><span><b>${md(V.onset)}起：负荷突增</b><br>病休一周（${f0(V.wkPrev2.km)} km）后直接跑了 ${f0(V.wkPrev.km)} km，ATL/CTL 超过 1.5。</span></li>` : ""}
+          </ol>
+          <div style="margin-top:24px">${how("load")}</div>
+          <div style="margin-top:8px">${how("km")}</div>
+        </aside>
+      </div>`;
+  } else if (sec === "有氧") {
+    const aw = D.weeks;
+    const r = D.races.map((x, i) => ({ d: x.date, v: (aw.find(w => w.d <= x.date && x.date < w.d + 7 * DAY) || {}).aerRoll, key: i + 1 })).filter(x => x.v);
+    const aer = chart({ width: 820, height: 340, x0: T0, x1: LAST, ...paceAxis(aw), yFmt: fmtPace, label: "有氧能力全部历史",
+      series: [{ type: "dots", data: aw.map(w => ({ d: w.d, v: w.aer })), color: "var(--dot)" }, { data: aw.map(w => ({ d: w.d, v: w.aerRoll })), color: "var(--ink)", w: 2.2 }], notes: r });
+    const temp = chart({ width: 820, height: 80, x0: T0, x1: LAST, y0: 0, y1: 30, yTicks: [0, 25], yFmt: v => `${v}°`, m: { t: 4 }, series: [{ type: "bar", data: aw.map(w => ({ d: w.d, v: w.temp })), color: "var(--temp)" }] });
+    body = `
+      <h1 class="headline">有氧能力：一年快了 ${f0(V.aerYearAgo.aerRoll - V.aerNow.aerRoll)} 秒/km</h1>
+      <p class="dek">心率 145 时的跑步配速，最近 4 周 <b class="num new">${fmtPace(V.aerNow.aerRoll)} /km</b>，一年前 ${fmtPace(V.aerYearAgo.aerRoll)} /km。</p>
+      <div class="b-grid">
+        <div>${aer.html}<div class="small muted" style="margin:6px 0 0 46px">每周平均温度</div>${temp.html}
+          <div class="legend" style="margin-top:8px"><span><i class="dotk"></i>每周中位数</span><span><i style="border-color:var(--ink)"></i>4 周滚动中位数</span></div>
+          <div class="sec-head" style="margin-top:32px"><h3>长距离的心率漂移</h3></div>${longRunTable(D)}</div>
+        <aside><div class="sec-head"><h3>批注：比赛</h3></div><ol class="notes">${D.races.map((x, i) => `<li><span class="k">${i + 1}</span><span><b>${x.name}</b><br>${ymd(x.date)} · ${fmtDur(x.time)}</span></li>`).join("")}</ol>
+          <p class="small muted" style="margin-top:20px">夏季几个月配速普遍慢 10–15 秒，温度第一版不校正。</p><div style="margin-top:8px">${how("aer")}</div></aside>
+      </div>`;
+  } else {
+    body = `<h1 class="headline ${V.pred.stale ? "alert" : ""}">${V.pred.stale ? "成绩预测已过期" : `全马预计 ${fmtDur(V.pred.rows[3].vdot)}`}</h1>
+      <p class="dek">${V.pred.stale ? "最近 6 个月没有全力比赛。下面是按旧比赛推算的值，仅供参考。" : `依据 ${ymd(V.pred.basis.date)} ${V.pred.basis.name}，VDOT ${V.pred.V.toFixed(1)}。`}</p>
+      <div class="b-grid"><div>${predTable(V)}${predCaption(V)}<div class="sec-head" style="margin-top:32px"><h3>全部比赛</h3></div>${raceTable(D)}</div><aside>${how("pred")}</aside></div>`;
+  }
+  return `${topbar("", false)}
+  <div class="b-shell">
+    <nav class="rail" aria-label="分区">
+      ${nav.map(([k, label, badge]) => `<a href="#" data-section="${k}" ${k === sec ? 'aria-current="page"' : ""}>${label}${badge ? `<span class="badge">${badge}</span>` : ""}</a>`).join("")}
+      <hr><a href="#" class="muted small">数据状态</a><a href="#" class="muted small">参数设置</a>
+    </nav>
+    <main class="b-main">${body}</main>
+  </div>`;
+}
+
+// ======================================================================
+// Variant C: one shared time axis, stacked panels, crosshair across all
+// ======================================================================
+function renderC(D, V, ui) {
+  const ranges = { "12 周": 84, "半年": 183, "1 年": 365, "全部": 9999 };
+  const x0 = Math.max(T0, LAST - ranges[ui.crange] * DAY), x1 = LAST;
+  const days = D.days.filter(x => x.d >= x0), wks = D.weeks.filter(w => w.d >= x0 - 6 * DAY);
+  const M = { l: 50, r: 210 };
+  const ev = D.races.filter(r => r.date >= x0).map(r => ({ d: r.date }));
+  const step = Math.max(1, Math.round(days.length / 400));
+  const thin = days.filter((_, i) => i % step === 0 || i === days.length - 1);
+  const spikeDay = V.onset && days.find(x => x.d === V.onset);
+  const panels = [
+    ["周跑量", "km，只算跑", chart({ width: 1120, height: 120, x0, x1, y0: 0, y1: 70, yTicks: [0, 30, 60], m: Object.assign({ t: 8 }, M), noX: true, events: ev,
+      series: [{ type: "bar", data: wks.map(w => ({ d: w.d, v: w.km })), color: "var(--ink)" }],
+      notes: [{ d: V.wkPrev.d, v: V.wkPrev.km, html: `<b>上周 ${f0(V.wkPrev.km)} km</b>前一周只有 ${f0(V.wkPrev2.km)} km` }] })],
+    ["CTL / ATL", `<span style="color:var(--fit)">CTL ${f0(V.last.ctl)}</span> · <span style="color:var(--fat)">ATL ${f0(V.last.atl)}</span>`, chart({ width: 1120, height: 150, x0, x1, y0: 0, y1: 100, yTicks: [0, 50, 100], m: Object.assign({ t: 8 }, M), noX: true, events: ev,
+      series: [{ data: thin.map(x => ({ d: x.d, v: x.ctl })), color: "var(--fit)", w: 2.2 }, { data: thin.map(x => ({ d: x.d, v: x.atl })), color: "var(--fat)", w: 1.4 }],
+      notes: spikeDay ? [{ d: spikeDay.d, v: spikeDay.atl, html: `<b>${md(V.onset)}起负荷突增</b>ATL/CTL = ${V.ratio.toFixed(1)}` }] : [] })],
+    ["TSB", `<span style="color:${V.last.tsb < 0 ? "var(--red)" : "var(--form-pos)"}">${signed(V.last.tsb)} · ${V.tsbWord}</span>`, chart({ width: 1120, height: 90, x0, x1, y0: -40, y1: 25, yTicks: [-30, 0], zero: true, yFmt: v => v === 0 ? "0" : signed(v), m: Object.assign({ t: 6 }, M), noX: true, events: ev,
+      series: [{ type: "area0", data: thin.map(x => ({ d: x.d, v: x.tsb })), pos: "var(--form-pos)", neg: "var(--form-neg)" }] })],
+    ["有氧能力", `心率 145 的配速 · <b class="new">${fmtPace(V.aerNow.aerRoll)}</b>`, chart({ width: 1120, height: 170, x0, x1, ...paceAxis(wks), yFmt: fmtPace, m: Object.assign({ t: 8 }, M), noX: true, events: ev,
+      series: [{ type: "dots", data: wks.map(w => ({ d: w.d, v: w.aer })), color: "var(--dot)" }, { data: wks.map(w => ({ d: w.d, v: w.aerRoll })), color: "var(--ink)", w: 2.2 }],
+      notes: D.races.filter(r => r.date >= x0).slice(-2).map(r => { const w = wks.find(x => x.d <= r.date && r.date < x.d + 7 * DAY); return w && w.aerRoll ? { d: r.date, v: w.aerRoll, html: `<b>${r.name}</b>${fmtDur(r.time)}` } : null; }).filter(Boolean) })],
+    ["温度", "每周平均", chart({ width: 1120, height: 84, x0, x1, y0: 0, y1: 30, yTicks: [0, 25], yFmt: v => `${v}°`, m: Object.assign({ t: 4 }, M), events: ev,
+      series: [{ type: "bar", data: wks.map(w => ({ d: w.d, v: w.temp })), color: "var(--temp)" }] })],
+  ];
+  const p = V.pred;
+  return `${topbar("", false)}
+  <main class="page">
+    <div class="c-top">
+      <div><h1 class="headline ${V.ratio > 1.5 ? "alert" : ""}">${V.ratio > 1.5 ? `负荷突增：ATL 是 CTL 的 ${V.ratio.toFixed(1)} 倍` : `训练负荷${V.tsbWord}`}</h1>
+      <p class="dek">所有图共用一条时间轴。鼠标移到图上，看同一天的全部数值。</p></div>
+      <div>
+        <div class="c-pred ${p.stale ? "stale-wrap" : ""}">${p.rows.map(r => `<div><span class="l">${r.label}</span><span class="num" style="font-size:20px;${p.stale ? "color:var(--ink-3)" : ""}">${fmtDur(r.vdot)}</span><span class="small muted">Garmin ${fmtDur(r.garmin)}</span></div>`).join("")}</div>
+        ${p.stale ? `<p class="small" style="color:var(--red);margin:6px 0 0;text-align:right">预测已过期：6 个月内没有全力比赛</p>` : `<p class="small muted" style="margin:6px 0 0;text-align:right">VDOT ${p.V.toFixed(1)}，依据 ${ymd(p.basis.date)} ${p.basis.name}</p>`}
+      </div>
+    </div>
+    <div class="c-toolbar">
+      <div class="seg" role="group" aria-label="时间范围">${Object.keys(ranges).map(k => `<button data-crange="${k}" aria-pressed="${k === ui.crange}">${k}</button>`).join("")}</div>
+      <div class="legend"><span><i style="border-color:var(--fit)"></i>CTL</span><span><i style="border-color:var(--fat)"></i>ATL</span><span><i class="dotk"></i>每周有氧</span><span><i style="border-top:1px dotted var(--ink)"></i>比赛</span></div>
+      <div class="c-readout" id="readout"><span class="muted">移动鼠标查看某一天</span></div>
+    </div>
+    <div class="c-stack" id="stack" data-x0="${x0}" data-x1="${x1}">
+      ${panels.map(([t, sub, c]) => `<div class="c-panel"><div class="lab"><h3>${t}</h3><div class="small muted">${sub}</div></div>${c.html}</div>`).join("")}
+    </div>
+    <div style="display:flex;gap:24px;margin-top:16px">${how("load")}${how("aer")}${how("pred")}</div>
+  </main>`;
+}
+
+function wireCrosshair(D) {
+  const stack = document.getElementById("stack"); if (!stack) return;
+  const x0 = +stack.dataset.x0, x1 = +stack.dataset.x1, W = 1120, l = 50, r = 210;
+  const out = document.getElementById("readout");
+  stack.addEventListener("mousemove", e => {
+    const svg = stack.querySelector("svg"), box = svg.getBoundingClientRect();
+    const vx = (e.clientX - box.left) / box.width * W;
+    if (vx < l || vx > W - r) return;
+    const d = x0 + (vx - l) / (W - l - r) * (x1 - x0);
+    const day = D.days.reduce((a, b) => Math.abs(b.d - d) < Math.abs(a.d - d) ? b : a);
+    const wk = D.weeks.find(w => w.d <= day.d && day.d < w.d + 7 * DAY);
+    stack.querySelectorAll(".xhair").forEach(ln => { ln.setAttribute("x1", vx); ln.setAttribute("x2", vx); ln.style.opacity = 1; });
+    out.innerHTML = `<span><b>${ymd(day.d)}</b></span><span>周跑量 <b>${f1(wk.km)}</b> km</span><span>CTL <b>${f0(day.ctl)}</b></span><span>ATL <b>${f0(day.atl)}</b></span><span>TSB <b>${signed(day.tsb)}</b></span><span>有氧 <b>${fmtPace(wk.aer)}</b></span><span>${f0(wk.temp)}°C</span>`;
+  });
+  stack.addEventListener("mouseleave", () => stack.querySelectorAll(".xhair").forEach(ln => ln.style.opacity = 0));
+}
+
+// ======================================================================
+// Empty state (shared): nothing synced yet
+// ======================================================================
+function renderEmpty() {
+  return `${topbar("总览")}
+  <main class="page"><div class="empty">
+    <h1 class="headline">还没有数据</h1>
+    <p class="dek">仪表盘读的是分析库 <code>running.sqlite</code>，现在它还不存在。</p>
+    <ol>
+      <li>在终端运行 <code>runsync sync</code>。第一次运行会回填全部历史，大约 2 小时，可以中途打断，再次运行会接着拉。</li>
+      <li>Garmin 的三项参照指标需要先运行一次 <code>runsync login</code>。</li>
+      <li>同步完成后刷新本页。</li>
+    </ol>
+    <p class="small muted">数据目录：<code>%USERPROFILE%\\running-data</code>（由 <code>RUNNING_DATA_DIR</code> 指定）</p>
+  </div></main>`;
+}
+
+// ======================================================================
+// Switcher and render loop
+// ======================================================================
+const VARIANTS = [["A", "顶部状态带"], ["B", "侧栏分页"], ["C", "共享时间轴"]];
+const qs = new URLSearchParams(location.search);
+let variant = VARIANTS.some(v => v[0] === qs.get("variant")) ? qs.get("variant") : "A";
+let state = ["normal", "stale", "empty"].includes(qs.get("state")) ? qs.get("state") : "normal";
+const ui = { range: "2 年", section: "负荷", crange: "半年" };
+let D = null, VIEW = null;
+
+function render() {
+  D = genData(state);
+  VIEW = D && view(D);
+  const app = document.getElementById("app");
+  app.innerHTML = !D ? renderEmpty() : variant === "A" ? renderA(D, VIEW, ui) : variant === "B" ? renderB(D, VIEW, ui) : renderC(D, VIEW, ui);
+  if (D && variant === "C") wireCrosshair(D);
+  document.getElementById("vlabel").textContent = `${variant}（${VARIANTS.find(v => v[0] === variant)[1]}）`;
+  document.getElementById("state").value = state;
+  const u = new URL(location); u.searchParams.set("variant", variant); u.searchParams.set("state", state); history.replaceState(null, "", u);
+}
+
+function cycle(dir) { const i = VARIANTS.findIndex(v => v[0] === variant); variant = VARIANTS[(i + dir + VARIANTS.length) % VARIANTS.length][0]; render(); }
+document.getElementById("prev").onclick = () => cycle(-1);
+document.getElementById("next").onclick = () => cycle(1);
+document.getElementById("state").onchange = e => { state = e.target.value; render(); };
+document.addEventListener("keydown", e => {
+  if (e.target.closest("input,textarea,select,[contenteditable]")) return;
+  if (e.key === "ArrowLeft") cycle(-1); if (e.key === "ArrowRight") cycle(1);
+});
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-range],[data-section],[data-crange],[data-seen]"); if (!t) return;
+  e.preventDefault();
+  if (t.dataset.range) ui.range = t.dataset.range;
+  if (t.dataset.section) ui.section = t.dataset.section;
+  if (t.dataset.crange) ui.crange = t.dataset.crange;
+  if (t.hasAttribute("data-seen")) { document.body.classList.add("seen"); return; }
+  render();
+});
+render();
+</script>
+</body>
+</html>
