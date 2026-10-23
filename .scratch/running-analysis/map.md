@@ -34,6 +34,7 @@ Label: wayfinder:map
 - [有氧能力指标的定义](issues/06-aerobic-metric.md)：主指标是参考心率 145 bpm 下的 GAP 配速（每次跑步在稳态段上拟合速度–心率直线）；按步频把每秒分成跑和走，配速和周跑量只算跑的部分；只算户外路跑；坡度用 Minetti 校正，温度第一版不校正只显示；按周取中位数，加 4 周滚动趋势线。
 - [训练负荷模型与成绩预测方法](issues/07-load-and-prediction.md)：所有带心率的活动都算逐秒 Banister TRIMP（HRmax 192、HRrest 55 固定，参数按生效日期配置），CTL 42/ATL 7/TSB 只作相对指标；周跑量按自然周统计全部跑步；成绩预测用手工 `races.csv`，VDOT 为主、Riegel 对照，全马加周跑量修正，Garmin 预测作参照。
 - [项目骨架与依赖](issues/11-project-skeleton.md)：仓库里放 `importer/`（Rust CLI `runsync`，blocking reqwest、手写 `user_version` 迁移）和 `analysis/`（uv、Python 3.14、polars + DuckDB、Jupyter）两个项目；个人数据、`config.toml`、`races.csv` 和 key 都放在 `RUNNING_DATA_DIR` 指向的仓库外数据目录。
+- [分析仪表盘的设计](issues/08-dashboard-design.md)：报纸体育版视觉风格，布局选变体 A（首屏三栏：负荷、周跑量、成绩预测；下面是全宽有氧趋势图，带十字线读数），处理未同步、预测过期、数据不足三种状态；技术栈定为 FastAPI 加静态前端（手写 SVG），Streamlit 还原不了批注和排版；原型在 `prototype/dashboard` 分支。
 
 ## Not yet specified
 
