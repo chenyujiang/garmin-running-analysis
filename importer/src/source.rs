@@ -2,7 +2,7 @@
 //! implementation is the Personal API client in [`crate::personal_api`],
 //! tests use an in-memory fake.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 
 /// One entry of the activity list, newest first.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,4 +50,8 @@ pub trait ActivitySource {
     /// The activity's FIT file, or `None` when it has none (e.g. a manually
     /// entered activity).
     fn activity_fit(&mut self, activity_id: i64) -> Result<Option<Vec<u8>>, SourceError>;
+
+    /// Daily summaries for the inclusive date range, exactly as served: a
+    /// JSON object whose `data` array holds one row per day that has data.
+    fn daily_summaries(&mut self, start: NaiveDate, end: NaiveDate) -> Result<String, SourceError>;
 }

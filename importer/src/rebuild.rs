@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::activity::Activity;
+use crate::daily;
 use crate::data_dir::DataDir;
 use crate::db;
 use crate::fit::ActivityFit;
@@ -16,6 +17,8 @@ pub struct RebuildReport {
     pub activities: usize,
     /// FIT files loaded into `records` and `laps`.
     pub fit_files: usize,
+    /// Daily summary files loaded into `daily_wellness` (`null` days excluded).
+    pub daily_summaries: usize,
     /// Files (JSON or FIT) that failed to load. They stay in the raw archive.
     pub skipped: usize,
 }
@@ -44,6 +47,19 @@ pub fn rebuild(data_dir: &DataDir) -> Result<RebuildReport> {
     for path in files_with_extension(&activities_dir, "fit")? {
         match load_fit(&tx, &path) {
             Ok(()) => report.fit_files += 1,
+            Err(err) => {
+                log::warn!("skipping {}: {err:#}", path.display());
+                report.skipped += 1;
+            }
+        }
+    }
+    for path in files_with_extension(&data_dir.personal_api_daily_summaries_dir(), "json")? {
+        let loaded = std::fs::read_to_string(&path)
+            .map_err(anyhow::Error::from)
+            .and_then(|text| daily::store_day(&tx, &text));
+        match loaded {
+            Ok(true) => report.daily_summaries += 1,
+            Ok(false) => {}
             Err(err) => {
                 log::warn!("skipping {}: {err:#}", path.display());
                 report.skipped += 1;

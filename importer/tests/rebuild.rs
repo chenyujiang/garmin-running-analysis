@@ -193,3 +193,79 @@ fn rebuild_reports_a_missing_config_file() {
     assert!(err.contains("config.toml"), "{err}");
     assert!(!dir.path().join("running.sqlite").exists());
 }
+
+#[test]
+fn rebuild_loads_daily_summaries_and_skips_days_without_data() {
+    let dir = data_dir_from_fixture();
+
+    let out = runsync(dir.path(), &["rebuild"]);
+    assert!(out.status.success(), "rebuild failed: {}", stderr(&out));
+    assert!(
+        common::stdout(&out).contains("1 daily summaries"),
+        "{}",
+        common::stdout(&out)
+    );
+
+    let db = open_db(dir.path());
+    let n: i64 = db
+        .query_row("SELECT count(*) FROM daily_wellness", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(n, 1);
+    let row: (String, i64, i64, i64, f64, i64, i64, i64, f64) = db
+        .query_row(
+            "SELECT calendar_date, resting_hr_bpm, max_hr_bpm, steps, steps_distance_m,
+                    calories_total_kcal, intensity_vigorous_min, body_battery_max,
+                    respiration_avg_brpm
+             FROM daily_wellness",
+            [],
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                    r.get(6)?,
+                    r.get(7)?,
+                    r.get(8)?,
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        row,
+        (
+            "2026-10-07".into(),
+            53,
+            176,
+            10234,
+            8120.4,
+            2264,
+            34,
+            91,
+            15.0
+        )
+    );
+}
+
+#[test]
+fn storing_the_same_day_twice_replaces_its_row() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let conn = runsync::db::open(&dir.path().join("running.sqlite")).unwrap();
+    let day = |rhr: i64| {
+        format!(r#"{{"calendarDate":"2026-10-07","heartRate":{{"restingValue":{rhr}}}}}"#)
+    };
+
+    assert!(runsync::daily::store_day(&conn, &day(55)).unwrap());
+    assert!(runsync::daily::store_day(&conn, &day(52)).unwrap());
+
+    let rows: Vec<(String, i64)> = conn
+        .prepare("SELECT calendar_date, resting_hr_bpm FROM daily_wellness")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(rows, vec![("2026-10-07".to_string(), 52)]);
+}
