@@ -1,5 +1,4 @@
-//! CLI behaviour that needs no network: `sync` without a key, and the
-//! `login` placeholder.
+//! CLI behaviour that needs no network: `sync` without a key or token.
 
 mod common;
 
@@ -25,10 +24,14 @@ fn sync_with_an_empty_key_file_is_refused() {
     assert!(stderr(&out).contains("empty"), "{}", stderr(&out));
 }
 
+/// `runsync login` itself is interactive and talks to Garmin, so it is not
+/// run here.
 #[test]
-fn login_says_it_is_not_implemented_yet() {
+fn sync_without_a_garminconnect_token_skips_it_and_says_how_to_enable_it() {
     let dir = data_dir_from_fixture();
-    let out = runsync(dir.path(), &["login"]);
-    assert!(out.status.success());
-    assert!(stdout(&out).contains("尚未实现"));
+    let out = runsync(dir.path(), &["sync"]);
+    assert!(!out.status.success(), "the personal_api key is missing");
+    let out = stdout(&out);
+    assert!(out.contains("garminconnect: skipped"), "{out}");
+    assert!(out.contains("runsync login"), "{out}");
 }

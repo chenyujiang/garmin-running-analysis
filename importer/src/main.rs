@@ -5,6 +5,8 @@ use clap::{Parser, Subcommand};
 
 use runsync::config::Config;
 use runsync::data_dir::DataDir;
+use runsync::garmin_metrics::{MetricsSyncOptions, sync_garmin_metrics};
+use runsync::garminconnect::GarminConnectScript;
 use runsync::personal_api::{ApiKey, PersonalApiClient};
 use runsync::source::SourceError;
 use runsync::sync::{SyncOptions, sync_activities};
@@ -43,15 +45,21 @@ fn run(cli: Cli) -> Result<()> {
     let config = data_dir.load_config()?;
     match cli.command {
         Command::Sync => sync(&data_dir, &config),
-        Command::Login => not_yet("login"),
+        Command::Login => {
+            let token_dir = data_dir.garminconnect_token_dir();
+            runsync::garminconnect::login(&token_dir)?;
+            println!("garminconnect token stored in {}", token_dir.display());
+            Ok(())
+        }
         Command::Rebuild => {
             let report = runsync::rebuild::rebuild(&data_dir)?;
             println!(
-                "rebuilt {}: {} activities, {} FIT files, {} daily summaries, {} files skipped",
+                "rebuilt {}: {} activities, {} FIT files, {} daily summaries, {} Garmin metric files, {} files skipped",
                 data_dir.analysis_db_path().display(),
                 report.activities,
                 report.fit_files,
                 report.daily_summaries,
+                report.garmin_metrics,
                 report.skipped
             );
             Ok(())
@@ -59,7 +67,57 @@ fn run(cli: Cli) -> Result<()> {
     }
 }
 
+/// Both sources run on every sync; one failing does not stop the other.
 fn sync(data_dir: &DataDir, config: &Config) -> Result<()> {
+    let personal = sync_personal_api(data_dir, config);
+    if let Err(err) = &personal {
+        eprintln!("error: {err:#}");
+    }
+    let metrics = sync_garminconnect(data_dir, config);
+    match (personal, metrics) {
+        (Ok(()), metrics) => metrics,
+        (Err(_), Ok(())) => bail!("personal_api sync failed (see above)"),
+        (Err(_), Err(err)) => Err(err.context("personal_api sync failed too (see above)")),
+    }
+}
+
+fn sync_garminconnect(data_dir: &DataDir, config: &Config) -> Result<()> {
+    let token_dir = data_dir.garminconnect_token_dir();
+    if !token_dir.is_dir() {
+        println!(
+            "garminconnect: skipped, no token in {}. Run `runsync login` once to enable it.",
+            token_dir.display()
+        );
+        return Ok(());
+    }
+    let interval = Duration::from_secs_f64(config.sync.garminconnect_interval_s.max(0.0));
+    let mut source = GarminConnectScript::new(token_dir, interval);
+    let options = MetricsSyncOptions {
+        today: chrono::Local::now().date_naive(),
+    };
+    let report = sync_garmin_metrics(data_dir, &mut source, &options)?;
+    drop(source);
+    println!(
+        "garminconnect: {} metric responses, {} could not be parsed",
+        report.fetched, report.unparsable
+    );
+    match report.stopped_by {
+        None => Ok(()),
+        Some(SourceError::RateLimited(reason)) => bail!(
+            "garminconnect rate limited ({reason}); stopped without retrying. \
+             Run `runsync sync` again later; it resumes where it stopped."
+        ),
+        Some(SourceError::CredentialsRejected) => bail!(
+            "the garminconnect token is missing, expired or was rejected. \
+             Run `runsync login` to log in again."
+        ),
+        Some(SourceError::Other(err)) => Err(err.context(
+            "garminconnect sync stopped; run `runsync sync` again to resume where it stopped",
+        )),
+    }
+}
+
+fn sync_personal_api(data_dir: &DataDir, config: &Config) -> Result<()> {
     let key_path = data_dir.personal_api_key_path();
     let key = ApiKey::load(&key_path)?;
     let interval = Duration::from_secs_f64(config.sync.personal_api_interval_s.max(0.0));
@@ -88,9 +146,4 @@ fn sync(data_dir: &DataDir, config: &Config) -> Result<()> {
             "Personal API sync stopped; run `runsync sync` again to resume where it stopped",
         )),
     }
-}
-
-fn not_yet(command: &str) -> Result<()> {
-    println!("runsync {command}: 尚未实现 (not implemented yet)");
-    Ok(())
 }

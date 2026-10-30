@@ -1,6 +1,8 @@
 //! The data source seam. `sync` only talks to an [`ActivitySource`]; the real
 //! implementation is the Personal API client in [`crate::personal_api`],
-//! tests use an in-memory fake.
+//! tests use an in-memory fake. The garminconnect metrics sync talks to a
+//! [`MetricsSource`] in the same way (real implementation:
+//! [`crate::garminconnect`]); both share [`SourceError`].
 
 use chrono::{DateTime, NaiveDate, Utc};
 
@@ -54,4 +56,40 @@ pub trait ActivitySource {
     /// Daily summaries for the inclusive date range, exactly as served: a
     /// JSON object whose `data` array holds one row per day that has data.
     fn daily_summaries(&mut self, start: NaiveDate, end: NaiveDate) -> Result<String, SourceError>;
+}
+
+/// A Garmin metric only the garminconnect script can fetch. Each is archived
+/// as `raw/garminconnect/<key>/<YYYY-MM-DD>.json`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GarminMetric {
+    TrainingStatus,
+    Vo2Max,
+    RacePredictor,
+}
+
+impl GarminMetric {
+    pub const ALL: [GarminMetric; 3] = [
+        GarminMetric::TrainingStatus,
+        GarminMetric::Vo2Max,
+        GarminMetric::RacePredictor,
+    ];
+
+    /// The archive directory name, also the script's metric argument.
+    pub fn key(self) -> &'static str {
+        match self {
+            GarminMetric::TrainingStatus => "training_status",
+            GarminMetric::Vo2Max => "vo2max",
+            GarminMetric::RacePredictor => "race_predictor",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|m| m.key() == key)
+    }
+}
+
+/// The garminconnect data source: Garmin's own metrics, one day at a time.
+pub trait MetricsSource {
+    /// The metric's JSON for `date`, exactly as served.
+    fn metric(&mut self, metric: GarminMetric, date: NaiveDate) -> Result<String, SourceError>;
 }

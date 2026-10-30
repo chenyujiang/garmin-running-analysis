@@ -44,7 +44,7 @@ pub enum Failure {
 }
 
 impl Failure {
-    fn error(&self) -> SourceError {
+    pub fn error(&self) -> SourceError {
         match self {
             Failure::RateLimited => SourceError::RateLimited("HTTP 429".into()),
             Failure::CredentialsRejected => SourceError::CredentialsRejected,
