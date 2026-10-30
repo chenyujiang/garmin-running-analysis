@@ -25,10 +25,11 @@
   - 递推从第一个活动日开始，初值为 0。选择写进接口的 `method.recursion` 和 `recursion_formula`，"负荷怎么算的"直接显示。
 - **TSB = 昨天的 CTL − 昨天的 ATL**，即 TrainingPeaks 的 Form，表示今天出门前的状态。
 - **ATL/CTL > 1.5 判为突增**（要求 CTL > 0）。`spike_since` 是截至当前这段连续突增的起始日，用于标题下的建议和图上的批注。
-- **逐秒 TRIMP**：Δt 是到下一条 record 的间隔，上限 10 秒（暂停不算），最后一条按 1 秒算。x 截断到 [0, 1]，原文没有规定这一点。只用男性系数 0.64/1.92。
-- **缺失**：没有心率记录的活动（包括只有详情 JSON、没有 FIT 的活动）不用平均心率回退，记为缺失，原因是"没有心率"。活动当天没有生效的生理参数也记为缺失，原因是"该日期没有生效的生理参数"。两种都不计入负荷，在 `missing_hr_count` 和 `missing_hr_recent` 里返回。
+- **逐秒 TRIMP**：Δt 是到下一条 record 的间隔，上限是 `[load] max_sample_gap_s`，默认 10 秒（暂停不算），最后一条按 1 秒算。x 截断到 [0, 1]，原文没有规定这一点。只用男性系数 0.64/1.92。
+- **摘要心率回退**（code review 后加入）：没有心率记录、但摘要里有平均心率和时长的活动，用平均心率形式 `duration_min · x · 0.64 · e^(1.92x)` 估算，计入负荷，在 `summary_hr_count` 和 `summary_hr_recent` 里返回，界面会注明。
+- **缺失**：既没有心率记录、也没有摘要平均心率的活动记为缺失，原因是"没有心率"。活动当天没有生效的生理参数也记为缺失，原因是"该日期没有生效的生理参数"。两种都不计入负荷，在 `missing_hr_count` 和 `missing_hr_recent` 里返回。
 - **所有活动类型都计入**，按 `start_time_local` 的日期汇总到每天。
-- **接口字段**：`as_of`、`has_data`、`current{date,ctl,atl,tsb,ratio}`、`spike`、`spike_since`、`series[{date,trimp,ctl,atl,tsb}]`（最近 84 天）、`missing_hr_count`、`missing_hr_recent`、`config_error`、`method{...}`。`today` 之后的活动不计入，`as_of` 字段回显实际使用的日期。
+- **接口字段**：`today`、`has_data`、`current{date,ctl,atl,tsb,ratio}`、`spike`、`spike_since`、`series[{date,trimp,ctl,atl,tsb}]`（最近 84 天）、`missing_hr_count`、`missing_hr_recent`、`summary_hr_count`、`summary_hr_recent`、`config_error`、`method{name,description,params}`。`today` 之后的活动不计入，`today` 字段回显实际使用的日期（与其他端点一致）。
 - **测试向量**取自共享笔记 `formulas.md` 第 1 节（sport-activities-features PR #231 的修正值：32.05 和 261.92）。CTL/ATL 的期望值是按 1/N 递推独立手算的闭式结果。
 - **未核实**：Banister 系数没读到原文（Morton 1990、Banister 1991 都返回 403 或只有书），只有同行评审的二手引用，各处一致。
-- **附带发现，不属于本 ticket**：stdout 不是 UTF-8 时，`running-dashboard` 的 `main()` 在 `print` 时报 `UnicodeEncodeError: 'charmap' codec can't encode characters`。设 `PYTHONIOENCODING=utf-8` 可以绕过。
+- **附带发现，不属于本 ticket**：stdout 不是 UTF-8 时，`running-dashboard` 的 `main()` 在 `print` 时报 `UnicodeEncodeError: 'charmap' codec can't encode characters`。已在 code review 修复中处理（`main()` 把 stdout 改为 UTF-8）。
