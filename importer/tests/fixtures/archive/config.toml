@@ -1,0 +1,8 @@
+[aerobic]
+reference_hr = 145
+
+[[physiology]]
+effective_from = 2021-08-01
+hr_max = 192
+hr_rest = 55
+lthr = 170

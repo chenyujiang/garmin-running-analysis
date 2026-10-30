@@ -1,0 +1,12 @@
+{
+  "activityId": 1002,
+  "activityName": "Fixture strength session without HR",
+  "activityTypeDTO": { "typeId": 13, "typeKey": "strength_training", "parentTypeId": 29 },
+  "timeZoneUnitDTO": { "timeZone": "Pacific/Auckland" },
+  "summaryDTO": {
+    "startTimeLocal": "2026-07-01T07:30:00.0",
+    "startTimeGMT": "2026-06-30T19:30:00.0",
+    "duration": 1800.0,
+    "elapsedDuration": 1800.0
+  }
+}

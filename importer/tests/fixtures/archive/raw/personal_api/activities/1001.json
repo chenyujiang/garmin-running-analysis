@@ -1,0 +1,21 @@
+{
+  "activityId": 1001,
+  "activityName": "Fixture easy run",
+  "activityTypeDTO": { "typeId": 1, "typeKey": "running", "parentTypeId": 17 },
+  "timeZoneUnitDTO": { "timeZone": "Pacific/Auckland" },
+  "summaryDTO": {
+    "startTimeLocal": "2026-10-08T11:08:46.0",
+    "startTimeGMT": "2026-10-07T22:08:46.0",
+    "distance": 10012.5,
+    "duration": 3605.25,
+    "movingDuration": 3550.0,
+    "elapsedDuration": 3700.0,
+    "elevationGain": 87.0,
+    "elevationLoss": 85.0,
+    "averageSpeed": 2.777,
+    "maxSpeed": 4.1,
+    "averageHR": 146.0,
+    "maxHR": 171.0,
+    "calories": 712.0
+  }
+}
