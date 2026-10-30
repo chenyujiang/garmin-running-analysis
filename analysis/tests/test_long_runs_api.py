@@ -111,6 +111,43 @@ def test_other_sports_are_not_long_runs(analysis_db, client_factory):
     assert list(by_id(get_long_runs(client_factory))) == [3]
 
 
+def test_trail_and_treadmill_long_runs_are_listed_without_ef(analysis_db, client_factory):
+    # GAP, EF and decoupling are for outdoor road runs only.
+    add_hr_run(analysis_db, 1, "2026-10-21T07:00:00", [steady(3600)], "trail_running")
+    add_hr_run(analysis_db, 2, "2026-10-22T07:00:00", [steady(3600)], "treadmill_running")
+    add_hr_run(analysis_db, 3, "2026-10-23T07:00:00", [steady(3600)], "street_running")
+
+    runs = by_id(get_long_runs(client_factory))
+
+    assert set(runs) == {1, 2, 3}
+    for i in (1, 2):
+        assert runs[i]["ef"] is None
+        assert runs[i]["decoupling_pct"] is None
+        assert runs[i]["steady_s"] == 0
+    assert runs[3]["ef"] == pytest.approx(180 / 145, abs=1e-6)
+
+
+def test_heart_rate_outside_the_reference_band_is_not_steady(analysis_db, client_factory):
+    # Reference HR 145 +- 15 bpm: a whole run at 162 bpm has no steady seconds
+    # (162 is 8 bpm from the 170 spm cadence, so cadence lock is not the reason).
+    add_hr_run(analysis_db, 1, "2026-10-22T07:00:00", [steady(3600, hr=162)])
+    # 159 bpm is still inside the band.
+    add_hr_run(analysis_db, 2, "2026-10-23T07:00:00", [steady(3600, hr=159)])
+
+    runs = by_id(get_long_runs(client_factory))
+
+    assert runs[1]["ef"] is None
+    assert runs[1]["steady_s"] == 0
+    assert runs[2]["ef"] == pytest.approx(180 / 159, abs=1e-6)
+
+
+def test_the_method_note_names_the_heart_rate_band(analysis_db, client_factory):
+    params = get_long_runs(client_factory)["method"]["params"]
+
+    assert params["hr_band"] == {"reference_hr": 145, "hr_band_bpm": 15.0}
+    assert params["activity_types"] == ["running", "street_running"]
+
+
 def test_a_long_run_without_heart_rate_has_no_ef(analysis_db, client_factory):
     add_hr_run(analysis_db, 1, "2026-10-20T07:00:00", [steady(4200, hr=None)])
     insert_activity(analysis_db, 2, "2026-10-21T07:00:00", distance_m=12000, duration_s=4000)

@@ -86,6 +86,38 @@ def test_activities_without_heart_rate_are_missing_and_add_no_load(analysis_db, 
     assert {m["reason"] for m in body["missing_hr_recent"]} == {"没有心率"}
 
 
+def test_an_activity_with_only_a_summary_heart_rate_counts_from_its_average(
+    analysis_db, client_factory
+):
+    # No per-second records, but Garmin's summary has an average HR: one hour
+    # at HRmax from the summary is the same 261.92 as the per-second sum.
+    insert_activity(analysis_db, 1, "2026-10-01", duration_s=3600, avg_hr_bpm=192)
+    # Records without HR, summary average 150 bpm, 30 min.
+    insert_run(analysis_db, 2, "2026-10-02", heart_rate=None, seconds=1800, avg_hr_bpm=150)
+
+    body = get_load(client_factory, "2026-10-02")
+
+    assert day(body, "2026-10-01")["trimp"] == pytest.approx(HOUR_AT_MAX, abs=0.01)
+    # x = 95/137 = 0.693431; 30 · 0.693431 · 0.64 · e^(1.92·0.693431) = 50.4102
+    assert day(body, "2026-10-02")["trimp"] == pytest.approx(50.4102, abs=0.01)
+    assert body["missing_hr_count"] == 0
+    assert body["summary_hr_count"] == 2
+    assert [a["activity_id"] for a in body["summary_hr_recent"]] == [1, 2]
+
+
+def test_the_pause_cap_comes_from_config(data_dir, analysis_db, client_factory):
+    with (data_dir / "config.toml").open("a", encoding="utf-8") as f:
+        f.write("\n[load]\nmax_sample_gap_s = 5\n")
+    # Samples every 10 s: each counts only 5 s under the configured cap.
+    insert_run(analysis_db, 1, "2026-10-01", heart_rate=192, every_s=10)
+
+    body = get_load(client_factory, "2026-10-01")
+
+    # 360 samples: 359 gaps capped at 5 s, the last one counts 1 s.
+    assert day(body, "2026-10-01")["trimp"] == pytest.approx(HOUR_AT_MAX * 1796 / 3600, abs=0.01)
+    assert body["method"]["params"]["max_sample_gap_s"] == 5
+
+
 def test_every_activity_type_with_heart_rate_counts(analysis_db, client_factory):
     insert_run(analysis_db, 1, "2026-10-01", heart_rate=192, seconds=1800)
     insert_run(
@@ -134,8 +166,8 @@ def test_each_activity_uses_the_physiology_in_effect_on_its_date(
     assert day(body, "2026-05-31")["trimp"] == pytest.approx(201.9894, abs=0.01)
     assert day(body, "2026-06-01")["trimp"] == pytest.approx(HOUR_AT_MAX, abs=0.01)
     assert body["missing_hr_count"] == 1
-    assert body["method"]["hr_max"] == 180
-    assert body["method"]["physiology_effective_from"] == "2026-06-01"
+    assert body["method"]["params"]["hr_max"] == 180
+    assert body["method"]["params"]["physiology_effective_from"] == "2026-06-01"
 
 
 def test_the_series_covers_the_last_12_weeks_including_rest_days(analysis_db, client_factory):
@@ -165,11 +197,14 @@ def test_the_method_names_the_formula_and_current_parameters(analysis_db, client
 
     m = get_load(client_factory, "2026-10-01")["method"]
 
-    assert (m["trimp_a"], m["trimp_b"]) == (0.64, 1.92)
-    assert (m["hr_rest"], m["hr_max"]) == (55, 192)
-    assert (m["ctl_days"], m["atl_days"], m["spike_ratio"]) == (42, 7, 1.5)
-    assert m["recursion"] == "1/N"
-    assert "Banister" in m["trimp"]
+    assert "Banister" in m["name"]
+    assert "0.64" in m["description"] and "1/N" not in m["name"]
+    p = m["params"]
+    assert (p["trimp_a"], p["trimp_b"]) == (0.64, 1.92)
+    assert (p["hr_rest"], p["hr_max"]) == (55, 192)
+    assert (p["ctl_days"], p["atl_days"], p["spike_ratio"]) == (42, 7, 1.5)
+    assert p["recursion"] == "1/N"
+    assert p["max_sample_gap_s"] == 10
 
 
 @pytest.mark.parametrize("make_db", [False, True])
@@ -183,7 +218,7 @@ def test_no_database_or_an_empty_one_has_no_load(data_dir, client_factory, make_
     assert body["current"] is None
     assert body["spike"] is False
     assert body["series"] == []
-    assert body["method"]["hr_max"] == 192
+    assert body["method"]["params"]["hr_max"] == 192
 
 
 def test_today_defaults_to_the_real_date(analysis_db, client_factory):
@@ -191,7 +226,7 @@ def test_today_defaults_to_the_real_date(analysis_db, client_factory):
 
     body = client_factory().get("/api/load").json()
 
-    assert body["as_of"] == date.today().isoformat()
+    assert body["today"] == date.today().isoformat()
     assert body["current"]["date"] == date.today().isoformat()
 
 

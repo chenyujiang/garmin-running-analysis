@@ -77,7 +77,6 @@ function summary(s) {
 function overview(s) {
   return h("section", {},
     h("h1", { class: "headline" }, `已有 ${s.activity_count} 个活动`),
-    h("p", { class: "dek" }, "各项分析会在后续版本里陆续出现在这里。"),
     h("div", { class: "stat-line" },
       stat("活动", h("span", { class: "big" }, String(s.activity_count))),
       stat("最近一次同步", h("span", { class: "num" }, s.last_sync_utc ? fmtDateTime(s.last_sync_utc) : "未知")),

@@ -4,14 +4,15 @@ A personal running analysis tool for one Garmin account. It pulls the full activ
 
 - **Aerobic fitness trend**: grade-adjusted pace at a fixed reference heart rate, fitted on steady-state seconds of each run, shown as weekly medians with a 4-week rolling median.
 - **Training load**: Banister TRIMP per activity, CTL/ATL/TSB trends, and a load-spike warning.
-- **Weekly volume**: running and walking distance per week.
+- **Weekly volume**: running distance per week (walking seconds left out), with running pace.
+- **Long runs**: efficiency factor and aerobic decoupling for runs of an hour or more.
 - **Race prediction**: VDOT from recent all-out races, with Riegel and Garmin's Race Predictor for comparison.
 
 Every number links back to a documented formula and configurable parameters. Garmin's own figures appear only as a reference.
 
 ## Status
 
-Implementation is under way, one ticket at a time (see `.scratch/running-tool/issues/`). The skeleton is in place: `runsync rebuild` turns a raw archive into the analysis database, and the dashboard shows either an empty state or the activity count and last sync time. `runsync sync` and `runsync login` exist but only print "not implemented yet".
+All commands work: `runsync sync` pulls activities and daily summaries from the Personal API and a few metrics from garminconnect, `runsync login` stores a garminconnect token, and `runsync rebuild` rebuilds the analysis database from the raw archive. The dashboard shows weekly volume, training load, the aerobic trend, long runs and race predictions. Tickets live in `.scratch/running-tool/issues/`; deviations from the spec that still need a decision are listed in `.scratch/running-tool/deviations.md`.
 
 | Path | Contents |
 |---|---|
@@ -30,7 +31,7 @@ Supporting material lives on branches that are never merged:
 
 Most documents are written in Chinese.
 
-## Planned architecture
+## Architecture
 
 - **Rust CLI (`runsync`)**: syncs from the official Garmin Connect Personal API, stores raw FIT and JSON files unchanged in a data directory outside the repository, and builds a SQLite analysis database from them.
 - **Python analysis package**: polars and DuckDB over the read-only analysis database; also usable from Jupyter.
@@ -38,23 +39,55 @@ Most documents are written in Chinese.
 
 ## Data directory
 
-Both projects find their data through `RUNNING_DATA_DIR`, defaulting to `%USERPROFILE%\running-data`. It holds `config.toml`, the raw archive (`raw/`), credentials (`secrets/`) and the analysis database `running.sqlite`. Minimal `config.toml`:
+Both projects find their data through `RUNNING_DATA_DIR`, defaulting to `%USERPROFILE%unning-data`. It holds `config.toml`, the hand-kept `races.csv`, the raw archive (`raw/`), credentials (`secrets/`), cooldown markers (`state/`) and the analysis database `running.sqlite`.
+
+`config.toml` (only `[[physiology]]` is required; every other key shows its default):
 
 ```toml
-[aerobic]
-reference_hr = 145
-
-[[physiology]]
+[[physiology]]                  # one block per change; each activity uses the set in effect on its date
 effective_from = 2021-08-01
 hr_max = 192
 hr_rest = 55
 lthr = 170
 
+[aerobic]
+reference_hr = 145              # GAP pace is read off at this heart rate
+warmup_s = 600                  # moving time dropped at the start of each run
+smoothing_s = 30                # trailing mean for HR, speed and altitude
+hr_band_bpm = 15                # steady seconds: smoothed HR within reference_hr +- this
+speed_window_s = 60
+max_speed_change = 0.05         # (max - min) / mean of smoothed speed in that window
+min_hr_spm_gap = 5              # |HR - spm| below this looks like cadence lock
+min_steady_s = 600              # runs with less steady time are left out
+grade_window_s = 30
+max_grade = 0.15
+min_runs_per_week = 2
+rolling_weeks = 4
+
+[run_walk]
+cadence_spm = 140               # smoothed cadence (both feet) at or above this is running
+smoothing_s = 10
+min_walk_s = 10                 # shorter walking stretches still count as running
+pause_gap_s = 30                # a longer gap between samples is a pause
+
+[load]
+max_sample_gap_s = 10           # a longer gap between HR samples counts only this long in TRIMP
+
 [sync]
-personal_api_interval_s = 1.5   # pause between Personal API requests (default 1.5)
+personal_api_interval_s = 1.5   # pause between Personal API requests
+garminconnect_interval_s = 5.0  # pause between garminconnect requests
 ```
 
-`runsync sync` reads the Personal API key from `secrets/personal_api.key` (the bare key on one line; generate it at https://connect.garmin.com/app/settings/personalApiToken). It downloads every activity's detail JSON and FIT into `raw/personal_api/activities/`, loading each file into `running.sqlite` straight away. Rerun it after an interruption to resume. Later runs fetch only new activities and refetch details from the last 7 days.
+`races.csv` lists your races by hand, UTF-8 (saving from Excel with a BOM is fine). First line and an example:
+
+```csv
+date,activity_id,distance_m,time_s,all_out,note
+2026-04-12,21234567890,21097.5,5880,yes,city half marathon
+```
+
+`activity_id` may be empty; `all_out` is `yes` or `no` (also `true`/`false`, `1`/`0`, `y`/`n`, `是`/`否`). Only all-out races from the last 6 months drive the predictions. The dashboard says when the file is missing or malformed.
+
+`runsync sync` reads the Personal API key from `secrets/personal_api.key` (the bare key on one line; generate it at https://connect.garmin.com/app/settings/personalApiToken). It downloads every activity's detail JSON and FIT into `raw/personal_api/activities/` and daily summaries into `raw/personal_api/daily_summaries/`, loading each file into `running.sqlite` straight away. Rerun it after an interruption to resume. Later runs fetch only new activities and refetch details from the last 7 days. It then fetches garminconnect metrics (race predictor and others) into `raw/garminconnect/` if `runsync login` has stored a token in `secrets/garminconnect/`; without a token that source is skipped. A source that is rate limited stops at once and is skipped for 24 hours (marker in `state/`, delete it to retry sooner); a rejected key or token ends with how to replace it.
 
 ## Common commands
 
@@ -62,7 +95,8 @@ Importer (run in `importer/`):
 
 ```sh
 cargo build --release          # binary at target/release/runsync.exe
-cargo run -- sync              # fetch new activities from the Personal API (RUST_LOG=debug for detail)
+cargo run -- sync              # fetch new data from the Personal API and garminconnect (RUST_LOG=debug for detail)
+cargo run -- login             # log in to garminconnect once and store the token (interactive)
 cargo run -- rebuild           # delete running.sqlite and rebuild it from raw/, offline
 cargo test
 cargo fmt
