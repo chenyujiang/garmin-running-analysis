@@ -7,7 +7,8 @@ import { h } from "./dom.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-/** The section element; it fills itself once the data arrives. */
+/** The section element; it fills itself once the data arrives.
+ *  `?today=YYYY-MM-DD` on the page URL shows the volume as of that day. */
 export function volumeSection() {
   const section = h("section", { class: "band-volume" }, h("h2", {}, "周跑量"),
     h("p", { class: "small muted" }, "正在读取…"));
@@ -16,9 +17,11 @@ export function volumeSection() {
 }
 
 async function load(section) {
+  const today = new URLSearchParams(location.search).get("today");
+  const q = today ? `?today=${encodeURIComponent(today)}` : "";
   let v;
   try {
-    const r = await fetch("api/volume");
+    const r = await fetch(`api/volume${q}`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     v = await r.json();
   } catch (err) {
@@ -43,7 +46,11 @@ function render(v) {
       h("span", { class: "small muted" }, "只算跑的距离，走路不计。本周未完。"),
       how(v.method),
     ),
-  ];
+    v.garmin_totals_runs
+      ? h("p", { class: "small muted" },
+        `近 12 周有 ${v.garmin_totals_runs} 次跑步没有步频，用的是 Garmin 的总距离和总时长（走路也算在内）。`)
+      : null,
+  ].filter(Boolean);
 }
 
 function stat(label, meters, key) {

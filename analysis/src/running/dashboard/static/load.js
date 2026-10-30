@@ -129,23 +129,21 @@ function legend(label, style, cls = "") {
 }
 
 function missingNote(L) {
-  const n = L.missing_hr_recent.length;
-  if (!n) return null;
-  return h("p", { class: "small muted" }, `近 12 周有 ${n} 个活动没有心率，记为缺失，没有计入负荷。`);
+  const missing = L.missing_hr_recent.length;
+  const summary = L.summary_hr_recent.length;
+  if (!missing && !summary) return null;
+  const parts = [];
+  if (summary) parts.push(`${summary} 个活动没有逐秒心率，按摘要的平均心率估算了负荷`);
+  if (missing) parts.push(`${missing} 个活动没有心率，记为缺失，没有计入负荷`);
+  return h("p", { class: "small muted" }, `近 12 周有 ${parts.join("；")}。`);
 }
 
 function howDetails(m) {
-  const params = m.hr_max == null
-    ? "config.toml 里没有当前生效的生理参数。"
-    : `当前参数：HRrest ${m.hr_rest}、HRmax ${m.hr_max}（${m.physiology_effective_from} 起生效）。`;
   return h("details", { class: "how" },
     h("summary", {}, "负荷怎么算的"),
     h("div", { class: "body" },
-      h("p", {}, `${m.trimp}：${m.trimp_formula}。`, params,
-        "每个活动用它当天生效的那组参数。所有带心率的活动都计入，没有心率的活动记为缺失，不估算。",
-        `相邻两个心率样本的间隔超过 ${m.max_sample_gap_s} 秒时（暂停）只按 ${m.max_sample_gap_s} 秒算。`),
-      h("p", {}, `CTL 是 ${m.ctl_days} 天、ATL 是 ${m.atl_days} 天的指数加权平均，递推用 ${m.recursion} 形式：${m.recursion_formula}。`,
-        `${m.tsb_formula}。ATL/CTL 超过 ${m.spike_ratio} 时提示负荷突增。数值只作相对比较。`),
+      h("p", {}, `${m.name}。`),
+      h("p", {}, m.description),
     ),
   );
 }

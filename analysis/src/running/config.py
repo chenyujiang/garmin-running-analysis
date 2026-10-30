@@ -53,11 +53,19 @@ class Aerobic:
 
 
 @dataclass(frozen=True)
+class Load:
+    """`[load]` in config.toml: training-load (TRIMP) settings."""
+
+    max_sample_gap_s: float = 10.0  # a longer gap between HR samples counts only this long
+
+
+@dataclass(frozen=True)
 class Config:
     reference_hr: int = 145
     physiology: tuple[Physiology, ...] = field(default_factory=tuple)
     run_walk: RunWalk = field(default_factory=RunWalk)
     aerobic: Aerobic = field(default_factory=Aerobic)
+    load: Load = field(default_factory=Load)
 
 
 def data_dir() -> Path:
@@ -103,6 +111,11 @@ def load_config(root: Path | None = None) -> Config:
         )
         aerobic = _aerobic(raw.get("aerobic", {}))
         run_walk = _run_walk(raw.get("run_walk", {}))
+        load = Load(
+            max_sample_gap_s=float(
+                raw.get("load", {}).get("max_sample_gap_s", Load.max_sample_gap_s)
+            )
+        )
     except (KeyError, TypeError, ValueError) as err:
         raise ConfigError(f"配置文件 {path} 缺少或写错了字段：{err}") from err
     return Config(
@@ -110,6 +123,7 @@ def load_config(root: Path | None = None) -> Config:
         physiology=physiology,
         run_walk=run_walk,
         aerobic=aerobic,
+        load=load,
     )
 
 

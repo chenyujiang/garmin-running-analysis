@@ -173,6 +173,14 @@ def test_a_run_without_cadence_falls_back_to_the_garmin_totals(analysis_db, clie
     assert r["run_distance_m"] == pytest.approx(5000)
     assert r["run_pace_s_per_km"] == pytest.approx(300)
     assert body["this_week"]["distance_m"] == pytest.approx(5000)
+    # The page says how many runs in the 12 weeks used Garmin's totals.
+    assert body["garmin_totals_runs"] == 1
+
+
+def test_runs_with_cadence_are_not_counted_as_using_garmin_totals(analysis_db, client_factory):
+    add_run(analysis_db, 1, "2026-10-27T07:00:00", [run(600)])
+
+    assert get_volume(client_factory)["garmin_totals_runs"] == 0
 
 
 def test_the_cadence_threshold_comes_from_config(data_dir, analysis_db, client_factory):

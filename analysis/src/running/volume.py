@@ -11,9 +11,9 @@ from typing import TypedDict
 
 import polars as pl
 
-from running.config import Config, ConfigError, data_dir, load_config
 from running.db import open_analysis_db
 from running.runwalk import RUNNING_TYPES, empty_run_summaries, running_summaries
+from running.section import Method, section_inputs
 
 WEEKS = 12
 
@@ -44,12 +44,6 @@ class RunPace(TypedDict):
     source: str  # "records": classified per second; "activity": Garmin totals (no cadence)
 
 
-class Method(TypedDict):
-    name: str
-    description: str
-    params: dict
-
-
 class Volume(TypedDict):
     today: str
     has_data: bool
@@ -58,6 +52,7 @@ class Volume(TypedDict):
     rolling_7d: RollingVolume
     weeks: list[WeekVolume]  # oldest first, the last one is this week
     runs: list[RunPace]  # running-type activities in the 12-week window, newest first
+    garmin_totals_runs: int  # of those, runs without cadence (source "activity")
     method: Method
 
 
@@ -66,13 +61,9 @@ def week_start(d: date) -> date:
 
 
 def weekly_volume(today: date | None = None, root: Path | None = None) -> Volume:
-    root = root or data_dir()
-    today = today or date.today()
-    try:
-        config = load_config(root)
-    except ConfigError:
-        config = Config()
-    settings = config.run_walk
+    inputs = section_inputs(today, root)
+    today = inputs.today
+    settings = inputs.config.run_walk
 
     this_monday = week_start(today)
     first_monday = this_monday - timedelta(weeks=WEEKS - 1)
@@ -80,7 +71,7 @@ def weekly_volume(today: date | None = None, root: Path | None = None) -> Volume
     since = min(first_monday, rolling_start).isoformat()
 
     runs = empty_run_summaries()
-    db = open_analysis_db(root) if root.is_dir() else None
+    db = open_analysis_db(inputs.root)
     if db is not None:
         with db:
             runs = running_summaries(db, settings, since_local=since)
@@ -123,6 +114,7 @@ def weekly_volume(today: date | None = None, root: Path | None = None) -> Volume
         },
         "weeks": weeks,
         "runs": window.drop("day", "week", "garmin_duration_s").to_dicts(),
+        "garmin_totals_runs": window.filter(pl.col("source") == "activity").height,
         "method": {
             "name": "跑的秒的距离，按自然周汇总",
             "description": (

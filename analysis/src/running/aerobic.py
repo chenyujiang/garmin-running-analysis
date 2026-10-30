@@ -30,9 +30,10 @@ from typing import Literal, TypedDict
 
 import polars as pl
 
-from running.config import Aerobic, Config, ConfigError, RunWalk, data_dir, load_config
+from running.config import Aerobic, Config, RunWalk
 from running.db import AnalysisDb, open_analysis_db
 from running.runwalk import classify_records
+from running.section import Method, section_inputs
 
 # Minetti et al. 2002, J Appl Physiol 93:1039-1046, Fig. 1: energy cost of
 # running in J/kg/m against gradient i (rise over horizontal run), R^2 = 0.999.
@@ -278,12 +279,6 @@ class AerobicRun(TypedDict):
     temperature_c: float | None
 
 
-class Method(TypedDict):
-    name: str
-    description: str
-    params: dict
-
-
 class AerobicTrend(TypedDict):
     today: str
     range: str
@@ -310,17 +305,13 @@ def _median(values: list[float]) -> float | None:
 def aerobic_trend(
     range_: Range = "1y", today: date | None = None, root: Path | None = None
 ) -> AerobicTrend:
-    root = root or data_dir()
-    today = today or date.today()
-    try:
-        config = load_config(root)
-    except ConfigError:
-        config = Config()
+    inputs = section_inputs(today, root)
+    today, config = inputs.today, inputs.config
     aerobic = config.aerobic
     this_monday = _week_start(today)
     until = (today + timedelta(days=1)).isoformat()
 
-    db = open_analysis_db(root) if root.is_dir() else None
+    db = open_analysis_db(inputs.root)
     runs = pl.DataFrame(schema=_RUN_SCHEMA)
     first_monday = this_monday
     if range_ in RANGE_WEEKS:

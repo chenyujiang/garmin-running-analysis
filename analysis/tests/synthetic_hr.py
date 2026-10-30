@@ -17,6 +17,7 @@ def insert_activity(
     duration_s: float = 3600.0,
     distance_m: float = 10000.0,
     utc_offset_h: int = 0,
+    avg_hr_bpm: float | None = None,
 ) -> datetime:
     """Insert one `activities` row starting at `hour` local time on `day`.
     Returns the UTC start time (naive)."""
@@ -25,7 +26,7 @@ def insert_activity(
     utc = local - timedelta(hours=utc_offset_h)
     conn.execute(
         "INSERT INTO activities (activity_id, activity_type, activity_name, start_time_utc,"
-        " start_time_local, distance_m, duration_s) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        " start_time_local, distance_m, duration_s, avg_hr_bpm) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             activity_id,
             activity_type,
@@ -34,6 +35,7 @@ def insert_activity(
             local.strftime("%Y-%m-%dT%H:%M:%S"),
             distance_m,
             duration_s,
+            avg_hr_bpm,
         ),
     )
     conn.commit()
