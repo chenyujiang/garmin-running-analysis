@@ -13,6 +13,28 @@ pub struct Config {
     pub aerobic: Aerobic,
     #[serde(default)]
     pub physiology: Vec<Physiology>,
+    #[serde(default)]
+    pub sync: Sync,
+}
+
+/// `[sync]`: pacing for data source requests. Requests are sent one at a
+/// time with this pause between them.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Sync {
+    #[serde(default = "default_personal_api_interval_s")]
+    pub personal_api_interval_s: f64,
+}
+
+impl Default for Sync {
+    fn default() -> Self {
+        Self {
+            personal_api_interval_s: default_personal_api_interval_s(),
+        }
+    }
+}
+
+fn default_personal_api_interval_s() -> f64 {
+    1.5
 }
 
 #[derive(Debug, Clone, Deserialize)]

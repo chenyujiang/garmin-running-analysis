@@ -56,6 +56,15 @@ impl DataDir {
         self.raw_dir().join("personal_api").join("activities")
     }
 
+    pub fn secrets_dir(&self) -> PathBuf {
+        self.root.join("secrets")
+    }
+
+    /// `secrets/personal_api.key`: the bare Personal API key.
+    pub fn personal_api_key_path(&self) -> PathBuf {
+        self.secrets_dir().join("personal_api.key")
+    }
+
     pub fn load_config(&self) -> Result<Config> {
         Config::load(&self.config_path())
     }

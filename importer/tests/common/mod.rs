@@ -3,6 +3,7 @@
 
 #![allow(dead_code)]
 
+pub mod fake_source;
 pub mod fit;
 
 use std::path::{Path, PathBuf};
