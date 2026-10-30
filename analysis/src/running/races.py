@@ -34,7 +34,7 @@ from typing import Literal, TypedDict
 
 import polars as pl
 
-from running.config import Config, ConfigError, data_dir, load_config
+from running.config import Config, data_dir
 from running.db import AnalysisDb, open_analysis_db
 from running.predict import (
     MARATHON_M,
@@ -53,6 +53,7 @@ from running.predict import (
     vickers_model2,
 )
 from running.runwalk import RUNNING_TYPES, running_summaries
+from running.section import Method, section_inputs
 
 RACES_FILE = "races.csv"
 COLUMNS = ("date", "activity_id", "distance_m", "time_s", "all_out", "note")
@@ -83,12 +84,6 @@ class Race(TypedDict):
 class RacesError(TypedDict):
     kind: Literal["missing", "invalid"]
     message: str
-
-
-class Method(TypedDict):
-    name: str
-    description: str
-    params: dict
 
 
 class RaceList(TypedDict):
@@ -227,8 +222,8 @@ def months_before(d: date, months: int) -> date:
 
 
 def race_list(today: date | None = None, root: Path | None = None) -> RaceList:
-    root = root or data_dir()
-    today = today or date.today()
+    inputs = section_inputs(today, root)
+    today, root = inputs.today, inputs.root
     races, error = read_races(root)
     past = [r for r in races if r["date"] <= today.isoformat()]
     past.sort(key=lambda r: r["date"], reverse=True)
@@ -284,12 +279,8 @@ def _basis(r: Race) -> Basis:
 
 
 def race_predictions(today: date | None = None, root: Path | None = None) -> Predictions:
-    root = root or data_dir()
-    today = today or date.today()
-    try:
-        config = load_config(root)
-    except ConfigError:
-        config = Config()
+    inputs = section_inputs(today, root)
+    today, root, config = inputs.today, inputs.root, inputs.config
     races, error = read_races(root)
     window_start = months_before(today, WINDOW_MONTHS)
     all_out = [r for r in races if r["all_out"] and r["date"] <= today.isoformat()]
@@ -297,7 +288,7 @@ def race_predictions(today: date | None = None, root: Path | None = None) -> Pre
     last = max((r["date"] for r in all_out), default=None)
     best = max(recent, key=lambda r: r["vdot"], default=None)
 
-    db = open_analysis_db(root) if root.is_dir() else None
+    db = open_analysis_db(root)
     try:
         weekly_km = _weekly_km(db, config, today)
         garmin = _garmin(db, today)

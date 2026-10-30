@@ -3,12 +3,13 @@
 Spec, "EF 与 decoupling"; formulas in the running-tool notes, section 6.
 
 - Long run: a running activity (`RUNNING_TYPES`) whose Garmin duration is at
-  least `MIN_DURATION_S` (60 min). Only those get EF and decoupling.
+  least `MIN_DURATION_S` (60 min). All of them are listed.
+- EF and decoupling only for outdoor road runs (`AEROBIC_TYPES`): GAP needs a
+  real elevation profile, so treadmill and trail runs are listed with null EF.
 - Steady seconds: the aerobic metric's steady-state filter
-  (`running.aerobic.steady_state`: warm-up dropped, running, speed stable, not
-  right after a pause, no cadence lock) without its HR band around the
-  reference HR. The band exists to read speed off at one HR; here HR drift is
-  the thing being measured, so dropping drifted seconds would hide it.
+  (`running.aerobic.steady_state`: warm-up dropped, running, smoothed HR within
+  `reference_hr` +- `hr_band_bpm`, speed stable, not right after a pause, no
+  cadence lock), exactly as the spec defines steady state.
 - EF = time-weighted mean GAP speed (m/min) / time-weighted mean smoothed HR,
   over the steady seconds. Unit: m/min per bpm (Friel's yd/min per bpm value is
   this / 0.9144). GAP uses Minetti 2002 instead of TrainingPeaks' NGP, so the
@@ -19,18 +20,17 @@ Spec, "EF 与 decoupling"; formulas in the running-tool notes, section 6.
 - Fewer than `Aerobic.min_steady_s` steady seconds: EF and decoupling are null.
 """
 
-import math
-from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 from typing import TypedDict
 
 import polars as pl
 
-from running.aerobic import load_records, steady_state
-from running.config import Config, ConfigError, data_dir, load_config
+from running.aerobic import AEROBIC_TYPES, load_records, steady_state
+from running.config import Config
 from running.db import AnalysisDb, open_analysis_db
 from running.runwalk import RUNNING_TYPES
+from running.section import Method, section_inputs
 
 MIN_DURATION_S = 3600
 DECOUPLING_LIMIT_PCT = 5.0
@@ -44,17 +44,11 @@ class LongRun(TypedDict):
     distance_m: float | None
     duration_s: float
     steady_s: float
-    ef: float | None  # m/min per bpm
+    ef: float | None  # m/min per bpm; null for treadmill/trail runs
     ef_first: float | None
     ef_second: float | None
     decoupling_pct: float | None
     decoupling_high: bool
-
-
-class Method(TypedDict):
-    name: str
-    description: str
-    params: dict
 
 
 class LongRuns(TypedDict):
@@ -82,8 +76,7 @@ def _ef(gap: pl.Expr, hr: pl.Expr, dt: pl.Expr) -> pl.Expr:
 
 
 def _per_run_ef(records: pl.DataFrame, config: Config) -> pl.DataFrame:
-    no_band = replace(config.aerobic, hr_band_bpm=math.inf)
-    df = steady_state(records, no_band, config.run_walk)
+    df = steady_state(records, config.aerobic, config.run_walk)
     df = df.filter(pl.col("steady")).sort("activity_id", "ts")
     df = df.with_columns(
         pl.col("dt_s").cum_sum().over("activity_id").alias("_cum"),
@@ -102,23 +95,19 @@ def _per_run_ef(records: pl.DataFrame, config: Config) -> pl.DataFrame:
 def long_runs(
     today: date | None = None, limit: int = DEFAULT_LIMIT, root: Path | None = None
 ) -> LongRuns:
-    root = root or data_dir()
-    today = today or date.today()
-    try:
-        config = load_config(root)
-    except ConfigError:
-        config = Config()
+    inputs = section_inputs(today, root)
+    today, config = inputs.today, inputs.config
     min_steady_s = config.aerobic.min_steady_s
     until = (today + timedelta(days=1)).isoformat()
 
     runs: list[LongRun] = []
-    db = open_analysis_db(root) if root.is_dir() else None
+    db = open_analysis_db(inputs.root)
     if db is not None:
         with db:
             if "activities" in db.tables():
                 acts = _long_run_rows(db, until, limit)
-                ids = acts["activity_id"].to_list()
-                recs = load_records(db, ids)
+                road = acts.filter(pl.col("activity_type").is_in(sorted(AEROBIC_TYPES)))
+                recs = load_records(db, road["activity_id"].to_list())
                 efs = {}
                 if not recs.is_empty():
                     efs = {r["activity_id"]: r for r in _per_run_ef(recs, config).to_dicts()}
@@ -157,12 +146,14 @@ def _method(config: Config) -> Method:
     return {
         "name": "EF 与 decoupling（Pa:HR）",
         "description": (
-            f"只列 {MIN_DURATION_S // 60} 分钟及以上的跑步"
+            f"列出 {MIN_DURATION_S // 60} 分钟及以上的跑步"
             "（按 Garmin 记录的时长，含跑步机和越野）。"
+            "EF 和 decoupling 只算户外路跑：跑步机和越野没有可靠的坡度，GAP 不准，留空。"
             "稳态秒沿用有氧能力的规则：去掉前 "
-            f"{a.warmup_s // 60} 分钟，在跑，{a.speed_window_s} 秒内平滑速度变化 ≤ "
+            f"{a.warmup_s // 60} 分钟，在跑，平滑心率在 {a.reference_hr} ± "
+            f"{a.hr_band_bpm:g} bpm 内，{a.speed_window_s} 秒内平滑速度变化 ≤ "
             f"{a.max_speed_change:.0%}，不是暂停后的第一秒，心率与 spm 相差 ≥ "
-            f"{a.min_hr_spm_gap:g}；但不限制心率范围，因为要看的正是心率漂移。"
+            f"{a.min_hr_spm_gap:g}。"
             "EF = 平均 GAP 速度（m/min）÷ 平均心率（bpm），只用稳态秒，按时间加权；"
             "GAP 用 Minetti 2002，不是 TrainingPeaks 的 NGP，数值不能直接对比。"
             "单位是 m/min/bpm，Friel 用的码/分 ÷ bpm 要再除以 0.9144。"
@@ -183,7 +174,8 @@ def _method(config: Config) -> Method:
             "speed_window_s": a.speed_window_s,
             "max_speed_change": a.max_speed_change,
             "min_hr_spm_gap": a.min_hr_spm_gap,
-            "hr_band": None,
-            "activity_types": sorted(RUNNING_TYPES),
+            "hr_band": {"reference_hr": a.reference_hr, "hr_band_bpm": a.hr_band_bpm},
+            "activity_types": sorted(AEROBIC_TYPES),
+            "listed_types": sorted(RUNNING_TYPES),
         },
     }
