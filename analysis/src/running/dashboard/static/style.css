@@ -98,3 +98,20 @@ details.how .body p { margin: 0 0 6px; }
   .topbar { padding: 0 18px; gap: 14px; }
   .headline { font-size: 24px; }
 }
+
+/* lower row (variant A): long runs | recent races; long-run table (ticket 13) */
+.a-lower { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 36px; }
+.a-lower > * { min-width: 0; }
+.lower-longruns { grid-column: 1; }
+.sec-head { display: flex; align-items: baseline; gap: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--rule-strong); margin-bottom: 14px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th { text-align: left; font-weight: 500; color: var(--ink-3); font-size: 12.5px; padding: 4px 8px 6px; border-bottom: 1px solid var(--rule); }
+td { padding: 7px 8px; border-bottom: 1px solid var(--rule); }
+td.r, th.r { text-align: right; }
+td.dec-high { color: var(--red); font-weight: 600; }
+.lower-longruns .foot { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 6px; }
+@media (max-width: 980px) {
+  .a-lower { grid-template-columns: 1fr; }
+  .a-lower > section { grid-column: 1; }
+  table { display: block; overflow-x: auto; }
+}

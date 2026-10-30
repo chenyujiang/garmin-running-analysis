@@ -35,10 +35,29 @@ class RunWalk:
 
 
 @dataclass(frozen=True)
+class Aerobic:
+    """`[aerobic]` in config.toml: steady-state filter and GAP settings."""
+
+    reference_hr: int = 145  # the fitted GAP speed is read off at this HR
+    warmup_s: int = 600  # moving time dropped at the start of each run
+    smoothing_s: int = 30  # trailing window for HR, speed and altitude means
+    hr_band_bpm: float = 15.0  # steady seconds have smoothed HR within reference_hr +- this
+    speed_window_s: int = 60  # window for the speed-stability check
+    max_speed_change: float = 0.05  # (max - min) / mean of smoothed speed in that window
+    min_hr_spm_gap: float = 5.0  # |HR - spm| below this looks like cadence lock
+    min_steady_s: int = 600  # runs with less steady time are left out
+    grade_window_s: int = 30  # grade = rise / distance over this many seconds
+    max_grade: float = 0.15  # grade is clipped to +- this before Cr(i)
+    min_runs_per_week: int = 2  # weeks with fewer valid runs stay empty
+    rolling_weeks: int = 4  # rolling median over this many weeks
+
+
+@dataclass(frozen=True)
 class Config:
     reference_hr: int = 145
     physiology: tuple[Physiology, ...] = field(default_factory=tuple)
     run_walk: RunWalk = field(default_factory=RunWalk)
+    aerobic: Aerobic = field(default_factory=Aerobic)
 
 
 def data_dir() -> Path:
@@ -82,11 +101,16 @@ def load_config(root: Path | None = None) -> Config:
             )
             for p in raw.get("physiology", [])
         )
-        reference_hr = int(raw.get("aerobic", {}).get("reference_hr", 145))
+        aerobic = _aerobic(raw.get("aerobic", {}))
         run_walk = _run_walk(raw.get("run_walk", {}))
     except (KeyError, TypeError, ValueError) as err:
         raise ConfigError(f"配置文件 {path} 缺少或写错了字段：{err}") from err
-    return Config(reference_hr=reference_hr, physiology=physiology, run_walk=run_walk)
+    return Config(
+        reference_hr=aerobic.reference_hr,
+        physiology=physiology,
+        run_walk=run_walk,
+        aerobic=aerobic,
+    )
 
 
 def _run_walk(raw: dict) -> RunWalk:
@@ -96,4 +120,14 @@ def _run_walk(raw: dict) -> RunWalk:
         smoothing_s=int(raw.get("smoothing_s", d.smoothing_s)),
         min_walk_s=int(raw.get("min_walk_s", d.min_walk_s)),
         pause_gap_s=int(raw.get("pause_gap_s", d.pause_gap_s)),
+    )
+
+
+def _aerobic(raw: dict) -> Aerobic:
+    d = Aerobic()
+    return Aerobic(
+        **{
+            name: type(getattr(d, name))(raw.get(name, getattr(d, name)))
+            for name in Aerobic.__dataclass_fields__
+        }
     )
