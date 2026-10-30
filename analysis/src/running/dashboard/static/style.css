@@ -84,6 +84,11 @@ details.how .body p { margin: 0 0 6px; }
 .legend i { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
 .legend i.bar { height: 9px; border: 0; width: 9px; }
 .load-foot { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-top: 6px; }
+/* weekly volume column (ticket 10) */
+.band-volume { grid-column: 2; }
+.a-band > section.band-volume { border-left: 1px solid var(--rule); padding-left: 28px; padding-right: 28px; }
+.band-volume .stat-line { gap: 22px; margin: 12px 0 10px; }
+.band-volume .foot { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 6px; }
 
 @media (max-width: 980px) {
   .a-band { grid-template-columns: 1fr; }

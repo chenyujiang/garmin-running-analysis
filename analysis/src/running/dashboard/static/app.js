@@ -3,6 +3,7 @@
 
 import { h, fmtDateTime, fmtDate } from "./dom.js";
 import { loadSection } from "./load.js";
+import { volumeSection } from "./volume.js";
 
 const main = document.getElementById("main");
 const syncLine = document.getElementById("sync-line");
@@ -50,6 +51,7 @@ function empty(s) {
 function band() {
   return h("div", { class: "a-band" },
     loadSection(),
+    volumeSection(),
   );
 }
 

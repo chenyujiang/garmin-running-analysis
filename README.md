@@ -49,7 +49,12 @@ effective_from = 2021-08-01
 hr_max = 192
 hr_rest = 55
 lthr = 170
+
+[sync]
+personal_api_interval_s = 1.5   # pause between Personal API requests (default 1.5)
 ```
+
+`runsync sync` reads the Personal API key from `secrets/personal_api.key` (the bare key on one line; generate it at https://connect.garmin.com/app/settings/personalApiToken). It downloads every activity's detail JSON and FIT into `raw/personal_api/activities/`, loading each file into `running.sqlite` straight away. Rerun it after an interruption to resume. Later runs fetch only new activities and refetch details from the last 7 days.
 
 ## Common commands
 
@@ -57,6 +62,7 @@ Importer (run in `importer/`):
 
 ```sh
 cargo build --release          # binary at target/release/runsync.exe
+cargo run -- sync              # fetch new activities from the Personal API (RUST_LOG=debug for detail)
 cargo run -- rebuild           # delete running.sqlite and rebuild it from raw/, offline
 cargo test
 cargo fmt

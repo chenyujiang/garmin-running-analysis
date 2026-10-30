@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from running.load import TrainingLoad, training_load
 from running.status import DataStatus, data_status
+from running.volume import Volume, weekly_volume
 
 HOST = "127.0.0.1"
 PORT = 8765
@@ -25,6 +26,10 @@ def create_app() -> FastAPI:
     @app.get("/api/load")
     def load(today: date | None = None) -> TrainingLoad:
         return training_load(today=today)
+
+    @app.get("/api/volume")
+    def volume(today: date | None = None) -> Volume:
+        return weekly_volume(today=today)
 
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app
