@@ -5,6 +5,8 @@ import { h, fmtDateTime, fmtDate } from "./dom.js";
 import { aerobicSection } from "./aerobic.js";
 import { loadSection } from "./load.js";
 import { longRunsSection } from "./longruns.js";
+import { predictionsSection } from "./predictions.js";
+import { racesSection } from "./races.js";
 import { volumeSection } from "./volume.js";
 
 const main = document.getElementById("main");
@@ -54,6 +56,7 @@ function band() {
   return h("div", { class: "a-band" },
     loadSection(),
     volumeSection(),
+    predictionsSection(),
   );
 }
 
@@ -61,6 +64,7 @@ function band() {
 function lower() {
   return h("div", { class: "a-lower" },
     longRunsSection(),
+    racesSection(),
   );
 }
 
