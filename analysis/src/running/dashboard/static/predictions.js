@@ -4,6 +4,7 @@
 // Stale (no all-out race in 6 months): the table fades, a red line gives the
 // last race date and asks for races.csv to be updated.
 
+import { watch } from "./changes.js";
 import { h, fmtDate } from "./dom.js";
 
 const TITLE = "成绩预测";
@@ -71,9 +72,10 @@ function table(v) {
     )),
     h("tbody", {}, ...v.rows.map((r) => h("tr", {},
       h("td", {}, r.label),
-      h("td", { class: "r main", title: r.predicted_method ? MAIN_LABEL[r.predicted_method] : "" },
+      watch(h("td", { class: "r main", title: r.predicted_method ? MAIN_LABEL[r.predicted_method] : "" },
         fmtTime(r.predicted_s),
         r.predicted_method && r.predicted_method !== "vdot" ? h("sup", {}, "V") : null),
+      `predict.${r.key}`, fmtTime(r.predicted_s)),
       h("td", { class: "r" }, fmtTime(r.riegel_s)),
       h("td", { class: "r" }, fmtTime(r.garmin_s)),
     ))),

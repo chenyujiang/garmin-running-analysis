@@ -3,6 +3,7 @@
 
 import { h, fmtDateTime, fmtDate } from "./dom.js";
 import { aerobicSection } from "./aerobic.js";
+import { markAllReadButton } from "./changes.js";
 import { loadSection } from "./load.js";
 import { longRunsSection } from "./longruns.js";
 import { predictionsSection } from "./predictions.js";
@@ -27,11 +28,12 @@ async function load() {
 }
 
 function render(s) {
-  syncLine.replaceChildren(
+  syncLine.replaceChildren(...[
+    s.has_data ? markAllReadButton() : null,
     h("span", {}, s.has_data
       ? `最近同步 ${s.last_sync_utc ? fmtDateTime(s.last_sync_utc) : "未知"}`
       : "尚未同步"),
-  );
+  ].filter(Boolean));
   const warning = s.config_error ? h("p", { class: "warn" }, s.config_error) : null;
   main.replaceChildren(...[warning, s.has_data ? summary(s) : empty(s)].filter(Boolean));
 }

@@ -2,6 +2,7 @@
 // Prototype variant A: three numbers, a 12-week bar chart (this week in grey),
 // and a "how is this calculated" note.
 
+import { watch } from "./changes.js";
 import { h } from "./dom.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -33,9 +34,9 @@ function render(v) {
   return [
     h("h2", {}, "周跑量"),
     h("div", { class: "stat-line" },
-      stat("本周（周一至今）", v.this_week.distance_m),
-      stat("上周", v.last_week.distance_m),
-      stat("滚动 7 天", v.rolling_7d.distance_m),
+      stat("本周（周一至今）", v.this_week.distance_m, "volume.this_week"),
+      stat("上周", v.last_week.distance_m, "volume.last_week"),
+      stat("滚动 7 天", v.rolling_7d.distance_m, "volume.rolling_7d"),
     ),
     barChart(v.weeks),
     h("div", { class: "foot" },
@@ -45,9 +46,9 @@ function render(v) {
   ];
 }
 
-function stat(label, meters) {
+function stat(label, meters, key) {
   return h("div", {}, h("span", { class: "l" }, label),
-    h("span", { class: "big" }, km(meters), h("span", { class: "small muted" }, " km")));
+    watch(h("span", { class: "big" }, km(meters), h("span", { class: "small muted" }, " km")), key, km(meters)));
 }
 
 function how(method) {
