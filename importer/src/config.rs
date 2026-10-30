@@ -23,18 +23,26 @@ pub struct Config {
 pub struct Sync {
     #[serde(default = "default_personal_api_interval_s")]
     pub personal_api_interval_s: f64,
+    /// garminconnect is an unofficial interface; keep it slow.
+    #[serde(default = "default_garminconnect_interval_s")]
+    pub garminconnect_interval_s: f64,
 }
 
 impl Default for Sync {
     fn default() -> Self {
         Self {
             personal_api_interval_s: default_personal_api_interval_s(),
+            garminconnect_interval_s: default_garminconnect_interval_s(),
         }
     }
 }
 
 fn default_personal_api_interval_s() -> f64 {
     1.5
+}
+
+fn default_garminconnect_interval_s() -> f64 {
+    5.0
 }
 
 #[derive(Debug, Clone, Deserialize)]

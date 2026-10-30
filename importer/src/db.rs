@@ -13,6 +13,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0001_activities.sql"),
     include_str!("../migrations/0002_sync_runs.sql"),
     include_str!("../migrations/0003_records_laps.sql"),
+    include_str!("../migrations/0005_garmin_metrics.sql"),
 ];
 
 pub const LATEST_VERSION: i64 = MIGRATIONS.len() as i64;

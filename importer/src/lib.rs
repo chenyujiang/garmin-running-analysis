@@ -7,6 +7,8 @@ pub mod config;
 pub mod data_dir;
 pub mod db;
 pub mod fit;
+pub mod garmin_metrics;
+pub mod garminconnect;
 pub mod personal_api;
 pub mod rebuild;
 pub mod source;

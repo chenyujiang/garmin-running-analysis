@@ -56,6 +56,16 @@ impl DataDir {
         self.raw_dir().join("personal_api").join("activities")
     }
 
+    /// `raw/garminconnect/`: `<metric>/<YYYY-MM-DD>.json`.
+    pub fn garminconnect_dir(&self) -> PathBuf {
+        self.raw_dir().join("garminconnect")
+    }
+
+    /// `secrets/garminconnect/`: the token written by `runsync login`.
+    pub fn garminconnect_token_dir(&self) -> PathBuf {
+        self.secrets_dir().join("garminconnect")
+    }
+
     pub fn secrets_dir(&self) -> PathBuf {
         self.root.join("secrets")
     }
