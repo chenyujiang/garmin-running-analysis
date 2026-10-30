@@ -2,6 +2,7 @@
 // Reads GET /api/status and renders either the empty state or the data summary.
 
 import { h, fmtDateTime, fmtDate } from "./dom.js";
+import { aerobicSection } from "./aerobic.js";
 import { loadSection } from "./load.js";
 import { longRunsSection } from "./longruns.js";
 import { volumeSection } from "./volume.js";
@@ -64,7 +65,7 @@ function lower() {
 }
 
 function summary(s) {
-  return h("div", {}, band(), overview(s), lower());
+  return h("div", {}, band(), aerobicSection(), lower(), overview(s));
 }
 
 function overview(s) {
