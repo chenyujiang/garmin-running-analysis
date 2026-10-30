@@ -1,6 +1,8 @@
 """The local dashboard: FastAPI on 127.0.0.1 serving JSON from `running`
 and the static frontend in `static/`. No accounts, no writes."""
 
+import io
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -59,5 +61,9 @@ def create_app() -> FastAPI:
 def main() -> None:
     import uvicorn
 
+    # A console or pipe that is not UTF-8 (e.g. cp1252) cannot encode the
+    # Chinese startup line; write UTF-8 and replace anything unencodable.
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     print(f"仪表盘：http://{HOST}:{PORT}/")
     uvicorn.run(create_app(), host=HOST, port=PORT)
