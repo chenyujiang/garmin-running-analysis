@@ -68,6 +68,22 @@ details.how[open] summary { color: var(--ink); }
 details.how .body { margin-top: 8px; padding: 10px 12px; background: var(--paper-2); border-radius: 4px; max-width: 70ch; }
 details.how .body p { margin: 0 0 6px; }
 
+/* training-load column (ticket 09); chart notes come from svg.js */
+:root {
+  --fit: #1f3d63;
+  --fat: #a5641a;
+  --form-pos: #3f6b4f;
+  --form-neg: #b0281f;
+}
+.band-load { grid-column: 1; }
+.a-band > section.band-load { padding-left: 0; padding-right: 28px; }
+.headline.alert { color: var(--red); }
+.note { position: absolute; font-size: 12.5px; line-height: 1.4; color: var(--ink-2); }
+.note b { color: var(--red); font-weight: 600; display: block; }
+.legend { display: flex; gap: 16px; font-size: 13px; color: var(--ink-2); flex-wrap: wrap; }
+.legend i { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+.legend i.bar { height: 9px; border: 0; width: 9px; }
+.load-foot { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-top: 6px; }
 /* weekly volume column (ticket 10) */
 .band-volume { grid-column: 2; }
 .a-band > section.band-volume { border-left: 1px solid var(--rule); padding-left: 28px; padding-right: 28px; }
@@ -77,6 +93,7 @@ details.how .body p { margin: 0 0 6px; }
 @media (max-width: 980px) {
   .a-band { grid-template-columns: 1fr; }
   .a-band > section { grid-row: auto; grid-column: 1; padding: 4px 0 24px; border-left: 0 !important; }
+  .a-band > section.band-load { padding-right: 0; }
   .page { padding-left: 18px; padding-right: 18px; }
   .topbar { padding: 0 18px; gap: 14px; }
   .headline { font-size: 24px; }

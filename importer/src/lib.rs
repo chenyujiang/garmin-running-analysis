@@ -7,4 +7,7 @@ pub mod config;
 pub mod data_dir;
 pub mod db;
 pub mod fit;
+pub mod personal_api;
 pub mod rebuild;
+pub mod source;
+pub mod sync;

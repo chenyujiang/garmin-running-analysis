@@ -21,7 +21,7 @@
 
 ## 结论
 
-**实现**：`analysis/src/running/aerobic.py`，接口 `GET /api/aerobic?range=6m|1y|2y|all&today=YYYY-MM-DD`（默认 `1y`，其他值返回 422）。测试：`tests/test_minetti.py`（公式级）、`tests/test_aerobic_api.py`（Seam 3），合成数据帮手 `tests/synthetic_hr.py`。
+**实现**：`analysis/src/running/aerobic.py`，接口 `GET /api/aerobic?range=6m|1y|2y|all&today=YYYY-MM-DD`（默认 `1y`，其他值返回 422）。测试：`tests/test_minetti.py`（公式级）、`tests/test_aerobic_api.py`（Seam 3），合成数据帮手 `tests/synthetic_aerobic.py`（`tests/synthetic_hr.py` 是 ticket 09 的）。
 
 **自己定的口径**（写进了"怎么算的"）：
 

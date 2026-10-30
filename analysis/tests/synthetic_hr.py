@@ -1,77 +1,77 @@
-"""Synthetic runs with heart rate, barometric altitude and temperature, for the
-aerobic metric (and anything else that needs HR per second).
-
-Import with `from synthetic_hr import ...`. Builds on `synthetic.insert_activity`.
-"""
+"""Helpers for the training-load tests (ticket 09): activities plus `records`
+with heart rate, in a test analysis database (the `analysis_db` fixture).
+Import with `from synthetic_hr import ...`."""
 
 import sqlite3
-from dataclasses import dataclass
-from datetime import datetime, timedelta
-
-from synthetic import insert_activity
+from collections.abc import Callable
+from datetime import date, datetime, timedelta
 
 
-@dataclass(frozen=True)
-class Stretch:
-    """`seconds` of constant effort. `cadence` is single-foot (x2 = spm);
-    `grade` is rise over horizontal distance; `hr=None` writes no heart rate."""
-
-    seconds: int
-    speed: float = 3.0
-    hr: float | None = 145.0
-    cadence: float = 85.0
-    grade: float = 0.0
-
-
-def steady(seconds: int, speed: float = 3.0, hr: float | None = 145.0, **kw) -> Stretch:
-    return Stretch(seconds, speed=speed, hr=hr, **kw)
-
-
-def add_hr_run(
+def insert_activity(
     conn: sqlite3.Connection,
     activity_id: int,
-    start_local: str,
-    stretches: list[Stretch],
+    day: date | str,
+    *,
+    hour: int = 7,
     activity_type: str = "running",
-    temperature: float | None = 15.0,
-) -> None:
-    """Activity row plus 1 Hz records (t = 0 .. total seconds). Each sample's
-    speed covers the second ending at it; altitude follows distance x grade."""
-    duration = sum(s.seconds for s in stretches)
-    distance_total = sum(s.seconds * s.speed for s in stretches)
-    start_utc = insert_activity(
-        conn,
-        activity_id,
-        start_local,
-        activity_type,
-        distance_m=distance_total,
-        duration_s=float(duration),
-    )
-    t0 = datetime.strptime(start_utc, "%Y-%m-%dT%H:%M:%SZ")
-    first = stretches[0]
-    rows = [(0, first.hr, first.speed, first.cadence, 100.0, 0.0)]
-    t, dist, alt = 0, 0.0, 100.0
-    for s in stretches:
-        for _ in range(s.seconds):
-            t += 1
-            dist += s.speed
-            alt += s.speed * s.grade
-            rows.append((t, s.hr, s.speed, s.cadence, alt, dist))
-    conn.executemany(
-        "INSERT INTO records (activity_id, timestamp, heart_rate, speed, cadence, altitude,"
-        " distance, temperature) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        [
-            (
-                activity_id,
-                (t0 + timedelta(seconds=sec)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                hr,
-                v,
-                c,
-                a,
-                d,
-                temperature,
-            )
-            for sec, hr, v, c, a, d in rows
-        ],
+    duration_s: float = 3600.0,
+    distance_m: float = 10000.0,
+    utc_offset_h: int = 0,
+) -> datetime:
+    """Insert one `activities` row starting at `hour` local time on `day`.
+    Returns the UTC start time (naive)."""
+    day = date.fromisoformat(day) if isinstance(day, str) else day
+    local = datetime(day.year, day.month, day.day, hour)
+    utc = local - timedelta(hours=utc_offset_h)
+    conn.execute(
+        "INSERT INTO activities (activity_id, activity_type, activity_name, start_time_utc,"
+        " start_time_local, distance_m, duration_s) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            activity_id,
+            activity_type,
+            f"活动 {activity_id}",
+            utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            local.strftime("%Y-%m-%dT%H:%M:%S"),
+            distance_m,
+            duration_s,
+        ),
     )
     conn.commit()
+    return utc
+
+
+def insert_records(
+    conn: sqlite3.Connection,
+    activity_id: int,
+    start_utc: datetime,
+    seconds: int,
+    heart_rate: int | None | Callable[[int], int | None],
+    *,
+    every_s: int = 1,
+) -> None:
+    """Insert `records` rows every `every_s` seconds for `seconds` seconds.
+    `heart_rate` is a constant, None (no HR), or a function of the offset in s."""
+    rows = []
+    for t in range(0, seconds, every_s):
+        hr = heart_rate(t) if callable(heart_rate) else heart_rate
+        ts = (start_utc + timedelta(seconds=t)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        rows.append((activity_id, ts, hr))
+    conn.executemany(
+        "INSERT INTO records (activity_id, timestamp, heart_rate) VALUES (?, ?, ?)", rows
+    )
+    conn.commit()
+
+
+def insert_run(
+    conn: sqlite3.Connection,
+    activity_id: int,
+    day: date | str,
+    heart_rate: int | None | Callable[[int], int | None],
+    *,
+    seconds: int = 3600,
+    every_s: int = 1,
+    **activity,
+) -> None:
+    """An activity plus its per-second records at `heart_rate`."""
+    start = insert_activity(conn, activity_id, day, duration_s=seconds, **activity)
+    insert_records(conn, activity_id, start, seconds, heart_rate, every_s=every_s)

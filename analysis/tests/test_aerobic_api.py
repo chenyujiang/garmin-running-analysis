@@ -9,7 +9,7 @@ trim a little more, still well above the 10 min minimum.
 from datetime import date, timedelta
 
 import pytest
-from synthetic_hr import add_hr_run, steady
+from synthetic_aerobic import add_hr_run, steady
 
 TODAY = "2026-10-28"
 FLAT_PACE = 1000 / 3.0  # 333.3 s/km
