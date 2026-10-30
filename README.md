@@ -84,6 +84,20 @@ Tests never touch the real data directory; they build temporary ones and point `
 
 ## Notebooks
 
+`analysis/notebooks/explore.ipynb` is the starting point for exploring your data. It calls the same public functions as the dashboard (weekly volume, training load, aerobic trend, per-run tables, per-second steady-state data), so its numbers match the dashboard.
+
+Start JupyterLab (it is in the `dev` dependency group, which `uv sync` installs):
+
+```sh
+cd analysis
+uv sync
+uv run jupyter lab notebooks/explore.ipynb
+```
+
+The notebook reads `RUNNING_DATA_DIR` (default `%USERPROFILE%\running-data`); set it before starting Jupyter to point at another data directory.
+
+In VS Code: run `uv sync` in `analysis/` first, open the notebook, click **Select Kernel** (top right), choose **Python Environments**, and pick `analysis\.venv\Scripts\python.exe` (shown as `.venv`). If it is not listed, use **Python: Select Interpreter** > **Enter interpreter path** with that path. The Jupyter and Python extensions are needed; `ipykernel` comes with `jupyterlab`.
+
 Notebook outputs can contain personal data, so `.gitattributes` strips them on commit with `nbstripout`. Set up the filter once per clone (from the repository root):
 
 ```sh
