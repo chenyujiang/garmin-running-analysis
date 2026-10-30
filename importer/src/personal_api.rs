@@ -15,7 +15,7 @@ use std::time::{Duration as StdDuration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
-use chrono::{DateTime, Duration, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
 use reqwest::StatusCode;
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{AUTHORIZATION, HeaderValue};
@@ -211,6 +211,16 @@ impl ActivitySource for PersonalApiClient {
             log::warn!("activity {activity_id}: the download holds no FIT file");
         }
         Ok(fit)
+    }
+
+    fn daily_summaries(&mut self, start: NaiveDate, end: NaiveDate) -> Result<String, SourceError> {
+        let path = format!(
+            "/usersummary-service/v2/dailysummaries?startDate={}&endDate={}",
+            start.format("%Y-%m-%d"),
+            end.format("%Y-%m-%d")
+        );
+        let response = check_status(self.get(&path)?, &path)?;
+        response.text().map_err(|e| request_error(e, &path))
     }
 }
 

@@ -56,6 +56,12 @@ impl DataDir {
         self.raw_dir().join("personal_api").join("activities")
     }
 
+    /// `raw/personal_api/daily_summaries/`: `<YYYY-MM-DD>.json`, one row of
+    /// the daily summaries response per day (`null` for a day without data).
+    pub fn personal_api_daily_summaries_dir(&self) -> PathBuf {
+        self.raw_dir().join("personal_api").join("daily_summaries")
+    }
+
     pub fn secrets_dir(&self) -> PathBuf {
         self.root.join("secrets")
     }

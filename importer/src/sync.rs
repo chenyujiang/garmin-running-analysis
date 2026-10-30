@@ -8,17 +8,22 @@
 //! - Resuming relies only on which raw files exist; no progress is stored.
 //!   For each activity the FIT is fetched before the detail JSON, so an
 //!   existing `<id>.json` means that activity is complete.
+//! - Daily summaries: the last 7 days (up to `today`) are refetched and
+//!   overwritten on every run; older days are fetched back to 2021-08-01 in
+//!   7-day ranges, newest first, skipping ranges whose day files all exist.
+//!   A day without data is archived as `null`, so it is not asked for again.
 //! - Every file is written atomically and loaded into the database at once,
 //!   so an interrupted run leaves usable partial results.
 
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Duration, SecondsFormat, Utc};
+use chrono::{DateTime, Duration, Local, NaiveDate, SecondsFormat, Utc};
 use indicatif::{ProgressBar, ProgressStyle};
 use rusqlite::{Connection, params};
 
 use crate::activity::Activity;
+use crate::daily;
 use crate::data_dir::DataDir;
 use crate::db;
 use crate::fit::ActivityFit;
@@ -28,17 +33,25 @@ pub const SOURCE_NAME: &str = "personal_api";
 pub const DEFAULT_PAGE_SIZE: usize = 100;
 /// Activities that started within this window are refetched on every sync.
 pub const REFRESH_WINDOW_DAYS: i64 = 7;
+/// Daily summaries are requested this many days at a time.
+pub const DAILY_RANGE_DAYS: i64 = 7;
+/// First day of the daily summaries backfill.
+pub const DAILY_BACKFILL_START: NaiveDate = NaiveDate::from_ymd_opt(2021, 8, 1).unwrap();
 
 #[derive(Debug, Clone)]
 pub struct SyncOptions {
     pub now: DateTime<Utc>,
+    /// The runner's local calendar date: the last day of daily summaries.
+    pub today: NaiveDate,
     pub page_size: usize,
 }
 
 impl Default for SyncOptions {
     fn default() -> Self {
+        let now = Utc::now();
         Self {
-            now: Utc::now(),
+            now,
+            today: now.with_timezone(&Local).date_naive(),
             page_size: DEFAULT_PAGE_SIZE,
         }
     }
@@ -51,6 +64,8 @@ pub struct SyncReport {
     /// Detail JSON files refetched and overwritten (last 7 days).
     pub refreshed_activities: usize,
     pub fit_files: usize,
+    /// Daily summary day files written (new or overwritten).
+    pub daily_summaries: usize,
     /// Downloaded files kept in the raw archive that could not be parsed.
     pub unparsable: usize,
     /// Set when the run stopped early; everything before it is kept.
@@ -83,7 +98,13 @@ pub fn sync_activities(
         progress: &progress,
         report: SyncReport::default(),
     };
-    if let Err(err) = run.pages(options) {
+    let daily_dir = data_dir.personal_api_daily_summaries_dir();
+    std::fs::create_dir_all(&daily_dir)
+        .with_context(|| format!("creating {}", daily_dir.display()))?;
+    let result = run
+        .pages(options)
+        .and_then(|()| run.daily_summaries(&daily_dir, options.today));
+    if let Err(err) = result {
         log::warn!("personal_api sync stopped: {err}");
         run.report.stopped_by = Some(err);
     }
@@ -178,9 +199,56 @@ impl Run<'_> {
         Ok(())
     }
 
+    /// Refetch the last 7 days, then backfill older ranges, newest first.
+    fn daily_summaries(&mut self, dir: &Path, today: NaiveDate) -> Result<(), SourceError> {
+        let mut end = today;
+        let mut refresh = true;
+        while end >= DAILY_BACKFILL_START {
+            let start = (end - Duration::days(DAILY_RANGE_DAYS - 1)).max(DAILY_BACKFILL_START);
+            let archived = start
+                .iter_days()
+                .take_while(|d| *d <= end)
+                .all(|d| daily_path(dir, d).is_file());
+            if refresh || !archived {
+                self.daily_range(dir, start, end)?;
+            }
+            refresh = false;
+            end = start - Duration::days(1);
+        }
+        Ok(())
+    }
+
+    fn daily_range(
+        &mut self,
+        dir: &Path,
+        start: NaiveDate,
+        end: NaiveDate,
+    ) -> Result<(), SourceError> {
+        self.progress
+            .set_message(format!("daily summaries {start}..{end}"));
+        let body = self.source.daily_summaries(start, end)?;
+        let days = daily::split_response(&body, start, end)
+            .with_context(|| format!("daily summaries {start}..{end}"))?;
+        for (day, text) in days {
+            let path = daily_path(dir, day);
+            write_atomically(&path, text.as_bytes())?;
+            self.report.daily_summaries += 1;
+            self.progress.inc(1);
+            if let Err(err) = daily::store_day(self.conn, &text) {
+                log::warn!("could not load {}: {err:#}", path.display());
+                self.report.unparsable += 1;
+            }
+        }
+        Ok(())
+    }
+
     fn json_path(&self, activity_id: i64) -> std::path::PathBuf {
         self.dir.join(format!("{activity_id}.json"))
     }
+}
+
+fn daily_path(dir: &Path, day: NaiveDate) -> std::path::PathBuf {
+    dir.join(format!("{}.json", day.format("%Y-%m-%d")))
 }
 
 /// Write via a `.part` file and rename, so a file in the archive is always

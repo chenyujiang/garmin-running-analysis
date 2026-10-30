@@ -47,10 +47,11 @@ fn run(cli: Cli) -> Result<()> {
         Command::Rebuild => {
             let report = runsync::rebuild::rebuild(&data_dir)?;
             println!(
-                "rebuilt {}: {} activities, {} FIT files, {} files skipped",
+                "rebuilt {}: {} activities, {} FIT files, {} daily summaries, {} files skipped",
                 data_dir.analysis_db_path().display(),
                 report.activities,
                 report.fit_files,
+                report.daily_summaries,
                 report.skipped
             );
             Ok(())
@@ -65,8 +66,12 @@ fn sync(data_dir: &DataDir, config: &Config) -> Result<()> {
     let mut client = PersonalApiClient::new(key, interval)?;
     let report = sync_activities(data_dir, &mut client, &SyncOptions::default())?;
     println!(
-        "personal_api: {} new activities, {} refreshed, {} FIT files, {} files could not be parsed",
-        report.new_activities, report.refreshed_activities, report.fit_files, report.unparsable
+        "personal_api: {} new activities, {} refreshed, {} FIT files, {} daily summary days,          {} files could not be parsed",
+        report.new_activities,
+        report.refreshed_activities,
+        report.fit_files,
+        report.daily_summaries,
+        report.unparsable
     );
     match report.stopped_by {
         None => Ok(()),

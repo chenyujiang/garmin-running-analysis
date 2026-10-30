@@ -25,6 +25,7 @@ fn days_ago(days: i64) -> DateTime<Utc> {
 fn options(page_size: usize) -> SyncOptions {
     SyncOptions {
         now: now(),
+        today: now().date_naive(),
         page_size,
     }
 }
