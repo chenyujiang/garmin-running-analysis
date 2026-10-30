@@ -9,3 +9,6 @@ analysis/.venv/
 .ipynb_checkpoints/
 # Self-hosted dashboard fonts (~26 MB), fetched by analysis/scripts/fetch_fonts.py
 analysis/src/running/dashboard/static/fonts/
+
+# Garmin data exports (GPS, email): keep out of git
+*.zip

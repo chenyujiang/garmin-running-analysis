@@ -132,7 +132,7 @@ lthr = 170
 - **数据源 trait**：把一个数据源抽象成一个 trait，两个实现分别是 Personal API 客户端和 garminconnect 小脚本。同步逻辑只依赖这个 trait（测试 seam，见下）。错误分成三类，用一个小 enum 表示：限流（429 或 `CAPTCHA_REQUIRED`）、凭据失效、其他。
 - **Personal API 客户端**：用 `reqwest` + `serde` 手写，只实现用到的 GET 接口：活动列表翻页、活动详情、FIT 下载（zip，解出里面唯一的 FIT 后丢掉 zip）、每日汇总（7 天一个区间）。每次运行 `sync` 时用 key 换一次 access token（`POST` 到 personal-api-key token 接口，请求头 `Authorization: ApiKey <key>`，响应是纯文本 JWT，过期时间取 `exp`），接近过期时再换。token 不写盘。
 - **garminconnect 小脚本**：一个 PEP 723 Python 脚本，放在 Rust 项目里，依赖 `garminconnect`，CLI 用 `uv run --script` 调用，路径在编译时由 `CARGO_MANIFEST_DIR` 确定。子命令：`login`（用 `getpass` 读密码，只保存 token）和三项指标的查询。stdout 只输出 JSON，退出码区分成功、限流、认证失败、其他错误。不在 Rust 里重写 Garmin 登录。
-- **原始档案布局**：Personal API 的 `activities/<activityId>.fit` 和 `activities/<activityId>.json`、`daily_summaries/<YYYY-MM-DD>.json`；garminconnect 的 `<metric>/<YYYY-MM-DD>.json`；账号数据导出包原样放在 `export/<导出日期>/`，只存档，不解析。重新拉取的数据覆盖同名文件，不保留历史版本。HRV 和睡眠的空响应只留在原始档案里，不建表。
+- **原始档案布局**：Personal API 的 `activities/<activityId>.fit` 和 `activities/<activityId>.json`、`daily_summaries/<YYYY-MM-DD>.json`；garminconnect 的 `<metric>/<YYYY-MM-DD>.json`；账号数据导出包原样放在 `export/<导出日期>/`，由 `runsync import-export` 解析（见 ticket 17）。重新拉取的数据覆盖同名文件，不保留历史版本。HRV 和睡眠的空响应只留在原始档案里，不建表。
 - **同步算法**：
   - 新活动：活动列表从最新往前翻页，直到某一页的活动在原始档案里全都已有为止。
   - 最近 7 天内的活动：重新拉取详情 JSON 并覆盖；FIT 只在缺失时下载。
@@ -204,5 +204,5 @@ lthr = 170
 - **登录风险**：本机的 garminconnect mobile 登录策略已经被 429，需要退到后备策略。尽量复用 token，少登录；调试时不要反复调用 `login`。
 - **公式出处**：VDOT 表、Vickers 2016 系数、Banister TRIMP 系数原文在调研时没有读到，写代码前要核对原始出处（见 ticket「有氧能力、训练负荷、成绩预测的算法调研」和分支 `research/analysis-methods`）。
 - **待实施时验证**：garminconnect 三项指标能否按日期查历史；`fitparser` 和 `rustyfit` 在 Windows 上能否构建；参考心率 145 是否接近真实数据里轻松跑心率的中位数，偏离明显时调整一次。
-- **账号数据导出**：ticket「申请 Garmin 账号数据导出」仍然打开，导出包到了之后放进 `raw/export/<导出日期>/`，不影响实施。
+- **账号数据导出**：导出包已到（2026-10），由 `runsync import-export <zip>` 存进 `raw/export/<导出日期>/` 并解析，代替大部分 API 回填（ticket 17）。
 - 研究资料在分支 `research/garmin-data-access`、`research/analysis-methods`、`research/rust-api-coverage`，原型在 `prototype/dashboard`，都不合并进 main。
