@@ -3,6 +3,7 @@
 
 import { h, fmtDateTime, fmtDate } from "./dom.js";
 import { loadSection } from "./load.js";
+import { longRunsSection } from "./longruns.js";
 import { volumeSection } from "./volume.js";
 
 const main = document.getElementById("main");
@@ -55,8 +56,15 @@ function band() {
   );
 }
 
+// Lower row, prototype variant A: long runs (column 1) | recent races (column 2).
+function lower() {
+  return h("div", { class: "a-lower" },
+    longRunsSection(),
+  );
+}
+
 function summary(s) {
-  return h("div", {}, band(), overview(s));
+  return h("div", {}, band(), overview(s), lower());
 }
 
 function overview(s) {
