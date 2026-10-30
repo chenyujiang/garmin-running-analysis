@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{Result, bail};
@@ -30,6 +31,11 @@ enum Command {
     Login,
     /// Delete the analysis database and recreate it from the raw archive (offline).
     Rebuild,
+    /// Archive a Garmin account export (.zip) under raw/export/ and load its history (offline).
+    ImportExport {
+        /// The export package as downloaded from Garmin.
+        zip: PathBuf,
+    },
 }
 
 fn main() {
@@ -54,14 +60,21 @@ fn run(cli: Cli) -> Result<()> {
         Command::Rebuild => {
             let report = runsync::rebuild::rebuild(&data_dir)?;
             println!(
-                "rebuilt {}: {} activities, {} FIT files, {} daily summaries, {} Garmin metric files, {} files skipped",
+                "rebuilt {}: {} activities, {} FIT files, {} daily summaries, {} Garmin metric files, {} export packages, {} files skipped",
                 data_dir.analysis_db_path().display(),
                 report.activities,
                 report.fit_files,
                 report.daily_summaries,
                 report.garmin_metrics,
+                report.export_packages,
                 report.skipped
             );
+            Ok(())
+        }
+        Command::ImportExport { zip } => {
+            for report in runsync::export::import_export(&data_dir, &zip)? {
+                print!("{report}");
+            }
             Ok(())
         }
     }

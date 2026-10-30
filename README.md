@@ -12,7 +12,7 @@ Every number links back to a documented formula and configurable parameters. Gar
 
 ## Status
 
-All commands work: `runsync sync` pulls activities and daily summaries from the Personal API and a few metrics from garminconnect, `runsync login` stores a garminconnect token, and `runsync rebuild` rebuilds the analysis database from the raw archive. The dashboard shows weekly volume, training load, the aerobic trend, long runs and race predictions. Tickets live in `.scratch/running-tool/issues/`; deviations from the spec that still need a decision are listed in `.scratch/running-tool/deviations.md`.
+All commands work: `runsync sync` pulls activities and daily summaries from the Personal API and a few metrics from garminconnect, `runsync login` stores a garminconnect token, `runsync import-export` loads Garmin's account data export, and `runsync rebuild` rebuilds the analysis database from the raw archive. The dashboard shows weekly volume, training load, the aerobic trend, long runs and race predictions. Tickets live in `.scratch/running-tool/issues/`; deviations from the spec that still need a decision are listed in `.scratch/running-tool/deviations.md`.
 
 | Path | Contents |
 |---|---|
@@ -21,7 +21,7 @@ All commands work: `runsync sync` pulls activities and daily summaries from the 
 | `.scratch/running-analysis/map.md` | Decision map: every design question and how it was resolved |
 | `.scratch/running-analysis/issues/` | One file per decision (data access, analysis methods, storage, sync, metrics, dashboard design) |
 | `.scratch/running-tool/spec.md` | Implementation spec: user stories, architecture, schema, testing seams |
-| `.scratch/running-tool/issues/` | The spec broken into 16 vertical-slice tickets |
+| `.scratch/running-tool/issues/` | The spec broken into 17 vertical-slice tickets |
 | `GLOSSARY.md`, `PRODUCT.md` | Domain vocabulary and product context |
 
 Supporting material lives on branches that are never merged:
@@ -89,6 +89,16 @@ date,activity_id,distance_m,time_s,all_out,note
 
 `runsync sync` reads the Personal API key from `secrets/personal_api.key` (the bare key on one line; generate it at https://connect.garmin.com/app/settings/personalApiToken). It downloads every activity's detail JSON and FIT into `raw/personal_api/activities/` and daily summaries into `raw/personal_api/daily_summaries/`, loading each file into `running.sqlite` straight away. Rerun it after an interruption to resume. Later runs fetch only new activities and refetch details from the last 7 days. It then fetches garminconnect metrics (race predictor and others) into `raw/garminconnect/` if `runsync login` has stored a token in `secrets/garminconnect/`; without a token that source is skipped. A source that is rate limited stops at once and is skipped for 24 hours (marker in `state/`, delete it to retry sooner); a rejected key or token ends with how to replace it.
 
+### Importing the Garmin account export
+
+The full history can come from Garmin's account data export instead of thousands of API requests:
+
+1. Request the export in your Garmin account (Account > Data Management > Export Your Data) and download the zip from the e-mail Garmin sends.
+2. Run `runsync import-export <path to the zip>`. It copies the zip unchanged to `raw/export/<export date>/` (the newest modification date inside the package), then loads activities, activity FIT files, daily summaries and Garmin's VO2max, race predictor and training status from that copy into `running.sqlite`. It prints counts and date ranges, including FIT files skipped because they are not activities (daily monitoring and the like). Importing the same zip again changes nothing; a newer export overrides an older one. Data already downloaded from the APIs takes precedence over the export. Sleep, profile and the rest of the package are archived but not parsed.
+3. Run `runsync sync` as usual. Activities and days the export already holds are not requested again, so only data after the export date (plus the usual 7-day refresh and today's Garmin metrics) is fetched.
+
+`runsync rebuild` loads the archived exports again. The export contains GPS tracks and your e-mail address: keep it in the data directory, never in the repository.
+
 ## Common commands
 
 Importer (run in `importer/`):
@@ -97,6 +107,7 @@ Importer (run in `importer/`):
 cargo build --release          # binary at target/release/runsync.exe
 cargo run -- sync              # fetch new data from the Personal API and garminconnect (RUST_LOG=debug for detail)
 cargo run -- login             # log in to garminconnect once and store the token (interactive)
+cargo run -- import-export <zip>   # archive and load a Garmin account export, offline
 cargo run -- rebuild           # delete running.sqlite and rebuild it from raw/, offline
 cargo test
 cargo fmt

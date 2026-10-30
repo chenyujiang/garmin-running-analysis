@@ -15,7 +15,40 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0003_records_laps.sql"),
     include_str!("../migrations/0004_daily_wellness.sql"),
     include_str!("../migrations/0005_garmin_metrics.sql"),
+    include_str!("../migrations/0006_export_packages.sql"),
 ];
+
+/// Whether an imported export package covers `date` for `kind`: the day
+/// lies between the package's first row of that kind and its export date.
+pub fn export_covers(
+    conn: &Connection,
+    kind: ExportCoverage,
+    date: chrono::NaiveDate,
+) -> Result<bool> {
+    let sql = format!(
+        "SELECT EXISTS (SELECT 1 FROM export_packages
+                        WHERE {0} IS NOT NULL AND {0} <= ?1 AND ?1 <= export_date)",
+        kind.column()
+    );
+    let day = date.format("%Y-%m-%d").to_string();
+    Ok(conn.query_row(&sql, [day], |r| r.get(0))?)
+}
+
+/// What an export package covers (see `migrations/0006_export_packages.sql`).
+#[derive(Debug, Clone, Copy)]
+pub enum ExportCoverage {
+    DailySummaries,
+    GarminMetrics,
+}
+
+impl ExportCoverage {
+    fn column(self) -> &'static str {
+        match self {
+            ExportCoverage::DailySummaries => "daily_first",
+            ExportCoverage::GarminMetrics => "metrics_first",
+        }
+    }
+}
 
 pub const LATEST_VERSION: i64 = MIGRATIONS.len() as i64;
 

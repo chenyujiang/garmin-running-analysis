@@ -11,7 +11,7 @@ use crate::daily;
 use crate::data_dir::DataDir;
 use crate::fit::ActivityFit;
 use crate::source::GarminMetric;
-use crate::{db, garmin_metrics};
+use crate::{db, export, garmin_metrics};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct RebuildReport {
@@ -23,6 +23,8 @@ pub struct RebuildReport {
     pub daily_summaries: usize,
     /// garminconnect metric responses loaded into `garmin_metrics`.
     pub garmin_metrics: usize,
+    /// Garmin account export packages (`raw/export/`) loaded.
+    pub export_packages: usize,
     /// Files (JSON or FIT) that failed to load. They stay in the raw archive.
     pub skipped: usize,
 }
@@ -71,6 +73,22 @@ pub fn rebuild(data_dir: &DataDir) -> Result<RebuildReport> {
         }
     }
     load_garmin_metrics(&tx, &data_dir.garminconnect_dir(), &mut report)?;
+    // Oldest first, so a newer package wins; the API data above is kept
+    // (see `export::load_package`).
+    for (_, path) in export::archived_packages(data_dir)? {
+        tx.execute_batch("SAVEPOINT export_package")?;
+        match export::load_package(&tx, data_dir, &path) {
+            Ok(_) => {
+                tx.execute_batch("RELEASE export_package")?;
+                report.export_packages += 1;
+            }
+            Err(err) => {
+                tx.execute_batch("ROLLBACK TO export_package; RELEASE export_package")?;
+                log::warn!("skipping {}: {err:#}", path.display());
+                report.skipped += 1;
+            }
+        }
+    }
     tx.commit()?;
     Ok(report)
 }
@@ -113,18 +131,7 @@ fn load_fit(conn: &rusqlite::Connection, path: &Path) -> Result<()> {
         .and_then(|s| s.parse().ok())
         .context("file name is not <activityId>.fit")?;
     let bytes = std::fs::read(path)?;
-    let fit = ActivityFit::parse(&bytes)?;
-    conn.execute_batch("SAVEPOINT fit_file")?;
-    match fit.store(conn, activity_id) {
-        Ok(()) => {
-            conn.execute_batch("RELEASE fit_file")?;
-            Ok(())
-        }
-        Err(err) => {
-            conn.execute_batch("ROLLBACK TO fit_file; RELEASE fit_file")?;
-            Err(err)
-        }
-    }
+    ActivityFit::parse(&bytes)?.store_or_nothing(conn, activity_id)
 }
 
 /// Remove the database and its WAL side files.

@@ -2,7 +2,9 @@
 //! [`ActivitySource`] into the raw archive and the analysis database.
 //!
 //! - The activity list is paged newest first until a page whose activities
-//!   are all already in the raw archive.
+//!   are all already in the raw archive or, from an imported account
+//!   export, in the database. Such an activity gets no FIT or detail
+//!   request unless it is in the refresh window.
 //! - Activities from the last 7 days get their detail JSON refetched and
 //!   overwritten; a FIT is only downloaded when missing.
 //! - Resuming relies only on which raw files exist; no progress is stored.
@@ -10,7 +12,8 @@
 //!   existing `<id>.json` means that activity is complete.
 //! - Daily summaries: the last 7 days (up to `today`) are refetched and
 //!   overwritten on every run; older days are fetched back to 2021-08-01 in
-//!   7-day ranges, newest first, skipping ranges whose day files all exist.
+//!   7-day ranges, newest first, skipping ranges whose days all have a day
+//!   file or are covered by an imported export (`export_packages`).
 //!   A day without data is archived as `null`, so it is not asked for again.
 //! - Every file is written atomically and loaded into the database at once,
 //!   so an interrupted run leaves usable partial results.
@@ -25,7 +28,7 @@ use rusqlite::{Connection, params};
 use crate::activity::Activity;
 use crate::daily;
 use crate::data_dir::DataDir;
-use crate::db;
+use crate::db::{self, ExportCoverage};
 use crate::fit::ActivityFit;
 use crate::source::{ActivitySource, SourceError};
 
@@ -142,7 +145,8 @@ impl Run<'_> {
             let oldest_is_recent = oldest.start_time_utc >= refresh_after;
             let mut all_present = true;
             for listed in &page {
-                let present = self.json_path(listed.activity_id).is_file();
+                let present = self.json_path(listed.activity_id).is_file()
+                    || self.in_database(listed.activity_id)?;
                 all_present &= present;
                 let recent = listed.start_time_utc >= refresh_after;
                 if present && !recent {
@@ -205,7 +209,7 @@ impl Run<'_> {
     /// progress bar; the activity phase before it pages without a total and
     /// shows a spinner.
     fn daily_summaries(&mut self, dir: &Path, today: NaiveDate) -> Result<(), SourceError> {
-        let ranges = daily_ranges_to_fetch(dir, today);
+        let ranges = daily_ranges_to_fetch(self.conn, dir, today)?;
         let days: i64 = ranges.iter().map(|(s, e)| (*e - *s).num_days() + 1).sum();
         self.progress.set_style(
             ProgressStyle::with_template("{elapsed_precise} [{bar:30}] {pos}/{len} days  {msg}")
@@ -244,6 +248,19 @@ impl Run<'_> {
         Ok(())
     }
 
+    /// Whether `activities` has the activity, e.g. from an imported export.
+    fn in_database(&self, activity_id: i64) -> Result<bool, SourceError> {
+        let found = self
+            .conn
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM activities WHERE activity_id = ?1)",
+                [activity_id],
+                |r| r.get(0),
+            )
+            .context("looking up an activity")?;
+        Ok(found)
+    }
+
     fn json_path(&self, activity_id: i64) -> std::path::PathBuf {
         self.dir.join(format!("{activity_id}.json"))
     }
@@ -251,24 +268,33 @@ impl Run<'_> {
 
 /// The daily-summary ranges a run requests, newest first: the last 7 days
 /// always, then each older 7-day range back to [`DAILY_BACKFILL_START`] with a
-/// day file missing.
-fn daily_ranges_to_fetch(dir: &Path, today: NaiveDate) -> Vec<(NaiveDate, NaiveDate)> {
+/// day neither archived as a file nor covered by an imported export.
+fn daily_ranges_to_fetch(
+    conn: &Connection,
+    dir: &Path,
+    today: NaiveDate,
+) -> Result<Vec<(NaiveDate, NaiveDate)>> {
     let mut ranges = Vec::new();
     let mut end = today;
     let mut refresh = true;
     while end >= DAILY_BACKFILL_START {
         let start = (end - Duration::days(DAILY_RANGE_DAYS - 1)).max(DAILY_BACKFILL_START);
-        let archived = start
-            .iter_days()
-            .take_while(|d| *d <= end)
-            .all(|d| daily_path(dir, d).is_file());
+        let mut archived = true;
+        for d in start.iter_days().take_while(|d| *d <= end) {
+            if !daily_path(dir, d).is_file()
+                && !db::export_covers(conn, ExportCoverage::DailySummaries, d)?
+            {
+                archived = false;
+                break;
+            }
+        }
         if refresh || !archived {
             ranges.push((start, end));
         }
         refresh = false;
         end = start - Duration::days(1);
     }
-    ranges
+    Ok(ranges)
 }
 
 fn daily_path(dir: &Path, day: NaiveDate) -> std::path::PathBuf {

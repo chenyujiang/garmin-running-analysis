@@ -60,24 +60,11 @@ pub fn store_day(conn: &Connection, text: &str) -> Result<bool> {
     }
     let date: RowDate =
         serde_json::from_value(row.clone()).context("daily summary without calendarDate")?;
-    let n = |pointer: &str| -> SqlValue {
-        match row.pointer(pointer) {
-            Some(Value::Number(x)) => match x.as_i64() {
-                Some(i) => SqlValue::Integer(i),
-                None => x.as_f64().map_or(SqlValue::Null, SqlValue::Real),
-            },
-            _ => SqlValue::Null,
-        }
-    };
-    conn.execute(
-        "INSERT OR REPLACE INTO daily_wellness (
-            calendar_date, resting_hr_bpm, min_hr_bpm, max_hr_bpm, steps, steps_distance_m,
-            calories_total_kcal, calories_active_kcal, calories_resting_kcal,
-            intensity_moderate_min, intensity_vigorous_min, stress_avg,
-            body_battery_min, body_battery_max, respiration_avg_brpm
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
-        rusqlite::params![
-            date.calendar_date.format("%Y-%m-%d").to_string(),
+    let n = |pointer: &str| sql_number(row.pointer(pointer));
+    store_values(
+        conn,
+        date.calendar_date,
+        [
             n("/heartRate/restingValue"),
             n("/heartRate/minValue"),
             n("/heartRate/maxValue"),
@@ -95,4 +82,33 @@ pub fn store_day(conn: &Connection, text: &str) -> Result<bool> {
         ],
     )?;
     Ok(true)
+}
+
+/// Insert or replace one `daily_wellness` row. `values` are the columns
+/// after `calendar_date`, in table order (resting_hr_bpm ...
+/// respiration_avg_brpm).
+pub fn store_values(conn: &Connection, date: NaiveDate, values: [SqlValue; 14]) -> Result<()> {
+    let mut params = vec![SqlValue::Text(date.format("%Y-%m-%d").to_string())];
+    params.extend(values);
+    conn.execute(
+        "INSERT OR REPLACE INTO daily_wellness (
+            calendar_date, resting_hr_bpm, min_hr_bpm, max_hr_bpm, steps, steps_distance_m,
+            calories_total_kcal, calories_active_kcal, calories_resting_kcal,
+            intensity_moderate_min, intensity_vigorous_min, stress_avg,
+            body_battery_min, body_battery_max, respiration_avg_brpm
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+        rusqlite::params_from_iter(params),
+    )?;
+    Ok(())
+}
+
+/// A JSON number as an SQL value: integers stay integers.
+pub fn sql_number(value: Option<&Value>) -> SqlValue {
+    match value {
+        Some(Value::Number(x)) => match x.as_i64() {
+            Some(i) => SqlValue::Integer(i),
+            None => x.as_f64().map_or(SqlValue::Null, SqlValue::Real),
+        },
+        _ => SqlValue::Null,
+    }
 }

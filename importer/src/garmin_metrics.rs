@@ -6,7 +6,8 @@
 //! - Backfill: one day per week (every Sunday before today, newest first)
 //!   back to the week of the first activity in `activities`. A day/metric
 //!   whose raw file exists is not fetched again, so an interrupted backfill
-//!   resumes where it stopped. The endpoints take a date, so history can be
+//!   resumes where it stopped. A day covered by an imported account export
+//!   (`export_packages`) is not fetched either. The endpoints take a date, so history can be
 //!   asked for (see ticket 06 for what the real API returned).
 //! - Each response is stored as `raw/garminconnect/<metric>/<date>.json`
 //!   and loaded into `garmin_metrics` (one row per day) at once.
@@ -19,7 +20,7 @@ use rusqlite::{Connection, params};
 use serde_json::Value;
 
 use crate::data_dir::DataDir;
-use crate::db;
+use crate::db::{self, ExportCoverage};
 use crate::source::{GarminMetric, MetricsSource, SourceError};
 
 pub const SOURCE_NAME: &str = "garminconnect";
@@ -55,6 +56,9 @@ pub fn sync_garmin_metrics(
             fetch(&conn, &root, source, metric, options.today, &mut report)?;
         }
         for day in backfill_days(&conn, options.today)? {
+            if db::export_covers(&conn, ExportCoverage::GarminMetrics, day)? {
+                continue;
+            }
             for metric in GarminMetric::ALL {
                 if !metric_path(&root, metric, day).is_file() {
                     fetch(&conn, &root, source, metric, day, &mut report)?;
@@ -189,6 +193,17 @@ pub fn store_metric(
         }
     };
 
+    upsert_columns(conn, date, columns)
+}
+
+/// Upsert `columns` of `date`'s `garmin_metrics` row, leaving the other
+/// columns alone.
+pub fn upsert_columns(
+    conn: &Connection,
+    date: NaiveDate,
+    columns: Vec<(&str, rusqlite::types::Value)>,
+) -> Result<()> {
+    let day = date.format("%Y-%m-%d").to_string();
     let names: Vec<&str> = columns.iter().map(|(n, _)| *n).collect();
     let placeholders: Vec<String> = (2..=columns.len() + 1).map(|i| format!("?{i}")).collect();
     let updates: Vec<String> = names

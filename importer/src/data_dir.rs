@@ -67,6 +67,12 @@ impl DataDir {
         self.raw_dir().join("garminconnect")
     }
 
+    /// `raw/export/<YYYY-MM-DD>/`: Garmin account export packages, kept
+    /// verbatim under their export date.
+    pub fn export_dir(&self) -> PathBuf {
+        self.raw_dir().join("export")
+    }
+
     /// `secrets/garminconnect/`: the token written by `runsync login`.
     pub fn garminconnect_token_dir(&self) -> PathBuf {
         self.secrets_dir().join("garminconnect")

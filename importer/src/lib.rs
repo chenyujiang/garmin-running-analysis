@@ -8,6 +8,7 @@ pub mod cooldown;
 pub mod daily;
 pub mod data_dir;
 pub mod db;
+pub mod export;
 pub mod fit;
 pub mod garmin_metrics;
 pub mod garminconnect;

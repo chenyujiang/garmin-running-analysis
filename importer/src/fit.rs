@@ -6,7 +6,7 @@
 use std::collections::HashSet;
 
 use anyhow::{Context, Result};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use fitparser::de::{DecodeOption, from_bytes_with_options};
 use fitparser::profile::MesgNum;
 use fitparser::{FitDataField, FitDataRecord, Value};
@@ -49,6 +49,10 @@ pub struct Lap {
 /// The parts of one activity FIT file that go into the analysis database.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ActivityFit {
+    /// `file_id.type`, e.g. `activity` or `monitoring_b`.
+    pub file_type: Option<String>,
+    /// `start_time` of the first `session` message.
+    pub session_start: Option<DateTime<Utc>>,
     pub records: Vec<Record>,
     pub laps: Vec<Lap>,
 }
@@ -68,10 +72,38 @@ impl ActivityFit {
                     }
                 }
                 MesgNum::Lap => fit.laps.push(lap(msg)),
+                MesgNum::FileId if fit.file_type.is_none() => {
+                    fit.file_type = file_type(msg.fields());
+                }
+                MesgNum::Session if fit.session_start.is_none() => {
+                    if let Some(Value::Timestamp(t)) = find(msg.fields(), "start_time") {
+                        fit.session_start = Some(t.with_timezone(&Utc));
+                    }
+                }
                 _ => {}
             }
         }
         Ok(fit)
+    }
+
+    pub fn is_activity(&self) -> bool {
+        self.file_type.as_deref() == Some("activity")
+    }
+
+    /// [`store`](Self::store) inside a savepoint: on error nothing from this
+    /// file is left in the database.
+    pub fn store_or_nothing(&self, conn: &Connection, activity_id: i64) -> Result<()> {
+        conn.execute_batch("SAVEPOINT fit_file")?;
+        match self.store(conn, activity_id) {
+            Ok(()) => {
+                conn.execute_batch("RELEASE fit_file")?;
+                Ok(())
+            }
+            Err(err) => {
+                conn.execute_batch("ROLLBACK TO fit_file; RELEASE fit_file")?;
+                Err(err)
+            }
+        }
     }
 
     /// Replace this activity's rows in `records` and `laps`.
@@ -163,6 +195,15 @@ fn lap(msg: &FitDataRecord) -> Lap {
         avg_power_w: number(f, "avg_power"),
         elevation_gain_m: number(f, "total_ascent"),
         elevation_loss_m: number(f, "total_descent"),
+    }
+}
+
+/// `file_id.type` as fitparser names it; a value it has no name for as its
+/// number.
+fn file_type(fields: &[FitDataField]) -> Option<String> {
+    match find(fields, "type")? {
+        Value::String(s) => Some(s.clone()),
+        _ => number(fields, "type").map(|n| n.to_string()),
     }
 }
 
