@@ -25,9 +25,20 @@ class Physiology:
 
 
 @dataclass(frozen=True)
+class RunWalk:
+    """`[run_walk]` in config.toml: how each second is classified as running."""
+
+    cadence_spm: float = 140.0  # smoothed cadence (both feet) at or above this is running
+    smoothing_s: int = 10  # trailing window for the cadence mean
+    min_walk_s: int = 10  # walking stretches shorter than this still count as running
+    pause_gap_s: int = 30  # a gap between samples longer than this is a pause, not time
+
+
+@dataclass(frozen=True)
 class Config:
     reference_hr: int = 145
     physiology: tuple[Physiology, ...] = field(default_factory=tuple)
+    run_walk: RunWalk = field(default_factory=RunWalk)
 
 
 def data_dir() -> Path:
@@ -72,6 +83,17 @@ def load_config(root: Path | None = None) -> Config:
             for p in raw.get("physiology", [])
         )
         reference_hr = int(raw.get("aerobic", {}).get("reference_hr", 145))
+        run_walk = _run_walk(raw.get("run_walk", {}))
     except (KeyError, TypeError, ValueError) as err:
         raise ConfigError(f"配置文件 {path} 缺少或写错了字段：{err}") from err
-    return Config(reference_hr=reference_hr, physiology=physiology)
+    return Config(reference_hr=reference_hr, physiology=physiology, run_walk=run_walk)
+
+
+def _run_walk(raw: dict) -> RunWalk:
+    d = RunWalk()
+    return RunWalk(
+        cadence_spm=float(raw.get("cadence_spm", d.cadence_spm)),
+        smoothing_s=int(raw.get("smoothing_s", d.smoothing_s)),
+        min_walk_s=int(raw.get("min_walk_s", d.min_walk_s)),
+        pause_gap_s=int(raw.get("pause_gap_s", d.pause_gap_s)),
+    )
