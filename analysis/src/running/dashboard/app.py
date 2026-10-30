@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from running.aerobic import AerobicTrend, Range, aerobic_trend
 from running.load import TrainingLoad, training_load
 from running.longruns import LongRuns, long_runs
+from running.races import Predictions, RaceList, race_list, race_predictions
 from running.status import DataStatus, data_status
 from running.volume import Volume, weekly_volume
 
@@ -42,6 +43,14 @@ def create_app() -> FastAPI:
         today: date | None = None, limit: int = Query(10, ge=1, le=100)
     ) -> LongRuns:
         return long_runs(today=today, limit=limit)
+
+    @app.get("/api/predictions")
+    def predictions(today: date | None = None) -> Predictions:
+        return race_predictions(today=today)
+
+    @app.get("/api/races")
+    def races(today: date | None = None) -> RaceList:
+        return race_list(today=today)
 
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app

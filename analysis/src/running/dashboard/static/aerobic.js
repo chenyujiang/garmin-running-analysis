@@ -81,13 +81,26 @@ async function fill(body, howSlot, title, range) {
     body.replaceChildren(h("p", { class: "warn" }, `无法读取有氧能力：${err.message}`));
     return;
   }
+  const races = await fetchRaces(today);
   if (mine !== seq) return; // a newer range was picked while this one loaded
   howSlot.replaceChildren(howDetails(A.method));
   title.textContent = `有氧能力：心率 ${A.method.params.reference_hr} 时的跑步配速`;
-  body.replaceChildren(...render(A));
+  body.replaceChildren(...render(A, races));
 }
 
-function render(A) {
+/** Race dates from races.csv (ticket 14) for the red dashed markers; the
+ *  chart still draws if races.csv is missing or broken. */
+async function fetchRaces(today) {
+  try {
+    const r = await fetch(today ? `api/races?today=${encodeURIComponent(today)}` : "api/races");
+    if (!r.ok) return [];
+    return (await r.json()).races ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function render(A, races = []) {
   const ref = A.method.params.reference_hr;
   const weeks = A.weeks.map((w, i) => ({ ...w, x: i }));
   const hasPoints = weeks.some((w) => w.pace_s_per_km != null);
@@ -97,7 +110,7 @@ function render(A) {
       : `还没有可用的户外路跑：需要心率在 ${ref} bpm 附近、稳态时长至少 ${A.method.params.min_steady_s / 60} 分钟的跑步。`)];
   }
   const g = geometry(weeks);
-  const main = mainChart(weeks, g, ref);
+  const main = mainChart(weeks, g, ref, raceWeeks(weeks, races));
   const temp = tempChart(weeks, g);
   const readout = h("div", { class: "readout", "aria-live": "polite" },
     h("span", { class: "muted" }, "鼠标移到图上，读出那一周的数值"));
@@ -114,8 +127,19 @@ function render(A) {
       h("span", {}, h("i", { class: "dotk" }), "每周中位数（空白 = 有效跑步少于 2 次）"),
       h("span", {}, h("i", { style: "border-color:var(--ink)" }), "4 周滚动中位数"),
       h("span", {}, h("i", { class: "dotk open" }), "本周（未完）"),
+      races.length ? h("span", {}, h("i", { class: "race" }), "比赛（races.csv）") : null,
     ),
   ];
+}
+
+/** Weeks holding a race in range, one marker per week. */
+function raceWeeks(weeks, races) {
+  const out = new Map();
+  for (const r of races) {
+    const w = weeks.find((w) => w.week_start <= r.date && r.date < addDays(w.week_start, 7));
+    if (w && !out.has(w.x)) out.set(w.x, r);
+  }
+  return [...out].map(([x, race]) => ({ x, race }));
 }
 
 function dek(weeks, range) {
@@ -183,7 +207,7 @@ function frame(H, label) {
   return [wrap, svg];
 }
 
-function mainChart(weeks, g, ref) {
+function mainChart(weeks, g, ref, raceMarks = []) {
   const H = MAIN.h;
   const [wrap, svg] = frame(H, `有氧能力趋势：心率 ${ref} 时的配速`);
   for (const v of g.yTicks) {
@@ -192,6 +216,12 @@ function mainChart(weeks, g, ref) {
     svg.append(s("text", { x: M.l - 8, y: y + 4, "text-anchor": "end" }, fmtPace(v)));
   }
   axisX(svg, g, H, MAIN.b);
+  for (const m of raceMarks) {
+    const x = g.sx(m.x);
+    const line = s("line", { class: "race-mark", x1: x, x2: x, y1: MAIN.t, y2: H - MAIN.b });
+    line.append(s("title", {}, `比赛 ${m.race.date}`));
+    svg.append(line);
+  }
 
   for (const w of weeks) {
     if (w.pace_s_per_km == null) continue;

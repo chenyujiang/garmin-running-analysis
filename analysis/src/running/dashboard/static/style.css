@@ -89,6 +89,15 @@ details.how .body p { margin: 0 0 6px; }
 .a-band > section.band-volume { border-left: 1px solid var(--rule); padding-left: 28px; padding-right: 28px; }
 .band-volume .stat-line { gap: 22px; margin: 12px 0 10px; }
 .band-volume .foot { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 6px; }
+/* race predictions column (ticket 14) */
+.band-predict { grid-column: 3; }
+.a-band > section.band-predict { border-left: 1px solid var(--rule); padding-left: 28px; padding-right: 0; }
+.band-predict table.predict td { padding: 5px 6px; }
+.band-predict table.predict td.main { font-weight: 600; }
+.band-predict table.predict sup { font-size: 10px; color: var(--ink-3); margin-left: 2px; }
+.band-predict table.stale { opacity: 0.4; }
+.band-predict .basis { margin: 8px 0 4px; }
+.band-predict .foot { position: relative; margin-top: 6px; }
 
 /* aerobic trend, full width (ticket 12); crosshair readout from variant C */
 :root { --temp: #a39a8a; --dot: #8f8676; }
@@ -107,6 +116,8 @@ details.how .body p { margin: 0 0 6px; }
 .temp-label { margin: 6px 0 2px 50px; }
 .xhair { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0; pointer-events: none; }
 .xhair-dot { fill: var(--paper); stroke: var(--ink); stroke-width: 1.5; opacity: 0; pointer-events: none; }
+.race-mark { stroke: var(--red); stroke-width: 1.2; stroke-dasharray: 4 3; }
+.legend i.race { border-top: 1.5px dashed var(--red); }
 .aerobic .legend { margin-top: 8px; }
 .legend i.dotk { width: 7px; height: 7px; border: 0; border-radius: 50%; background: var(--dot); }
 .legend i.dotk.open { background: transparent; border: 1.4px solid var(--dot); width: 8px; height: 8px; }
@@ -129,6 +140,8 @@ th { text-align: left; font-weight: 500; color: var(--ink-3); font-size: 12.5px;
 td { padding: 7px 8px; border-bottom: 1px solid var(--rule); }
 td.r, th.r { text-align: right; }
 td.dec-high { color: var(--red); font-weight: 600; }
+.lower-races { grid-column: 2; }
+tr.soft td { color: var(--ink-3); }
 .lower-longruns .foot { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 6px; }
 @media (max-width: 980px) {
   .a-lower { grid-template-columns: 1fr; }
