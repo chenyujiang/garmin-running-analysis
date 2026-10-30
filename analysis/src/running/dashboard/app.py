@@ -1,12 +1,14 @@
 """The local dashboard: FastAPI on 127.0.0.1 serving JSON from `running`
 and the static frontend in `static/`. No accounts, no writes."""
 
+from datetime import date
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from running.status import DataStatus, data_status
+from running.volume import Volume, weekly_volume
 
 HOST = "127.0.0.1"
 PORT = 8765
@@ -19,6 +21,10 @@ def create_app() -> FastAPI:
     @app.get("/api/status")
     def status() -> DataStatus:
         return data_status()
+
+    @app.get("/api/volume")
+    def volume(today: date | None = None) -> Volume:
+        return weekly_volume(today=today)
 
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app
