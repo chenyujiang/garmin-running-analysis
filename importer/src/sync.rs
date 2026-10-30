@@ -85,6 +85,7 @@ pub fn sync_activities(
     let dir = data_dir.personal_api_activities_dir();
     std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
 
+    // The activity list has no total: a spinner until the daily summaries.
     let progress = ProgressBar::new_spinner();
     progress.set_style(
         ProgressStyle::with_template("{spinner} {elapsed_precise} {pos} files  {msg}")
@@ -200,20 +201,21 @@ impl Run<'_> {
     }
 
     /// Refetch the last 7 days, then backfill older ranges, newest first.
+    /// The number of days to fetch is known up front, so this phase shows a
+    /// progress bar; the activity phase before it pages without a total and
+    /// shows a spinner.
     fn daily_summaries(&mut self, dir: &Path, today: NaiveDate) -> Result<(), SourceError> {
-        let mut end = today;
-        let mut refresh = true;
-        while end >= DAILY_BACKFILL_START {
-            let start = (end - Duration::days(DAILY_RANGE_DAYS - 1)).max(DAILY_BACKFILL_START);
-            let archived = start
-                .iter_days()
-                .take_while(|d| *d <= end)
-                .all(|d| daily_path(dir, d).is_file());
-            if refresh || !archived {
-                self.daily_range(dir, start, end)?;
-            }
-            refresh = false;
-            end = start - Duration::days(1);
+        let ranges = daily_ranges_to_fetch(dir, today);
+        let days: i64 = ranges.iter().map(|(s, e)| (*e - *s).num_days() + 1).sum();
+        self.progress.set_style(
+            ProgressStyle::with_template("{elapsed_precise} [{bar:30}] {pos}/{len} days  {msg}")
+                .expect("valid template")
+                .progress_chars("=> "),
+        );
+        self.progress.set_length(u64::try_from(days).unwrap_or(0));
+        self.progress.set_position(0);
+        for (start, end) in ranges {
+            self.daily_range(dir, start, end)?;
         }
         Ok(())
     }
@@ -245,6 +247,28 @@ impl Run<'_> {
     fn json_path(&self, activity_id: i64) -> std::path::PathBuf {
         self.dir.join(format!("{activity_id}.json"))
     }
+}
+
+/// The daily-summary ranges a run requests, newest first: the last 7 days
+/// always, then each older 7-day range back to [`DAILY_BACKFILL_START`] with a
+/// day file missing.
+fn daily_ranges_to_fetch(dir: &Path, today: NaiveDate) -> Vec<(NaiveDate, NaiveDate)> {
+    let mut ranges = Vec::new();
+    let mut end = today;
+    let mut refresh = true;
+    while end >= DAILY_BACKFILL_START {
+        let start = (end - Duration::days(DAILY_RANGE_DAYS - 1)).max(DAILY_BACKFILL_START);
+        let archived = start
+            .iter_days()
+            .take_while(|d| *d <= end)
+            .all(|d| daily_path(dir, d).is_file());
+        if refresh || !archived {
+            ranges.push((start, end));
+        }
+        refresh = false;
+        end = start - Duration::days(1);
+    }
+    ranges
 }
 
 fn daily_path(dir: &Path, day: NaiveDate) -> std::path::PathBuf {

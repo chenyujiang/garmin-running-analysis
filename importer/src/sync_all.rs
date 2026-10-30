@@ -57,13 +57,14 @@ pub fn sync_all(
     garminconnect: Option<&mut dyn MetricsSource>,
 ) -> SyncAllReport {
     let personal_api = guarded(data_dir, sync::SOURCE_NAME, options.now, || {
-        let source = personal_api.map_err(|err| format!("personal_api: {err:#}"))?;
+        let source = personal_api.map_err(|err| format!("{}: {err:#}", sync::SOURCE_NAME))?;
         run_personal_api(data_dir, source, options)
     });
     let garminconnect = guarded(data_dir, garmin_metrics::SOURCE_NAME, options.now, || {
         let Some(source) = garminconnect else {
             return Ok(Outcome::Skipped(format!(
-                "garminconnect: skipped, no token in {}. Run `runsync login` once to enable it.",
+                "{}: skipped, no token in {}. Run `runsync login` once to enable it.",
+                garmin_metrics::SOURCE_NAME,
                 data_dir.garminconnect_token_dir().display()
             )));
         };
@@ -148,34 +149,23 @@ fn run_personal_api(
     source: &mut dyn ActivitySource,
     options: &SyncOptions,
 ) -> RunResult {
-    let report = sync_activities(data_dir, source, options)
-        .map_err(|err| format!("personal_api: {err:#}"))?;
+    let name = sync::SOURCE_NAME;
+    let report =
+        sync_activities(data_dir, source, options).map_err(|err| format!("{name}: {err:#}"))?;
     let summary = format!(
-        "{} new activities, {} refreshed, {} FIT files, {} daily summary days, \
-         {} files could not be parsed",
+        "{} new activities, {} refreshed, {} FIT files, {} daily summary days,          {} files could not be parsed",
         report.new_activities,
         report.refreshed_activities,
         report.fit_files,
         report.daily_summaries,
         report.unparsable
     );
-    match report.stopped_by {
-        None => Ok(Outcome::Done(format!("personal_api: {summary}"))),
-        Some(SourceError::RateLimited(reason)) => Err(Stop::RateLimited {
-            reason: format!("rate limited ({reason})"),
-            summary,
-        }),
-        Some(SourceError::CredentialsRejected) => Err(Stop::Message(format!(
-            "personal_api: the Personal API key was rejected; it may have expired (keys last \
-             about two years, the current one until about 2027-10). Generate a new key at \
-             {PERSONAL_API_KEY_URL} and save it to {}.",
+    finish(name, summary, report.stopped_by, || {
+        format!(
+            "the Personal API key was rejected; it may have expired (keys last about two years,              the current one until about 2027-10). Generate a new key at              {PERSONAL_API_KEY_URL} and save it to {}.",
             data_dir.personal_api_key_path().display()
-        ))),
-        Some(SourceError::Other(err)) => Err(Stop::Message(format!(
-            "personal_api: stopped after {summary}: {err:#}. Run `runsync sync` again to resume \
-             where it stopped."
-        ))),
-    }
+        )
+    })
 }
 
 fn run_garminconnect(
@@ -183,29 +173,41 @@ fn run_garminconnect(
     source: &mut dyn MetricsSource,
     options: &SyncOptions,
 ) -> RunResult {
+    let name = garmin_metrics::SOURCE_NAME;
     let metrics_options = MetricsSyncOptions {
         today: options.today,
     };
     let report = sync_garmin_metrics(data_dir, source, &metrics_options)
-        .map_err(|err| format!("garminconnect: {err:#}"))?;
+        .map_err(|err| format!("{name}: {err:#}"))?;
     let summary = format!(
         "{} metric responses, {} could not be parsed",
         report.fetched, report.unparsable
     );
-    match report.stopped_by {
-        None => Ok(Outcome::Done(format!("garminconnect: {summary}"))),
+    finish(name, summary, report.stopped_by, || {
+        "the token is missing, expired or was rejected. Run `runsync login` to log in again."
+            .to_owned()
+    })
+}
+
+/// The outcome of a source run that ended normally or on a [`SourceError`].
+/// Only the fix for rejected credentials differs between sources.
+fn finish(
+    name: &str,
+    summary: String,
+    stopped_by: Option<SourceError>,
+    credentials_fix: impl FnOnce() -> String,
+) -> RunResult {
+    match stopped_by {
+        None => Ok(Outcome::Done(format!("{name}: {summary}"))),
         Some(SourceError::RateLimited(reason)) => Err(Stop::RateLimited {
             reason: format!("rate limited ({reason})"),
             summary,
         }),
-        Some(SourceError::CredentialsRejected) => Err(Stop::Message(
-            "garminconnect: the token is missing, expired or was rejected. \
-             Run `runsync login` to log in again."
-                .to_owned(),
-        )),
+        Some(SourceError::CredentialsRejected) => {
+            Err(Stop::Message(format!("{name}: {}", credentials_fix())))
+        }
         Some(SourceError::Other(err)) => Err(Stop::Message(format!(
-            "garminconnect: stopped after {summary}: {err:#}. Run `runsync sync` again to \
-             resume where it stopped."
+            "{name}: stopped after {summary}: {err:#}. Run `runsync sync` again to resume              where it stopped."
         ))),
     }
 }
