@@ -148,3 +148,10 @@ tr.soft td { color: var(--ink-3); }
   .a-lower > section { grid-column: 1; }
   table { display: block; overflow-x: auto; }
 }
+
+/* "changed since last read" (ticket 15): red dot after a headline number */
+.new-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--red); margin: 0 -12px 0 5px; vertical-align: top; }
+.mark-read { font: inherit; font-size: 13px; color: var(--red); background: none; border: 1px solid var(--red); border-radius: 3px; padding: 3px 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.mark-read .new-dot { margin: 0; vertical-align: middle; }
+.mark-read:hover { background: var(--red-wash); }
+.mark-read[hidden] { display: none; }

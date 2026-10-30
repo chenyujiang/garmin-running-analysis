@@ -2,6 +2,7 @@
 // 12-week CTL/ATL lines with TSB area, and "负荷怎么算的".
 // Data: GET /api/load (see running.load.training_load).
 
+import { watch } from "./changes.js";
 import { h } from "./dom.js";
 import { chart, niceStep, ticks } from "./svg.js";
 
@@ -63,9 +64,9 @@ function render(L) {
     headline,
     dek,
     h("div", { class: "stat-line" },
-      big("CTL 体能", f0(c.ctl), "var(--fit)"),
-      big("ATL 疲劳", f0(c.atl), "var(--fat)"),
-      big("TSB 状态", signed(c.tsb), c.tsb < 0 ? "var(--red)" : "var(--form-pos)"),
+      big("CTL 体能", f0(c.ctl), "var(--fit)", "load.ctl"),
+      big("ATL 疲劳", f0(c.atl), "var(--fat)", "load.atl"),
+      big("TSB 状态", signed(c.tsb), c.tsb < 0 ? "var(--red)" : "var(--form-pos)", "load.tsb"),
     ),
     ...charts(L),
     h("div", { class: "load-foot" },
@@ -118,8 +119,9 @@ function charts(L) {
   return [loadChart, tsbChart];
 }
 
-function big(label, value, color) {
-  return h("div", {}, h("span", { class: "l" }, label), h("span", { class: "big", style: `color:${color}` }, value));
+function big(label, value, color, key) {
+  return h("div", {}, h("span", { class: "l" }, label),
+    watch(h("span", { class: "big", style: `color:${color}` }, value), key, value));
 }
 
 function legend(label, style, cls = "") {
