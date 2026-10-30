@@ -2,6 +2,7 @@
 // Reads GET /api/status and renders either the empty state or the data summary.
 
 import { h, fmtDateTime, fmtDate } from "./dom.js";
+import { loadSection } from "./load.js";
 
 const main = document.getElementById("main");
 const syncLine = document.getElementById("sync-line");
@@ -44,7 +45,19 @@ function empty(s) {
   );
 }
 
+// Top status band, prototype variant A: load | weekly volume | predictions.
+// Each column is its own module and places itself with a grid-column rule.
+function band() {
+  return h("div", { class: "a-band" },
+    loadSection(),
+  );
+}
+
 function summary(s) {
+  return h("div", {}, band(), overview(s));
+}
+
+function overview(s) {
   return h("section", {},
     h("h1", { class: "headline" }, `已有 ${s.activity_count} 个活动`),
     h("p", { class: "dek" }, "各项分析会在后续版本里陆续出现在这里。"),

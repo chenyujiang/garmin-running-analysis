@@ -47,7 +47,48 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 .empty ol { padding-left: 20px; color: var(--ink-2); }
 .empty li { margin: 6px 0; }
 
+/* top band (variant A): load | weekly volume | predictions */
+h2 { font: 600 19px/1.3 var(--serif); margin: 0; }
+.a-band { display: grid; grid-template-columns: 1.35fr 1fr 0.95fr; border-bottom: 1px solid var(--rule-strong); margin-bottom: 32px; }
+.a-band > section { padding: 4px 28px 24px; grid-row: 1; }
+.a-band > section + section { border-left: 1px solid var(--rule); }
+.a-band > section:first-child { padding-left: 0; }
+.a-band > section:last-child { padding-right: 0; }
+
+/* charts */
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.chart text { font: 12px var(--sans); fill: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+/* "how is this calculated" */
+details.how { font-size: 13px; color: var(--ink-2); }
+details.how summary { cursor: pointer; color: var(--ink-3); list-style: none; text-decoration: underline; text-decoration-color: var(--rule); text-underline-offset: 3px; }
+details.how summary::-webkit-details-marker { display: none; }
+details.how[open] summary { color: var(--ink); }
+details.how .body { margin-top: 8px; padding: 10px 12px; background: var(--paper-2); border-radius: 4px; max-width: 70ch; }
+details.how .body p { margin: 0 0 6px; }
+
+/* training-load column (ticket 09); chart notes come from svg.js */
+:root {
+  --fit: #1f3d63;
+  --fat: #a5641a;
+  --form-pos: #3f6b4f;
+  --form-neg: #b0281f;
+}
+.band-load { grid-column: 1; }
+.a-band > section.band-load { padding-left: 0; padding-right: 28px; }
+.headline.alert { color: var(--red); }
+.note { position: absolute; font-size: 12.5px; line-height: 1.4; color: var(--ink-2); }
+.note b { color: var(--red); font-weight: 600; display: block; }
+.legend { display: flex; gap: 16px; font-size: 13px; color: var(--ink-2); flex-wrap: wrap; }
+.legend i { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+.legend i.bar { height: 9px; border: 0; width: 9px; }
+.load-foot { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-top: 6px; }
+
 @media (max-width: 980px) {
+  .a-band { grid-template-columns: 1fr; }
+  .a-band > section { grid-row: auto; grid-column: 1; padding: 4px 0 24px; border-left: 0 !important; }
+  .a-band > section.band-load { padding-right: 0; }
   .page { padding-left: 18px; padding-right: 18px; }
   .topbar { padding: 0 18px; gap: 14px; }
   .headline { font-size: 24px; }
