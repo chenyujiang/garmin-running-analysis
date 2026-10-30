@@ -4,11 +4,12 @@ and the static frontend in `static/`. No accounts, no writes."""
 from datetime import date
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.staticfiles import StaticFiles
 
 from running.aerobic import AerobicTrend, Range, aerobic_trend
 from running.load import TrainingLoad, training_load
+from running.longruns import LongRuns, long_runs
 from running.status import DataStatus, data_status
 from running.volume import Volume, weekly_volume
 
@@ -35,6 +36,12 @@ def create_app() -> FastAPI:
     @app.get("/api/aerobic")
     def aerobic(range: Range = "1y", today: date | None = None) -> AerobicTrend:  # noqa: A002
         return aerobic_trend(range_=range, today=today)
+
+    @app.get("/api/long-runs")
+    def long_runs_table(
+        today: date | None = None, limit: int = Query(10, ge=1, le=100)
+    ) -> LongRuns:
+        return long_runs(today=today, limit=limit)
 
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app
