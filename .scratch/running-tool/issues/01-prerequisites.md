@@ -12,6 +12,6 @@
 - [x] 用户安装 Visual Studio Build Tools，并勾选 C++ 工作负载
 - [x] 一个临时的空 crate 能用 bundled feature 编译 `rusqlite`，验证完删除
 - [x] 数据目录（`RUNNING_DATA_DIR`，默认 `%USERPROFILE%\running-data`）已创建，下面有 `secrets/`
-- [x] 用户自己把 Personal API key 从仓库根目录的 `.env` 移进 `secrets/`，把 garminconnect 的 token 从 `~/.garminconnect` 移进 `secrets/garminconnect/`
+- [x] 用户自己把 Personal API key 从仓库根目录的 `.env` 移成 `secrets/personal_api.key`，把 garminconnect 的 token 从 `~/.garminconnect` 移进 `secrets/garminconnect/`
 - [x] 仓库根目录不再有 `.env`
 - [x] agent 全程不读取、不打印任何 key 或 token 的内容，只检查文件是否存在
