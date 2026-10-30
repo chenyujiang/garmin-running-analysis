@@ -72,6 +72,11 @@ impl DataDir {
         self.secrets_dir().join("garminconnect")
     }
 
+    /// `state/`: rate-limit cooldown markers (see [`crate::cooldown`]).
+    pub fn state_dir(&self) -> PathBuf {
+        self.root.join("state")
+    }
+
     pub fn secrets_dir(&self) -> PathBuf {
         self.root.join("secrets")
     }

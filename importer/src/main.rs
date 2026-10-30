@@ -5,11 +5,11 @@ use clap::{Parser, Subcommand};
 
 use runsync::config::Config;
 use runsync::data_dir::DataDir;
-use runsync::garmin_metrics::{MetricsSyncOptions, sync_garmin_metrics};
 use runsync::garminconnect::GarminConnectScript;
 use runsync::personal_api::{ApiKey, PersonalApiClient};
-use runsync::source::SourceError;
-use runsync::sync::{SyncOptions, sync_activities};
+use runsync::source::{ActivitySource, MetricsSource};
+use runsync::sync::SyncOptions;
+use runsync::sync_all::{Outcome, sync_all};
 
 /// Sync Garmin data into the raw archive and build the analysis database.
 ///
@@ -24,7 +24,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Fetch new and recently changed data from Garmin.
+    /// Fetch new and recently changed data from Garmin. Never asks for a password.
     Sync,
     /// Log in to garminconnect interactively and store its token under secrets/.
     Login,
@@ -67,83 +67,40 @@ fn run(cli: Cli) -> Result<()> {
     }
 }
 
-/// Both sources run on every sync; one failing does not stop the other.
+/// Both sources run on every sync, one after the other; one failing does not
+/// stop the other. Building the sources touches neither the network nor the
+/// script, so a source in cooldown makes no request at all.
 fn sync(data_dir: &DataDir, config: &Config) -> Result<()> {
-    let personal = sync_personal_api(data_dir, config);
-    if let Err(err) = &personal {
-        eprintln!("error: {err:#}");
-    }
-    let metrics = sync_garminconnect(data_dir, config);
-    match (personal, metrics) {
-        (Ok(()), metrics) => metrics,
-        (Err(_), Ok(())) => bail!("personal_api sync failed (see above)"),
-        (Err(_), Err(err)) => Err(err.context("personal_api sync failed too (see above)")),
-    }
-}
+    let personal_interval = Duration::from_secs_f64(config.sync.personal_api_interval_s.max(0.0));
+    let mut personal = ApiKey::load(&data_dir.personal_api_key_path())
+        .and_then(|key| PersonalApiClient::new(key, personal_interval));
 
-fn sync_garminconnect(data_dir: &DataDir, config: &Config) -> Result<()> {
     let token_dir = data_dir.garminconnect_token_dir();
-    if !token_dir.is_dir() {
-        println!(
-            "garminconnect: skipped, no token in {}. Run `runsync login` once to enable it.",
-            token_dir.display()
-        );
-        return Ok(());
-    }
-    let interval = Duration::from_secs_f64(config.sync.garminconnect_interval_s.max(0.0));
-    let mut source = GarminConnectScript::new(token_dir, interval);
-    let options = MetricsSyncOptions {
-        today: chrono::Local::now().date_naive(),
-    };
-    let report = sync_garmin_metrics(data_dir, &mut source, &options)?;
-    drop(source);
-    println!(
-        "garminconnect: {} metric responses, {} could not be parsed",
-        report.fetched, report.unparsable
-    );
-    match report.stopped_by {
-        None => Ok(()),
-        Some(SourceError::RateLimited(reason)) => bail!(
-            "garminconnect rate limited ({reason}); stopped without retrying. \
-             Run `runsync sync` again later; it resumes where it stopped."
-        ),
-        Some(SourceError::CredentialsRejected) => bail!(
-            "the garminconnect token is missing, expired or was rejected. \
-             Run `runsync login` to log in again."
-        ),
-        Some(SourceError::Other(err)) => Err(err.context(
-            "garminconnect sync stopped; run `runsync sync` again to resume where it stopped",
-        )),
-    }
-}
+    let mut garminconnect = token_dir.is_dir().then(|| {
+        let interval = Duration::from_secs_f64(config.sync.garminconnect_interval_s.max(0.0));
+        GarminConnectScript::new(token_dir, interval)
+    });
 
-fn sync_personal_api(data_dir: &DataDir, config: &Config) -> Result<()> {
-    let key_path = data_dir.personal_api_key_path();
-    let key = ApiKey::load(&key_path)?;
-    let interval = Duration::from_secs_f64(config.sync.personal_api_interval_s.max(0.0));
-    let mut client = PersonalApiClient::new(key, interval)?;
-    let report = sync_activities(data_dir, &mut client, &SyncOptions::default())?;
-    println!(
-        "personal_api: {} new activities, {} refreshed, {} FIT files, {} daily summary days,          {} files could not be parsed",
-        report.new_activities,
-        report.refreshed_activities,
-        report.fit_files,
-        report.daily_summaries,
-        report.unparsable
+    let report = sync_all(
+        data_dir,
+        &SyncOptions::default(),
+        personal
+            .as_mut()
+            .map(|c| c as &mut dyn ActivitySource)
+            .map_err(|err| anyhow::anyhow!("{err:#}")),
+        garminconnect.as_mut().map(|s| s as &mut dyn MetricsSource),
     );
-    match report.stopped_by {
-        None => Ok(()),
-        Some(SourceError::RateLimited(reason)) => bail!(
-            "Personal API rate limited ({reason}); stopped without retrying. \
-             Run `runsync sync` again later; it resumes where it stopped."
-        ),
-        Some(SourceError::CredentialsRejected) => bail!(
-            "Personal API key was rejected. Generate a new key at \
-             https://connect.garmin.com/app/settings/personalApiToken and save it to {}.",
-            key_path.display()
-        ),
-        Some(SourceError::Other(err)) => Err(err.context(
-            "Personal API sync stopped; run `runsync sync` again to resume where it stopped",
-        )),
+    // Close the script so it saves its refreshed token.
+    drop(garminconnect);
+
+    for outcome in [&report.personal_api, &report.garminconnect] {
+        match outcome {
+            Outcome::Done(m) | Outcome::Skipped(m) => println!("{m}"),
+            Outcome::Failed(m) => eprintln!("error: {m}"),
+        }
     }
+    if !report.success() {
+        bail!("sync did not complete (see above)");
+    }
+    Ok(())
 }
