@@ -2,6 +2,7 @@
 // Reads GET /api/status and renders either the empty state or the data summary.
 
 import { h, fmtDateTime, fmtDate } from "./dom.js";
+import { loadSection } from "./load.js";
 import { volumeSection } from "./volume.js";
 
 const main = document.getElementById("main");
@@ -49,6 +50,7 @@ function empty(s) {
 // Each column is its own module and places itself with a grid-column rule.
 function band() {
   return h("div", { class: "a-band" },
+    loadSection(),
     volumeSection(),
   );
 }

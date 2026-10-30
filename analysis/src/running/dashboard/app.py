@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from running.load import TrainingLoad, training_load
 from running.status import DataStatus, data_status
 from running.volume import Volume, weekly_volume
 
@@ -21,6 +22,10 @@ def create_app() -> FastAPI:
     @app.get("/api/status")
     def status() -> DataStatus:
         return data_status()
+
+    @app.get("/api/load")
+    def load(today: date | None = None) -> TrainingLoad:
+        return training_load(today=today)
 
     @app.get("/api/volume")
     def volume(today: date | None = None) -> Volume:
