@@ -2,3 +2,10 @@
 .claude/
 .scratch/running-analysis/trial/data/
 __pycache__/
+importer/target/
+analysis/.venv/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+# Self-hosted dashboard fonts (~26 MB), fetched by analysis/scripts/fetch_fonts.py
+analysis/src/running/dashboard/static/fonts/

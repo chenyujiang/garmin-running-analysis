@@ -1,0 +1,25 @@
+[package]
+name = "runsync"
+version = "0.1.0"
+edition = "2024"
+description = "Garmin importer: raw archive and SQLite analysis database"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "runsync"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+clap = { version = "4", features = ["derive"] }
+env_logger = "0.11"
+log = "0.4"
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+
+[dev-dependencies]
+tempfile = "3"

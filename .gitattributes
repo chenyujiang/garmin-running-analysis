@@ -1,0 +1,4 @@
+# Notebook outputs hold personal data: strip them on commit (filter set up
+# once per clone, see README "Notebooks").
+*.ipynb filter=nbstripout
+*.ipynb diff=ipynb
