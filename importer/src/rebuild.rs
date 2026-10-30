@@ -4,12 +4,14 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use chrono::NaiveDate;
 
 use crate::activity::Activity;
 use crate::daily;
 use crate::data_dir::DataDir;
-use crate::db;
 use crate::fit::ActivityFit;
+use crate::source::GarminMetric;
+use crate::{db, garmin_metrics};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct RebuildReport {
@@ -19,6 +21,8 @@ pub struct RebuildReport {
     pub fit_files: usize,
     /// Daily summary files loaded into `daily_wellness` (`null` days excluded).
     pub daily_summaries: usize,
+    /// garminconnect metric responses loaded into `garmin_metrics`.
+    pub garmin_metrics: usize,
     /// Files (JSON or FIT) that failed to load. They stay in the raw archive.
     pub skipped: usize,
 }
@@ -66,8 +70,38 @@ pub fn rebuild(data_dir: &DataDir) -> Result<RebuildReport> {
             }
         }
     }
+    load_garmin_metrics(&tx, &data_dir.garminconnect_dir(), &mut report)?;
     tx.commit()?;
     Ok(report)
+}
+
+/// `raw/garminconnect/<metric>/<YYYY-MM-DD>.json` into `garmin_metrics`.
+fn load_garmin_metrics(
+    conn: &rusqlite::Connection,
+    root: &Path,
+    report: &mut RebuildReport,
+) -> Result<()> {
+    for metric in GarminMetric::ALL {
+        for path in files_with_extension(&root.join(metric.key()), "json")? {
+            let loaded = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+                .context("file name is not <YYYY-MM-DD>.json")
+                .and_then(|date| {
+                    let text = std::fs::read_to_string(&path)?;
+                    garmin_metrics::store_metric(conn, metric, date, &text)
+                });
+            match loaded {
+                Ok(()) => report.garmin_metrics += 1,
+                Err(err) => {
+                    log::warn!("skipping {}: {err:#}", path.display());
+                    report.skipped += 1;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Parse `<activityId>.fit` and store it. On any error nothing from this
