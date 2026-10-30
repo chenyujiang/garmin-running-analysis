@@ -41,9 +41,10 @@ fn run(cli: Cli) -> Result<()> {
         Command::Rebuild => {
             let report = runsync::rebuild::rebuild(&data_dir)?;
             println!(
-                "rebuilt {}: {} activities, {} files skipped",
+                "rebuilt {}: {} activities, {} FIT files, {} files skipped",
                 data_dir.analysis_db_path().display(),
                 report.activities,
+                report.fit_files,
                 report.skipped
             );
             Ok(())

@@ -6,4 +6,5 @@ pub mod activity;
 pub mod config;
 pub mod data_dir;
 pub mod db;
+pub mod fit;
 pub mod rebuild;
