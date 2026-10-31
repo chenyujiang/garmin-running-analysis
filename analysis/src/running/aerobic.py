@@ -23,8 +23,9 @@ Per run (spec, "有氧能力"):
 Per week (Monday start, by `start_time_local`): median of the valid runs, empty
 when fewer than `min_runs_per_week`; the rolling median covers the non-empty
 weekly medians of the last `rolling_weeks` weeks and is empty in empty weeks
-(no interpolation). Temperature is the watch's FIT temperature, averaged per
-run and then per week, for display only.
+(no interpolation). Air temperature comes from the Open-Meteo hourly table
+(`air_temperature`); the week's is the median of its valid runs, and a week at
+or above `hot_week_c` is `hot`. Display only: the GAP value is not corrected.
 """
 
 from datetime import date, timedelta
@@ -50,6 +51,9 @@ RANGE_WEEKS: dict[str, int] = {"6m": 26, "1y": 52, "2y": 104}
 
 _TS_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 _MIN_HR_VARIANCE = 1.0
+# A run gets air temperature from a grid point at most 0.2° away in latitude
+# and in longitude (positions and grid points both in whole tenths).
+_GRID_REACH_TENTHS = 2
 
 
 def minetti_cr(grade: float) -> float:
@@ -85,14 +89,13 @@ def load_records(db: AnalysisDb, activity_ids: list[int]) -> pl.DataFrame:
         "cadence": pl.Float64,
         "altitude": pl.Float64,
         "distance": pl.Float64,
-        "temperature": pl.Float64,
     }
     if not activity_ids or "records" not in db.tables():
         return pl.DataFrame(schema=schema)
     id_list = ", ".join("?" for _ in activity_ids)
     df = db.query(
         "SELECT activity_id, strptime(timestamp, ?) AS ts, heart_rate, speed, cadence,"
-        " altitude, distance, temperature"
+        " altitude, distance"
         f" FROM a.records WHERE activity_id IN ({id_list})",
         [_TS_FORMAT, *activity_ids],
     )
@@ -117,6 +120,110 @@ def gps_usable(db: AnalysisDb, activity_ids: list[int], aerobic: Aerobic) -> set
         [*activity_ids, aerobic.max_speed_mps, aerobic.max_fast_s],
     )
     return set(df["activity_id"].to_list()) if not df.is_empty() else set()
+
+
+_AIR_SCHEMA = {"activity_id": pl.Int64, "temperature_c": pl.Float64}
+
+
+def air_temperature(db: AnalysisDb, activity_ids: list[int]) -> pl.DataFrame:
+    """Air temperature at each run's midpoint from `hourly_weather` (Open-Meteo,
+    importer migration 7): columns activity_id, temperature_c, one row per
+    activity that gets a value.
+
+    Midpoint = start_time_utc + half the elapsed duration (`duration_s` when
+    that is missing); linear interpolation between the whole hours before and
+    after it, which must both have a value and be at most an hour apart. The
+    run's position is the median lat and lon of its records, each rounded to
+    0.1°; it takes the nearest grid point and only when both differences are
+    at most `_GRID_REACH_TENTHS` tenths of a degree. Empty without the table."""
+    empty = pl.DataFrame(schema=_AIR_SCHEMA)
+    if not activity_ids or not {"hourly_weather", "records", "activities"} <= db.tables():
+        return empty
+    # Grid points and positions in whole tenths of a degree, so they compare exactly.
+    grids = db.query(
+        "SELECT DISTINCT CAST(round(grid_lat * 10) AS BIGINT) AS g_lat,"
+        " CAST(round(grid_lon * 10) AS BIGINT) AS g_lon FROM a.hourly_weather"
+    )
+    if grids.is_empty():
+        return empty
+    id_list = ", ".join("?" for _ in activity_ids)
+    runs = db.query(
+        "SELECT activity_id,"
+        " CAST(round(round(median(lat), 1) * 10) AS BIGINT) AS p_lat,"
+        " CAST(round(round(median(lon), 1) * 10) AS BIGINT) AS p_lon"
+        f" FROM a.records WHERE activity_id IN ({id_list})"
+        " GROUP BY activity_id HAVING count(lat) > 0 AND count(lon) > 0",
+        list(activity_ids),
+    )
+    if runs.is_empty():
+        return empty
+    dist = (pl.col("p_lat") - pl.col("g_lat")) ** 2 + (pl.col("p_lon") - pl.col("g_lon")) ** 2
+    reach = _GRID_REACH_TENTHS
+    near = (
+        runs.join(grids, how="cross")
+        .sort("activity_id", dist, "g_lat", "g_lon")
+        .group_by("activity_id", maintain_order=True)
+        .first()
+        .filter(
+            ((pl.col("p_lat") - pl.col("g_lat")).abs() <= reach)
+            & ((pl.col("p_lon") - pl.col("g_lon")).abs() <= reach)
+        )
+    )
+    if near.is_empty():
+        return empty
+    acts = db.query(
+        "SELECT activity_id, strptime(start_time_utc, ?) AS start_utc,"
+        " coalesce(elapsed_duration_s, duration_s) AS elapsed_s"
+        f" FROM a.activities WHERE activity_id IN ({id_list})",
+        [_TS_FORMAT, *activity_ids],
+    )
+    mid = (
+        near.join(acts, on="activity_id")
+        .drop_nulls("elapsed_s")
+        .with_columns(
+            (
+                pl.col("start_utc").cast(pl.Datetime("us"))
+                + pl.duration(microseconds=(pl.col("elapsed_s") * 500_000).round().cast(pl.Int64))
+            ).alias("mid")
+        )
+        .select("activity_id", "g_lat", "g_lon", "mid")
+        .sort("mid")
+    )
+    hourly = (
+        db.query(
+            "SELECT CAST(round(grid_lat * 10) AS BIGINT) AS g_lat,"
+            " CAST(round(grid_lon * 10) AS BIGINT) AS g_lon,"
+            " strptime(time_utc, ?) AS t, temperature_c AS c"
+            " FROM a.hourly_weather WHERE temperature_c IS NOT NULL",
+            [_TS_FORMAT],
+        )
+        .with_columns(pl.col("t").cast(pl.Datetime("us")))
+        .sort("t")
+    )
+    if mid.is_empty() or hourly.is_empty():
+        return empty
+    by = ["g_lat", "g_lon"]
+    before = hourly.rename({"t": "t0", "c": "c0"})
+    after = hourly.rename({"t": "t1", "c": "c1"})
+    # Both sides are sorted by time; the `by` groups only split them.
+    asof = {"left_on": "mid", "by": by, "check_sortedness": False}
+    df = mid.join_asof(before, right_on="t0", strategy="backward", **asof).join_asof(
+        after, right_on="t1", strategy="forward", **asof
+    )
+    span = (pl.col("t1") - pl.col("t0")).dt.total_seconds()
+    frac = (pl.col("mid") - pl.col("t0")).dt.total_seconds() / span
+    value = (
+        pl.when(span == 0)
+        .then(pl.col("c0"))
+        .when(span <= 3600)
+        .then(pl.col("c0") + (pl.col("c1") - pl.col("c0")) * frac)
+        .otherwise(None)
+    )
+    return (
+        df.select("activity_id", value.alias("temperature_c"))
+        .drop_nulls("temperature_c")
+        .cast(_AIR_SCHEMA)
+    )
 
 
 def steady_state(records: pl.DataFrame, aerobic: Aerobic, run_walk: RunWalk) -> pl.DataFrame:
@@ -227,7 +334,8 @@ def aerobic_runs(
 
     Columns: activity_id, start_time_local, steady_s, mean_hr (steady seconds),
     speed_mps (GAP speed at reference HR; null when not valid), temperature_c
-    (mean over the run), valid (enough steady time and `gps_usable`)."""
+    (air temperature at the midpoint, see `air_temperature`), valid (enough
+    steady time and `gps_usable`)."""
     aerobic = config.aerobic
     if "activities" not in db.tables():
         return pl.DataFrame(schema=_RUN_SCHEMA)
@@ -246,7 +354,11 @@ def aerobic_runs(
     recs = load_records(db, acts["activity_id"].to_list())
     if recs.is_empty():
         per_run = pl.DataFrame(
-            schema={k: _RUN_SCHEMA[k] for k in _RUN_SCHEMA if k != "start_time_local"}
+            schema={
+                k: _RUN_SCHEMA[k]
+                for k in _RUN_SCHEMA
+                if k not in ("start_time_local", "temperature_c")
+            }
         )
     else:
         df = steady_state(recs, aerobic, config.run_walk)
@@ -258,7 +370,6 @@ def aerobic_runs(
             gap.mean().alias("_mean_gap"),
             hr.var(ddof=0).alias("_var_hr"),
             pl.cov(hr, gap, ddof=0).alias("_cov"),
-            pl.col("temperature").mean().alias("temperature_c"),
         )
         slope = (
             pl.when(pl.col("_var_hr") >= _MIN_HR_VARIANCE)
@@ -276,9 +387,10 @@ def aerobic_runs(
             .otherwise(None)
             .alias("speed_mps"),
         )
-    out = acts.join(per_run, on="activity_id", how="left").with_columns(
-        pl.col("valid").fill_null(False), pl.col("steady_s").fill_null(0.0)
-    )
+    air = air_temperature(db, acts["activity_id"].to_list())
+    out = (
+        acts.join(per_run, on="activity_id", how="left").join(air, on="activity_id", how="left")
+    ).with_columns(pl.col("valid").fill_null(False), pl.col("steady_s").fill_null(0.0))
     return out.select(_RUN_SCHEMA.keys()).cast(_RUN_SCHEMA).sort("start_time_local")
 
 
@@ -289,7 +401,8 @@ class AerobicWeek(TypedDict):
     pace_s_per_km: float | None
     rolling_speed_mps: float | None
     rolling_pace_s_per_km: float | None
-    temperature_c: float | None  # mean watch temperature of the week's road runs
+    temperature_c: float | None  # median air temperature of the week's valid runs
+    hot: bool  # temperature_c >= hot_week_c
     complete: bool  # False for the current week
 
 
@@ -356,7 +469,7 @@ def aerobic_trend(
     for row in valid.iter_rows(named=True):
         speeds.setdefault(row["week"], []).append(row["speed_mps"])
     temps: dict[date, list[float]] = {}
-    for row in runs.drop_nulls("temperature_c").iter_rows(named=True):
+    for row in valid.drop_nulls("temperature_c").iter_rows(named=True):
         temps.setdefault(row["week"], []).append(row["temperature_c"])
 
     def weekly_median(monday: date) -> float | None:
@@ -373,7 +486,7 @@ def aerobic_trend(
                 weekly_median(monday - timedelta(weeks=k)) for k in range(aerobic.rolling_weeks)
             ]
             rolling = _median([v for v in window if v is not None])
-        t = temps.get(monday)
+        air = _median(temps.get(monday, []))
         weeks.append(
             {
                 "week_start": monday.isoformat(),
@@ -382,7 +495,8 @@ def aerobic_trend(
                 "pace_s_per_km": _pace(median),
                 "rolling_speed_mps": rolling,
                 "rolling_pace_s_per_km": _pace(rolling),
-                "temperature_c": sum(t) / len(t) if t else None,
+                "temperature_c": air,
+                "hot": air is not None and air >= aerobic.hot_week_c,
                 "complete": monday != this_monday,
             }
         )
@@ -443,7 +557,13 @@ def _method(a: Aerobic, rw: RunWalk) -> Method:
             f"取 {a.reference_hr} bpm 处的值；心率几乎不变时用平均 GAP 速度。"
             f"每周取有效跑步的中位数，不足 {a.min_runs_per_week} 次的周留空、不插值；"
             f"{a.rolling_weeks} 周滚动中位数只用非空周，空周不画。"
-            "温度是手表记录的温度，按跑步再按周平均，只用于显示，不做校正。"
+            "气温来自 Open-Meteo 历史天气（逐小时 2 米气温，一个 0.1° 格点）："
+            "每次跑步取中点（开始时间加总时长的一半）前后两个整点的气温线性插值，"
+            "缺一个整点时留空；只有经纬度中位数取整到 0.1° 后离格点都不超过 0.2° 的跑步才配气温。"
+            "每周气温取该周有效跑步气温的中位数。"
+            f"周气温中位数 ≥ {a.hot_week_c:g} °C 的周标为高温周。"
+            "不做温度校正：气温只能解释配速变化的很小一部分（R² 0.002），"
+            "高温周的配速可能偏慢，只做标注。"
         ),
         "params": {
             "reference_hr": a.reference_hr,
@@ -460,6 +580,7 @@ def _method(a: Aerobic, rw: RunWalk) -> Method:
             "rolling_weeks": a.rolling_weeks,
             "max_speed_mps": a.max_speed_mps,
             "max_fast_s": a.max_fast_s,
+            "hot_week_c": a.hot_week_c,
             "cadence_spm": rw.cadence_spm,
             "activity_types": sorted(AEROBIC_TYPES),
             "week": "monday-sunday, start_time_local",

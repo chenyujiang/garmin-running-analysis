@@ -52,6 +52,7 @@ class Aerobic:
     rolling_weeks: int = 4  # rolling median over this many weeks
     max_speed_mps: float = 7.0  # per-second speed above this is suspect (GPS drift)
     max_fast_s: int = 60  # runs with more seconds above max_speed_mps are left out
+    hot_week_c: float = 22.0  # weeks with median air temperature at or above this are hot
 
 
 @dataclass(frozen=True)

@@ -1,5 +1,6 @@
-"""Synthetic runs with heart rate, barometric altitude and temperature, for the
-aerobic metric (and anything else that needs HR, altitude and cadence per second).
+"""Synthetic runs with heart rate and barometric altitude, plus hourly air
+temperature, for the aerobic metric (and anything else that needs HR, altitude
+and cadence per second).
 
 Import with `from synthetic_aerobic import ...`. Builds on `synthetic.insert_activity`.
 """
@@ -9,6 +10,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from synthetic import insert_activity
+
+# A made-up running spot and the 0.1 degree grid point it rounds to.
+POSITION: tuple[float, float] = (10.02, 20.03)
+GRID: tuple[float, float] = (10.0, 20.0)
 
 
 @dataclass(frozen=True)
@@ -33,15 +38,16 @@ def add_hr_run(
     start_local: str,
     stretches: list[Stretch],
     activity_type: str = "running",
-    temperature: float | None = 15.0,
     gps: bool = True,
     altitude: bool = True,
-) -> None:
-    """Activity row plus 1 Hz records (t = 0 .. total seconds). Each sample's
-    speed covers the second ending at it; altitude follows distance x grade.
-    `gps=False` writes no lat/lon and `altitude=False` no altitude, as on a
-    treadmill-like run."""
-    lat, lon = (10.0, 20.0) if gps else (None, None)
+    position: tuple[float, float] = POSITION,
+) -> str:
+    """Activity row plus 1 Hz records (t = 0 .. total seconds) at a fixed
+    `position`. Each sample's speed covers the second ending at it; altitude
+    follows distance x grade. `gps=False` writes no lat/lon and
+    `altitude=False` no altitude, as on a treadmill-like run. Returns
+    `start_time_utc`."""
+    lat, lon = position if gps else (None, None)
     duration = sum(s.seconds for s in stretches)
     distance_total = sum(s.seconds * s.speed for s in stretches)
     start_utc = insert_activity(
@@ -64,7 +70,7 @@ def add_hr_run(
             rows.append((t, s.hr, s.speed, s.cadence, alt, dist))
     conn.executemany(
         "INSERT INTO records (activity_id, timestamp, heart_rate, speed, cadence, altitude,"
-        " distance, temperature, lat, lon) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " distance, lat, lon) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
             (
                 activity_id,
@@ -74,7 +80,6 @@ def add_hr_run(
                 c,
                 a if altitude else None,
                 d,
-                temperature,
                 lat,
                 lon,
             )
@@ -82,3 +87,26 @@ def add_hr_run(
         ],
     )
     conn.commit()
+    return start_utc
+
+
+def add_hourly_weather(
+    conn: sqlite3.Connection,
+    hours: dict[str, float | None],
+    grid: tuple[float, float] = GRID,
+) -> None:
+    """`hourly_weather` rows for one grid point: {"2026-10-19T18:00:00Z": 12.0}."""
+    conn.executemany(
+        "INSERT INTO hourly_weather (grid_lat, grid_lon, time_utc, temperature_c)"
+        " VALUES (?, ?, ?, ?)",
+        [(grid[0], grid[1], t, c) for t, c in hours.items()],
+    )
+    conn.commit()
+
+
+def utc_hours(start_utc: str, temps: list[float | None]) -> dict[str, float | None]:
+    """Consecutive whole hours from `start_utc` (ISO with Z, on the hour)."""
+    t0 = datetime.strptime(start_utc, "%Y-%m-%dT%H:%M:%SZ")
+    return {
+        (t0 + timedelta(hours=k)).strftime("%Y-%m-%dT%H:%M:%SZ"): c for k, c in enumerate(temps)
+    }

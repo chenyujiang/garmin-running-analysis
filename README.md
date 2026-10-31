@@ -65,6 +65,7 @@ min_runs_per_week = 2
 rolling_weeks = 4
 max_speed_mps = 7.0             # per-second speed above this is suspect (GPS drift)
 max_fast_s = 60                 # runs with more seconds above max_speed_mps are left out
+hot_week_c = 22.0               # weeks with median air temperature at or above this are marked hot
 
 [run_walk]
 cadence_spm = 140               # smoothed cadence (both feet) at or above this is running

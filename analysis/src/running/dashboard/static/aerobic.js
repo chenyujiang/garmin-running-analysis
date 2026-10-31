@@ -1,7 +1,8 @@
 // Aerobic trend, the full-width second screen (ticket 12). Reads GET /api/aerobic.
 // Prototype variant A layout (commit 8013fab): pace at the reference heart rate,
 // faster is higher; dots = weekly median, line = 4-week rolling median, a weekly
-// temperature strip below on the same x axis. Crosshair readout as in variant C.
+// air-temperature strip below on the same x axis (only when there is any), hot
+// weeks as light bands behind both. Crosshair readout as in variant C.
 // Empty weeks stay empty: no dot, and both the line and the bars break there.
 
 import { h } from "./dom.js";
@@ -110,15 +111,20 @@ function render(A, races = []) {
       : `还没有可用的户外路跑：需要心率在 ${ref} bpm 附近、稳态时长至少 ${A.method.params.min_steady_s / 60} 分钟的跑步。`)];
   }
   const g = geometry(weeks);
-  const main = mainChart(weeks, g, ref, raceWeeks(weeks, races));
-  const temp = tempChart(weeks, g);
+  const hotC = A.method.params.hot_week_c;
+  // No air temperature at all (no weather table yet): no strip, no hot weeks.
+  const hasTemp = weeks.some((w) => w.temperature_c != null);
+  const hasHot = weeks.some((w) => w.hot);
+  const main = mainChart(weeks, g, ref, raceWeeks(weeks, races), hotC);
   const readout = h("div", { class: "readout", "aria-live": "polite" },
     h("span", { class: "muted" }, "鼠标移到图上，读出那一周的数值"));
-  const stack = h("div", { class: "aerobic-stack" },
-    main,
-    h("div", { class: "small muted temp-label" }, "每周平均温度（手表记录，未校正）"),
-    temp,
-  );
+  const stack = h("div", { class: "aerobic-stack" }, main);
+  if (hasTemp) {
+    stack.append(
+      h("div", { class: "small muted temp-label" }, "每周气温中位数（Open-Meteo，未校正）"),
+      tempChart(weeks, g, hotC),
+    );
+  }
   wireCrosshair(stack, readout, weeks, g, ref);
   return [
     h("div", { class: "aerobic-top" }, dek(weeks, A.range), readout),
@@ -127,6 +133,7 @@ function render(A, races = []) {
       h("span", {}, h("i", { class: "dotk" }), "每周中位数（空白 = 有效跑步少于 2 次）"),
       h("span", {}, h("i", { style: "border-color:var(--ink)" }), "4 周滚动中位数"),
       h("span", {}, h("i", { class: "dotk open" }), "本周（未完）"),
+      hasHot ? h("span", {}, h("i", { class: "bar hot" }), `高温周（≥ ${hotC} °C）`) : null,
       races.length ? h("span", {}, h("i", { class: "race" }), "比赛（races.csv）") : null,
     ),
   ];
@@ -207,9 +214,21 @@ function frame(H, label) {
   return [wrap, svg];
 }
 
-function mainChart(weeks, g, ref, raceMarks = []) {
+/** Light background bands behind the hot weeks, one week wide. */
+function hotBands(svg, weeks, g, y1, y2) {
+  const step = g.n > 1 ? g.iw / (g.n - 1) : g.iw;
+  for (const w of weeks) {
+    if (!w.hot) continue;
+    const x = Math.max(M.l, g.sx(w.x) - step / 2);
+    const x2 = Math.min(W - M.r, g.sx(w.x) + step / 2);
+    svg.append(s("rect", { class: "hot-band", x, y: y1, width: Math.max(1, x2 - x), height: y2 - y1 }));
+  }
+}
+
+function mainChart(weeks, g, ref, raceMarks = [], hotC = 22) {
   const H = MAIN.h;
   const [wrap, svg] = frame(H, `有氧能力趋势：心率 ${ref} 时的配速`);
+  hotBands(svg, weeks, g, MAIN.t, H - MAIN.b);
   for (const v of g.yTicks) {
     const y = g.sy(v);
     svg.append(s("line", { x1: M.l, x2: W - M.r, y1: y, y2: y, stroke: "var(--rule)", "stroke-width": 1 }));
@@ -246,13 +265,14 @@ function mainChart(weeks, g, ref, raceMarks = []) {
   const xhair = s("line", { class: "xhair", x1: 0, x2: 0, y1: MAIN.t, y2: H - MAIN.b });
   const mark = s("circle", { class: "xhair-dot", r: 4, cx: 0, cy: 0 });
   svg.append(xhair, mark);
-  notes(wrap, svg, weeks, g);
+  notes(wrap, svg, weeks, g, hotC);
   return wrap;
 }
 
 /** At most two editorial notes: the fastest 4-week stretch in range, and the
- *  hottest week (temperature is not corrected, so warm weeks read slower). */
-function notes(wrap, svg, weeks, g) {
+ *  hot weeks (pace is not corrected for temperature, so they read slower),
+ *  pointing at the hottest of them. */
+function notes(wrap, svg, weeks, g, hotC) {
   const rolled = weeks.filter((w) => w.rolling_pace_s_per_km != null);
   const out = [];
   const best = rolled.reduce((a, b) => (b.rolling_pace_s_per_km < a.rolling_pace_s_per_km ? b : a));
@@ -260,14 +280,14 @@ function notes(wrap, svg, weeks, g) {
     out.push({ w: best, v: best.rolling_pace_s_per_km,
       node: h("span", {}, h("b", {}, `最快：${fmtPace(best.rolling_pace_s_per_km)} /km`), `${md(best.week_start)}那周的 4 周滚动中位数。`) });
   }
-  const warm = weeks.filter((w) => w.pace_s_per_km != null && w.temperature_c != null);
-  if (warm.length >= 4) {
-    const hot = warm.reduce((a, b) => (b.temperature_c > a.temperature_c ? b : a));
-    const temps = warm.map((w) => w.temperature_c).sort((a, b) => a - b);
-    const median = temps[Math.floor(temps.length / 2)];
-    if (hot !== best && hot.temperature_c - median >= 5) {
+  const hotWeeks = weeks.filter((w) => w.hot);
+  const hotDots = hotWeeks.filter((w) => w.pace_s_per_km != null);
+  if (hotDots.length) {
+    const hot = hotDots.reduce((a, b) => (b.temperature_c > a.temperature_c ? b : a));
+    if (hot !== best) {
       out.push({ w: hot, v: hot.pace_s_per_km,
-        node: h("span", {}, h("b", {}, `最热：周均 ${Math.round(hot.temperature_c)}°C`), `${md(hot.week_start)}那周，配速 ${fmtPace(hot.pace_s_per_km)} /km。温度未校正，热天会显得慢。`) });
+        node: h("span", {}, h("b", {}, `高温周：${hotWeeks.length} 周`),
+          `周气温中位数 ≥ ${hotC} °C，最热是${md(hot.week_start)}那周（${Math.round(hot.temperature_c)}°C，${fmtPace(hot.pace_s_per_km)} /km）。配速未按气温校正，热天会显得慢。`) });
     }
   }
   const placed = [];
@@ -285,12 +305,13 @@ function notes(wrap, svg, weeks, g) {
   }
 }
 
-function tempChart(weeks, g) {
+function tempChart(weeks, g, hotC) {
   const H = TEMP.h;
-  const [wrap, svg] = frame(H, "每周平均温度");
+  const [wrap, svg] = frame(H, "每周气温中位数");
+  hotBands(svg, weeks, g, TEMP.t, H - TEMP.b);
   const temps = weeks.map((w) => w.temperature_c).filter((v) => v != null);
   const lo = Math.min(0, Math.floor(Math.min(...temps, 0) / 5) * 5);
-  const hi = Math.max(25, Math.ceil(Math.max(...temps, 0) / 5) * 5);
+  const hi = Math.max(25, Math.ceil(Math.max(...temps, hotC, 0) / 5) * 5);
   const ih = H - TEMP.t - TEMP.b;
   const sy = (v) => TEMP.t + ih - ((v - lo) / (hi - lo)) * ih;
   for (const v of lo < 0 ? [lo, 0, hi] : [0, hi]) {
@@ -302,8 +323,11 @@ function tempChart(weeks, g) {
   for (const w of weeks) {
     if (w.temperature_c == null) continue;
     const y = sy(w.temperature_c), y0 = sy(0);
-    svg.append(s("rect", { x: g.sx(w.x) - bw / 2, y: Math.min(y, y0), width: bw, height: Math.max(0.5, Math.abs(y0 - y)), fill: "var(--temp)" }));
+    svg.append(s("rect", { x: g.sx(w.x) - bw / 2, y: Math.min(y, y0), width: bw, height: Math.max(0.5, Math.abs(y0 - y)), fill: w.hot ? "var(--temp-hot)" : "var(--temp)" }));
   }
+  // The hot-week threshold.
+  svg.append(s("line", { x1: M.l, x2: W - M.r, y1: sy(hotC), y2: sy(hotC), stroke: "var(--temp-hot)", "stroke-width": 1, "stroke-dasharray": "3 3" }));
+  svg.append(s("text", { x: W - M.r + 6, y: sy(hotC) + 4 }, `${hotC}°`));
   svg.append(s("line", { class: "xhair", x1: 0, x2: 0, y1: TEMP.t, y2: H - TEMP.b }));
   return wrap;
 }
@@ -330,7 +354,7 @@ function wireCrosshair(stack, readout, weeks, g, ref) {
       h("span", {}, "周中位数 ", h("b", {}, w.pace_s_per_km == null ? "—" : `${fmtPace(w.pace_s_per_km)} /km`)),
       h("span", {}, "4 周滚动 ", h("b", {}, w.rolling_pace_s_per_km == null ? "—" : `${fmtPace(w.rolling_pace_s_per_km)} /km`)),
       h("span", {}, "有效跑步 ", h("b", {}, String(w.runs)), " 次"),
-      h("span", {}, "温度 ", h("b", {}, w.temperature_c == null ? "—" : `${Math.round(w.temperature_c)}°C`)),
+      h("span", {}, "气温 ", h("b", {}, w.temperature_c == null ? "—" : `${Math.round(w.temperature_c)}°C`), w.hot ? "（高温周）" : ""),
     );
     readout.title = `心率 ${ref} bpm 时的配速`;
   });

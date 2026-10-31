@@ -100,7 +100,9 @@ details.how .body p { margin: 0 0 6px; }
 .band-predict .foot { position: relative; margin-top: 6px; }
 
 /* aerobic trend, full width (ticket 12); crosshair readout from variant C */
-:root { --temp: #a39a8a; --dot: #8f8676; }
+:root { --temp: #a39a8a; --temp-hot: #c0703c; --hot-wash: #f1dcc8; --dot: #8f8676; }
+.hot-band { fill: var(--hot-wash); }
+.legend i.bar.hot { background: var(--hot-wash); width: 14px; height: 10px; }
 .aerobic { margin-bottom: 36px; }
 .sec-head { display: flex; align-items: baseline; gap: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--rule-strong); margin-bottom: 14px; flex-wrap: wrap; }
 .sec-head .tools { margin-left: auto; display: flex; gap: 12px; align-items: center; position: relative; }

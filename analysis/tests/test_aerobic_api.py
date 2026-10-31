@@ -9,7 +9,7 @@ trim a little more, still well above the 10 min minimum.
 from datetime import date, timedelta
 
 import pytest
-from synthetic_aerobic import add_hr_run, steady
+from synthetic_aerobic import add_hourly_weather, add_hr_run, steady, utc_hours
 
 TODAY = "2026-10-28"
 FLAT_PACE = 1000 / 3.0  # 333.3 s/km
@@ -287,18 +287,168 @@ def test_an_unknown_range_is_rejected(analysis_db, client_factory):
     assert r.status_code == 422
 
 
-def test_weekly_temperature_comes_from_every_road_run(analysis_db, client_factory):
-    add_hr_run(analysis_db, 1, "2026-10-20T07:00:00", [steady(1800)], temperature=12.0)
-    # Too short to be valid, but its temperature still shows.
-    add_hr_run(analysis_db, 2, "2026-10-21T07:00:00", [steady(600)], temperature=18.0)
-    add_hr_run(
-        analysis_db, 3, "2026-10-21T18:00:00", [steady(1800)], "treadmill_running", temperature=25.0
+def run_temperature(body: dict, activity_id: int) -> float | None:
+    [r] = [r for r in body["runs"] if r["activity_id"] == activity_id]
+    return r["temperature_c"]
+
+
+# 2026-10-20T07:00 in Auckland (NZDT) is 2026-10-19T18:00Z; a 30 min run's
+# midpoint is 18:15Z.
+@pytest.mark.parametrize(
+    ("hours", "expected"),
+    [
+        ({"2026-10-19T18:00:00Z": 10.0, "2026-10-19T19:00:00Z": 14.0}, 11.0),
+        ({"2026-10-19T18:00:00Z": 10.0}, None),
+        ({"2026-10-19T19:00:00Z": 14.0}, None),
+        ({"2026-10-19T17:00:00Z": 10.0, "2026-10-19T19:00:00Z": 14.0}, None),
+        ({"2026-10-19T18:00:00Z": None, "2026-10-19T19:00:00Z": 14.0}, None),
+    ],
+    ids=["between", "no-hour-after", "no-hour-before", "hours-two-apart", "null-hour"],
+)
+def test_run_air_temperature_is_interpolated_between_the_two_hours(
+    analysis_db, client_factory, hours, expected
+):
+    add_hr_run(analysis_db, 1, "2026-10-20T07:00:00", [steady(1800)])
+    add_hourly_weather(analysis_db, hours)
+
+    t = run_temperature(get_aerobic(client_factory), 1)
+
+    assert t == (pytest.approx(expected) if expected is not None else None)
+
+
+def test_a_midpoint_on_the_hour_takes_that_hour(analysis_db, client_factory):
+    # 40 min from 18:40Z: the midpoint is 19:00Z exactly.
+    add_hr_run(analysis_db, 1, "2026-10-20T07:40:00", [steady(2400)])
+    add_hourly_weather(analysis_db, {"2026-10-19T19:00:00Z": 14.0})
+
+    assert run_temperature(get_aerobic(client_factory), 1) == pytest.approx(14.0)
+
+
+AT_18Z = {"2026-10-19T18:00:00Z": 10.0, "2026-10-19T19:00:00Z": 14.0}
+
+
+@pytest.mark.parametrize(
+    ("position", "expected"),
+    [
+        ((10.04, 20.04), 11.0),  # rounds onto the grid point
+        ((10.2, 19.8), 11.0),  # 0.2° away in both
+        ((10.3, 20.0), None),  # 0.3° north
+        ((10.0, 19.7), None),  # 0.3° west
+    ],
+)
+def test_only_runs_within_two_tenths_of_the_grid_point_get_air_temperature(
+    analysis_db, client_factory, position, expected
+):
+    add_hr_run(analysis_db, 1, "2026-10-20T07:00:00", [steady(1800)], position=position)
+    add_hourly_weather(analysis_db, AT_18Z, grid=(10.0, 20.0))
+
+    t = run_temperature(get_aerobic(client_factory), 1)
+
+    assert t == (pytest.approx(expected) if expected is not None else None)
+
+
+def test_with_several_grid_points_the_nearest_one_is_used(analysis_db, client_factory):
+    add_hr_run(analysis_db, 1, "2026-10-20T07:00:00", [steady(1800)], position=(10.1, 20.1))
+    add_hourly_weather(analysis_db, AT_18Z, grid=(10.0, 20.0))
+    add_hourly_weather(
+        analysis_db,
+        {"2026-10-19T18:00:00Z": 20.0, "2026-10-19T19:00:00Z": 24.0},
+        grid=(10.2, 20.1),
     )
+
+    assert run_temperature(get_aerobic(client_factory), 1) == pytest.approx(21.0)
+
+
+def run_in_air(conn, activity_id: int, day: str, air_c: float, seconds: int = 1800) -> None:
+    """A steady run at 07:00 on `day` with the air at `air_c` all around it."""
+    start_utc = add_hr_run(conn, activity_id, f"{day}T07:00:00", [steady(seconds)])
+    add_hourly_weather(conn, utc_hours(start_utc, [air_c, air_c]))
+
+
+def two_weeks_at_21_9_and_22_0(conn) -> None:
+    # Median, not mean: the 30 °C run would pull last-but-one week's mean above 22.
+    for i, (day, air) in enumerate(
+        [
+            ("2026-10-13", 21.9),
+            ("2026-10-14", 21.0),
+            ("2026-10-15", 30.0),
+            ("2026-10-20", 22.0),
+            ("2026-10-21", 10.0),
+            ("2026-10-22", 25.0),
+        ]
+    ):
+        run_in_air(conn, i + 1, day, air)
+    # Too short to be valid: its 40 °C does not count.
+    run_in_air(conn, 9, "2026-10-16", 40.0, seconds=600)
+
+
+def test_weekly_air_temperature_is_the_median_of_the_valid_runs(analysis_db, client_factory):
+    two_weeks_at_21_9_and_22_0(analysis_db)
 
     body = get_aerobic(client_factory)
 
-    assert week(body, "2026-10-19")["temperature_c"] == pytest.approx(15.0)
-    assert week(body, "2026-10-12")["temperature_c"] is None
+    assert week(body, "2026-10-12")["temperature_c"] == pytest.approx(21.9)
+    assert week(body, "2026-10-19")["temperature_c"] == pytest.approx(22.0)
+    assert week(body, "2026-10-05")["temperature_c"] is None
+
+
+def test_a_week_at_22_degrees_or_more_is_hot(analysis_db, client_factory):
+    two_weeks_at_21_9_and_22_0(analysis_db)
+
+    body = get_aerobic(client_factory)
+
+    assert week(body, "2026-10-12")["hot"] is False
+    assert week(body, "2026-10-19")["hot"] is True
+    assert week(body, "2026-10-05")["hot"] is False
+    assert body["method"]["params"]["hot_week_c"] == 22.0
+
+
+def test_the_hot_week_threshold_comes_from_config(data_dir, analysis_db, client_factory):
+    (data_dir / "config.toml").write_text("[aerobic]\nhot_week_c = 21.5\n", encoding="utf-8")
+    two_weeks_at_21_9_and_22_0(analysis_db)
+
+    body = get_aerobic(client_factory)
+
+    assert week(body, "2026-10-12")["hot"] is True
+    assert week(body, "2026-10-19")["hot"] is True
+    assert body["method"]["params"]["hot_week_c"] == 21.5
+
+
+@pytest.mark.parametrize("table", ["empty", "missing"])
+def test_without_hourly_weather_the_metric_still_works(analysis_db, client_factory, table):
+    add_hr_run(analysis_db, 1, "2026-10-20T07:00:00", [steady(1800, speed=3.0)])
+    add_hr_run(analysis_db, 2, "2026-10-22T07:00:00", [steady(1800, speed=3.2)])
+    if table == "missing":  # an analysis database from before importer migration 7
+        analysis_db.execute("DROP TABLE hourly_weather")
+        analysis_db.commit()
+
+    body = get_aerobic(client_factory)
+    w = week(body, "2026-10-19")
+
+    assert w["speed_mps"] == pytest.approx(3.1, abs=1e-6)
+    assert w["temperature_c"] is None
+    assert w["hot"] is False
+    assert [r["temperature_c"] for r in body["runs"]] == [None, None]
+
+
+def test_the_method_note_explains_the_air_temperature(analysis_db, client_factory):
+    body = get_aerobic(client_factory)
+    text = body["method"]["description"]
+
+    assert "Open-Meteo" in text
+    assert "中点" in text
+    assert "不做温度校正" in text
+    assert "高温周" in text and "≥ 22 °C" in text
+
+
+def test_a_run_without_gps_gets_no_air_temperature(analysis_db, client_factory):
+    add_hr_run(analysis_db, 1, "2026-10-20T07:00:00", [steady(1800)], gps=False)
+    add_hourly_weather(analysis_db, AT_18Z)
+
+    body = get_aerobic(client_factory)
+
+    assert ids(body) == []
+    assert week(body, "2026-10-19")["temperature_c"] is None
 
 
 def test_runs_after_today_are_ignored(analysis_db, client_factory):
