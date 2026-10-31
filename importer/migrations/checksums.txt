@@ -1,0 +1,11 @@
+# Shipped migrations and their FNV-1a 64 hashes (CRLF normalised to LF),
+# checked by tests/migrations.rs. Append a line for each new migration; never
+# change an existing line: a shipped migration is never edited, because
+# databases that already ran it would not run it again.
+0001_activities.sql c7a12c6c60a841c4
+0002_sync_runs.sql cf38442cf2f4d840
+0003_records_laps.sql ce7d49fd3a5fdcc4
+0004_daily_wellness.sql 8e2b51de5b74c9f8
+0005_garmin_metrics.sql f9b12e5b1708c09a
+0006_export_packages.sql d4bc937f724c86f5
+0007_hourly_weather.sql cb0a9480dd9b28cf
