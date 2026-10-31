@@ -211,7 +211,7 @@ fn rebuild_loads_daily_summaries_and_skips_days_without_data() {
         .query_row("SELECT count(*) FROM daily_wellness", [], |r| r.get(0))
         .unwrap();
     assert_eq!(n, 1);
-    let row: (String, i64, i64, i64, f64, i64, i64, i64, f64) = db
+    let row: (String, Option<i64>, i64, i64, f64, i64, i64, i64, f64) = db
         .query_row(
             "SELECT calendar_date, resting_hr_bpm, max_hr_bpm, steps, steps_distance_m,
                     calories_total_kcal, intensity_vigorous_min, body_battery_max,
@@ -237,7 +237,8 @@ fn rebuild_loads_daily_summaries_and_skips_days_without_data() {
         row,
         (
             "2026-10-07".into(),
-            53,
+            // Garmin's resting heart rate is not loaded (see migration 0004).
+            None,
             176,
             10234,
             8120.4,
@@ -253,19 +254,18 @@ fn rebuild_loads_daily_summaries_and_skips_days_without_data() {
 fn storing_the_same_day_twice_replaces_its_row() {
     let dir = tempfile::TempDir::new().unwrap();
     let conn = runsync::db::open(&dir.path().join("running.sqlite")).unwrap();
-    let day = |rhr: i64| {
-        format!(r#"{{"calendarDate":"2026-10-07","heartRate":{{"restingValue":{rhr}}}}}"#)
-    };
+    let day =
+        |max: i64| format!(r#"{{"calendarDate":"2026-10-07","heartRate":{{"maxValue":{max}}}}}"#);
 
-    assert!(runsync::daily::store_day(&conn, &day(55)).unwrap());
-    assert!(runsync::daily::store_day(&conn, &day(52)).unwrap());
+    assert!(runsync::daily::store_day(&conn, &day(175)).unwrap());
+    assert!(runsync::daily::store_day(&conn, &day(172)).unwrap());
 
     let rows: Vec<(String, i64)> = conn
-        .prepare("SELECT calendar_date, resting_hr_bpm FROM daily_wellness")
+        .prepare("SELECT calendar_date, max_hr_bpm FROM daily_wellness")
         .unwrap()
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
         .unwrap()
         .map(Result::unwrap)
         .collect();
-    assert_eq!(rows, vec![("2026-10-07".to_string(), 52)]);
+    assert_eq!(rows, vec![("2026-10-07".to_string(), 172)]);
 }

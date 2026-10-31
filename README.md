@@ -39,7 +39,8 @@ Most documents are written in Chinese.
 
 ## Data directory
 
-Both projects find their data through `RUNNING_DATA_DIR`, defaulting to `%USERPROFILE%unning-data`. It holds `config.toml`, the hand-kept `races.csv`, the raw archive (`raw/`), credentials (`secrets/`), cooldown markers (`state/`) and the analysis database `running.sqlite`.
+Both projects find their data through `RUNNING_DATA_DIR`, defaulting to `%USERPROFILE%
+unning-data`. It holds `config.toml`, the hand-kept `races.csv`, the raw archive (`raw/`), credentials (`secrets/`), cooldown markers (`state/`) and the analysis database `running.sqlite`.
 
 `config.toml` (only `[[physiology]]` is required; every other key shows its default):
 
@@ -101,6 +102,8 @@ The full history can come from Garmin's account data export instead of thousands
 3. Run `runsync sync` as usual. Activities and days the export already holds are not requested again, so only data after the export date (plus the usual 7-day refresh and today's Garmin metrics) is fetched.
 
 `runsync rebuild` loads the archived exports again. The export contains GPS tracks and your e-mail address: keep it in the data directory, never in the repository.
+
+An export FIT file carries no activity id, so it is matched to an activity by start time: an exact match first, otherwise the only activity starting within 120 s of it. Activity summaries (distance and so on) stay Garmin's; the FIT only provides the per-second records and laps. The export has no time zone name, so `activities.time_zone` for an export activity is `Pacific/Auckland` when the local start's offset matches Auckland's at that moment, and otherwise a fixed offset such as `+08:00`; activities from the Personal API keep their IANA name. `daily_wellness.resting_hr_bpm` is always empty: the watch is worn in the daytime only, so Garmin's resting heart rate is too high to use. The analysis takes the resting heart rate from `hr_rest` in `config.toml`. The raw files keep Garmin's value.
 
 ### Air temperature from Open-Meteo
 

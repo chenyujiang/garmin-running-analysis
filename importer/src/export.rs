@@ -8,12 +8,12 @@
 //! The package is untrusted input. Entries are only read into memory and
 //! picked by name; nothing is ever written under an entry's name.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{Cursor, Read, Seek};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use chrono::{DateTime, NaiveDate};
+use chrono::{DateTime, NaiveDate, Offset, TimeDelta, TimeZone, Utc};
 use rusqlite::Connection;
 use rusqlite::types::Value as SqlValue;
 use serde::Deserialize;
@@ -26,6 +26,10 @@ use crate::data_dir::DataDir;
 use crate::fit::ActivityFit;
 use crate::source::GarminMetric;
 use crate::{db, garmin_metrics};
+
+/// An activity FIT whose session start equals no activity's start is matched
+/// to the only activity starting at most this many seconds before or after.
+const FIT_START_TOLERANCE_S: i64 = 120;
 
 /// Entries larger than this (uncompressed) are not read.
 const MAX_ENTRY_BYTES: u64 = 1 << 30;
@@ -172,7 +176,9 @@ pub fn load_package(conn: &Connection, data_dir: &DataDir, path: &Path) -> Resul
         conn,
         report: &mut report,
         data_dir,
-        by_start: HashMap::new(),
+        by_start: BTreeMap::new(),
+        exact_fits: HashSet::new(),
+        tolerance_fits: HashSet::new(),
         daily_first: None,
     };
     for name in in_dir(FITNESS_DIR, "", "json").filter(|n| n.ends_with(ACTIVITIES_SUFFIX)) {
@@ -310,8 +316,12 @@ struct Loader<'a> {
     report: &'a mut ExportReport,
     data_dir: &'a DataDir,
     /// Activity FITs carry no activity id: they are matched to the package's
-    /// activities by start time (Unix seconds).
-    by_start: HashMap<i64, i64>,
+    /// activities by start time (Unix seconds), see [`Loader::match_fit`].
+    by_start: BTreeMap<i64, i64>,
+    /// Activities whose FIT start matched exactly, and those loaded from a
+    /// FIT within the tolerance. An exact match wins over a tolerance one.
+    exact_fits: HashSet<i64>,
+    tolerance_fits: HashSet<i64>,
     /// The first UDS day of the package, kept by the API or not.
     daily_first: Option<NaiveDate>,
 }
@@ -372,17 +382,49 @@ impl Loader<'_> {
         if !fit.is_activity() {
             return Ok(FitOutcome::NotActivity);
         }
-        let id = fit
+        let Some((id, exact)) = fit
             .session_start
-            .and_then(|t| self.by_start.get(&t.timestamp()).copied());
-        let Some(id) = id else {
+            .and_then(|t| self.match_fit(t.timestamp()))
+        else {
             return Ok(FitOutcome::Unmatched);
         };
         if self.api_file(id, "fit").is_file() {
             return Ok(FitOutcome::KeptApi);
         }
         fit.store_or_nothing(self.conn, id)?;
+        if exact {
+            self.exact_fits.insert(id);
+            // A FIT loaded earlier within the tolerance is replaced.
+            if self.tolerance_fits.remove(&id) {
+                self.report.fit_activities -= 1;
+                self.report.fit_unmatched += 1;
+            }
+        } else {
+            self.tolerance_fits.insert(id);
+        }
         Ok(FitOutcome::Loaded)
+    }
+
+    /// The activity for a FIT session starting at `start` (Unix seconds),
+    /// and whether the match is exact. Without an exact match: the only
+    /// activity starting within [`FIT_START_TOLERANCE_S`], unless it already
+    /// has a FIT.
+    fn match_fit(&self, start: i64) -> Option<(i64, bool)> {
+        if let Some(id) = self.by_start.get(&start) {
+            return Some((*id, true));
+        }
+        let mut window = self
+            .by_start
+            .range(start - FIT_START_TOLERANCE_S..=start + FIT_START_TOLERANCE_S)
+            .map(|(_, id)| *id);
+        let id = window.next()?;
+        if window.next().is_some()
+            || self.exact_fits.contains(&id)
+            || self.tolerance_fits.contains(&id)
+        {
+            return None;
+        }
+        Some((id, false))
     }
 
     /// A `UDSFile_*.json`: a list of day rows.
@@ -446,7 +488,8 @@ fn uds_values(row: &Value) -> [SqlValue; 14] {
         .map(|s| s["statsValue"].clone())
     };
     [
-        n("/restingHeartRate"),
+        // restingHeartRate is not loaded, see `daily::RESTING_HR`.
+        daily::RESTING_HR,
         n("/minHeartRate"),
         n("/maxHeartRate"),
         n("/totalSteps"),
@@ -579,8 +622,7 @@ impl ExportActivity {
             activity_name: self.name,
             start_time_utc: utc.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
             start_time_local: local.naive_utc().format("%Y-%m-%dT%H:%M:%S").to_string(),
-            // The export only has Garmin's numeric time zone id.
-            time_zone: None,
+            time_zone: Some(time_zone(utc, local.naive_utc() - utc.naive_utc())),
             distance_m: div(self.distance, 100.0),
             duration_s: div(self.duration, 1000.0),
             moving_duration_s: div(self.moving_duration, 1000.0),
@@ -594,6 +636,21 @@ impl ExportActivity {
             calories_kcal: div(self.calories, EXPORT_CALORIES_PER_KCAL),
         })
     }
+}
+
+/// The export only has Garmin's numeric time zone id, so the zone comes from
+/// the local start's offset: `Pacific/Auckland` when Auckland had that offset
+/// at `utc`, otherwise the fixed offset (`+08:00`, `-05:30`).
+fn time_zone(utc: DateTime<Utc>, offset: TimeDelta) -> String {
+    let auckland = chrono_tz::Pacific::Auckland
+        .offset_from_utc_datetime(&utc.naive_utc())
+        .fix();
+    if i64::from(auckland.local_minus_utc()) == offset.num_seconds() {
+        return "Pacific/Auckland".to_owned();
+    }
+    let minutes = offset.num_minutes();
+    let sign = if minutes < 0 { '-' } else { '+' };
+    format!("{sign}{:02}:{:02}", minutes.abs() / 60, minutes.abs() % 60)
 }
 
 /// Copy via a `.part` file and rename. Copying a file onto itself (importing

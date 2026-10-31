@@ -49,11 +49,11 @@ fn daily_file(data_dir: &DataDir, d: NaiveDate) -> PathBuf {
         .join(format!("{}.json", d.format("%Y-%m-%d")))
 }
 
-fn resting_hr(db: &Path, d: NaiveDate) -> Option<Option<i64>> {
+fn stress(db: &Path, d: NaiveDate) -> Option<Option<i64>> {
     Connection::open(db)
         .unwrap()
         .query_row(
-            "SELECT resting_hr_bpm FROM daily_wellness WHERE calendar_date = ?1",
+            "SELECT stress_avg FROM daily_wellness WHERE calendar_date = ?1",
             [d.format("%Y-%m-%d").to_string()],
             |r| r.get(0),
         )
@@ -78,8 +78,29 @@ fn the_first_sync_fetches_the_last_7_days_first_and_stores_one_file_per_day() {
     let file = std::fs::read_to_string(daily_file(&data_dir, day(2026, 10, 24))).unwrap();
     assert!(file.contains("\"calendarDate\":\"2026-10-24\""), "{file}");
     let db = data_dir.analysis_db_path();
-    assert_eq!(resting_hr(&db, day(2026, 10, 24)), Some(Some(52)));
-    assert_eq!(resting_hr(&db, day(2026, 10, 30)), Some(Some(55)));
+    assert_eq!(stress(&db, day(2026, 10, 24)), Some(Some(52)));
+    assert_eq!(stress(&db, day(2026, 10, 30)), Some(Some(55)));
+}
+
+#[test]
+fn garmin_resting_heart_rate_is_not_loaded_but_stays_in_the_raw_archive() {
+    let (_dir, data_dir) = empty_data_dir();
+    let mut source = FakeSource::new(vec![]).with_daily(day(2026, 10, 24), Some(30));
+
+    sync_activities(&data_dir, &mut source, &options()).unwrap();
+
+    let file = std::fs::read_to_string(daily_file(&data_dir, day(2026, 10, 24))).unwrap();
+    assert!(file.contains("\"restingValue\":52"), "{file}");
+    let row: (Option<i64>, i64, i64, i64) = Connection::open(data_dir.analysis_db_path())
+        .unwrap()
+        .query_row(
+            "SELECT resting_hr_bpm, min_hr_bpm, max_hr_bpm, steps FROM daily_wellness
+             WHERE calendar_date = '2026-10-24'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .unwrap();
+    assert_eq!(row, (None, 48, 171, 9012));
 }
 
 #[test]
@@ -119,9 +140,9 @@ fn a_day_without_data_is_archived_as_null_and_gets_no_row() {
     let empty = std::fs::read_to_string(daily_file(&data_dir, day(2026, 10, 2))).unwrap();
     assert_eq!(empty, "null");
     let db = data_dir.analysis_db_path();
-    assert_eq!(resting_hr(&db, day(2026, 10, 2)), None);
-    // A row without a resting heart rate is still a row.
-    assert_eq!(resting_hr(&db, day(2026, 10, 1)), Some(None));
+    assert_eq!(stress(&db, day(2026, 10, 2)), None);
+    // A row without a stress level is still a row.
+    assert_eq!(stress(&db, day(2026, 10, 1)), Some(None));
 }
 
 #[test]
@@ -144,8 +165,8 @@ fn a_later_sync_refetches_and_upserts_the_last_7_days_only() {
     );
     assert_eq!(report.daily_summaries, 7);
     let db = data_dir.analysis_db_path();
-    assert_eq!(resting_hr(&db, day(2026, 10, 25)), Some(Some(58)));
-    assert_eq!(resting_hr(&db, day(2026, 10, 10)), Some(Some(50)));
+    assert_eq!(stress(&db, day(2026, 10, 25)), Some(Some(58)));
+    assert_eq!(stress(&db, day(2026, 10, 10)), Some(Some(50)));
     let rows: i64 = Connection::open(&db)
         .unwrap()
         .query_row("SELECT count(*) FROM daily_wellness", [], |r| r.get(0))
@@ -170,7 +191,7 @@ fn an_older_range_with_a_missing_day_file_is_fetched_again() {
         ]
     );
     assert_eq!(
-        resting_hr(&data_dir.analysis_db_path(), day(2026, 10, 12)),
+        stress(&data_dir.analysis_db_path(), day(2026, 10, 12)),
         Some(Some(51))
     );
 }
