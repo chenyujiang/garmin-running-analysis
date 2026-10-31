@@ -103,4 +103,4 @@ Notebook：`analysis/notebooks/temperature.ipynb`（提交时不带输出）。�
 4. 参考温度以后如果要用，取 17 °C（跑步时气温的中位数）。
 5. 另开实施 ticket（`needs-triage`）：分析包加 Open-Meteo 气温获取和缓存（只发取整格点）、仪表盘温度改用气温、标注高温周、去掉 `records.temperature` 的依赖。
 
-**用户 2026-10-31 确认全部 5 条建议。** 实施见 [22 有氧图改用 Open-Meteo 气温并标注高温周](22-air-temperature.md)。
+**用户 2026-10-31 确认全部 5 条建议。** 实施见 [22a 导入端获取 Open-Meteo 逐小时气温](22a-weather-import.md) 和 [22b 有氧图改用 Open-Meteo 气温并标注高温周](22b-air-temperature-chart.md)。
