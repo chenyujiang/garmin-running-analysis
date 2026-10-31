@@ -17,4 +17,5 @@ pub mod rebuild;
 pub mod source;
 pub mod sync;
 pub mod sync_all;
+mod sync_support;
 pub mod weather;

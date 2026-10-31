@@ -99,7 +99,7 @@ fn the_first_sync_asks_for_every_day_from_the_first_run_at_the_most_common_grid_
         query("2026-10-01", "2026-10-28")
     );
     assert_eq!(report.hours, 28 * 24);
-    assert_eq!(report.range, Some((date(2026, 10, 1), date(2026, 10, 28))));
+    assert_eq!(report.ranges, vec![(date(2026, 10, 1), date(2026, 10, 28))]);
     assert!(report.stopped_by.is_none());
 }
 
@@ -118,9 +118,90 @@ fn a_later_sync_asks_only_for_the_new_days_and_none_when_nothing_is_missing() {
         weather.requests[1].query(),
         query("2026-10-29", "2026-10-31")
     );
-    assert_eq!(report.range, None);
+    assert!(report.ranges.is_empty());
     assert_eq!(report.hours, 0);
     assert_eq!(hourly_rows(&data_dir).len(), 31 * 24);
+}
+
+#[test]
+fn days_the_archive_had_no_value_for_yet_are_asked_for_again() {
+    let (_dir, data_dir) = data_dir();
+    usual_runs(&data_dir);
+    let mut weather = FakeWeather {
+        null_days: vec![date(2026, 10, 27), date(2026, 10, 28)],
+        ..FakeWeather::new()
+    };
+    sync(&data_dir, &mut weather, date(2026, 10, 30));
+
+    let mut weather = FakeWeather::new();
+    let report = sync(&data_dir, &mut weather, date(2026, 10, 31));
+
+    assert_eq!(weather.requests.len(), 1);
+    assert_eq!(
+        weather.requests[0].query(),
+        query("2026-10-27", "2026-10-29")
+    );
+    assert_eq!(
+        report.ranges,
+        vec![(date(2026, 10, 27), date(2026, 10, 29))]
+    );
+    let rows = hourly_rows(&data_dir);
+    assert_eq!(rows.len(), 29 * 24);
+    assert!(rows.iter().all(|row| row.3.is_some()), "no NULL left");
+}
+
+#[test]
+fn only_the_missing_ranges_are_asked_for_not_the_archived_days_between_them() {
+    let (_dir, data_dir) = data_dir();
+    usual_runs(&data_dir);
+    let mut weather = FakeWeather {
+        null_days: vec![date(2026, 10, 10), date(2026, 10, 11)],
+        ..FakeWeather::new()
+    };
+    sync(&data_dir, &mut weather, date(2026, 10, 30));
+
+    let mut weather = FakeWeather::new();
+    let report = sync(&data_dir, &mut weather, date(2026, 11, 2));
+
+    assert_eq!(weather.requests.len(), 2);
+    assert_eq!(
+        weather.requests[0].query(),
+        query("2026-10-10", "2026-10-11")
+    );
+    assert_eq!(
+        weather.requests[1].query(),
+        query("2026-10-29", "2026-10-31")
+    );
+    assert_eq!(
+        report.ranges,
+        vec![
+            (date(2026, 10, 10), date(2026, 10, 11)),
+            (date(2026, 10, 29), date(2026, 10, 31)),
+        ]
+    );
+    assert_eq!(report.hours, 5 * 24);
+}
+
+#[test]
+fn rebuild_never_replaces_a_value_with_null() {
+    let (_dir, data_dir) = data_dir();
+    usual_runs(&data_dir);
+    let mut weather = FakeWeather {
+        null_days: vec![date(2026, 10, 28)],
+        ..FakeWeather::new()
+    };
+    sync(&data_dir, &mut weather, date(2026, 10, 30));
+    // A fresh database asks for the same dates again, now with values; the
+    // response is archived as `<start>_<end>-2.json`, which loads first.
+    std::fs::remove_file(data_dir.analysis_db_path()).unwrap();
+    usual_runs(&data_dir);
+    sync(&data_dir, &mut FakeWeather::new(), date(2026, 10, 30));
+
+    runsync::rebuild::rebuild(&data_dir).unwrap();
+
+    let rows = hourly_rows(&data_dir);
+    assert_eq!(rows.len(), 28 * 24);
+    assert!(rows.iter().all(|row| row.3.is_some()), "no NULL loaded");
 }
 
 #[test]
@@ -330,7 +411,7 @@ fn errors_from_the_real_client_name_neither_the_grid_point_nor_the_url() {
             &options,
             Err(anyhow::anyhow!("no key")),
             None,
-            &mut client,
+            Ok(&mut client as &mut dyn runsync::weather::WeatherSource),
         );
 
         let runsync::sync_all::Outcome::Failed(text) = &report.open_meteo else {

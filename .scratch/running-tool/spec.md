@@ -180,6 +180,7 @@ lthr = 170
 
 - **Seam 1：导入 CLI，原始档案到分析库。** 准备一个小型的原始档案 fixture 目录（手写的详情 JSON、每日汇总 JSON，以及合成的小 FIT 文件），在上面运行 `rebuild`，然后直接查询生成的 SQLite，断言：各表行数；单位为 SI；`start_time_utc` 和 `start_time_local` 正确；同一天重复写入时是 upsert；无法解析的 FIT 被跳过而不是中断；迁移在空库和旧版本库上都能执行到最新版本。fixture 不含真实 GPS，可以提交。读取真实 FIT 的集成测试从数据目录读文件，标 `#[ignore]`，用 `cargo test -- --ignored` 手动运行。
 - **Seam 2：导入 CLI，`sync` 对接数据源 trait。** 用内存里的假数据源驱动 `sync`，断言原始档案和 `state/` 的结果：原始文件已存在时跳过（续传）；翻页在整页都已存在时停止；最近 7 天的详情和每日汇总被覆盖；某个数据源返回限流后写冷却标记，24 小时内再次运行时跳过这个数据源，超过 24 小时恢复；一个数据源失败时另一个照常完成；凭据失效时输出相应提示。不测真实 HTTP，也不调用真实的 Python 小脚本。
+  - **例外（ticket 22a）**：`importer/tests/open_meteo.rs` 里有一个测试用本机 `TcpListener` 起一个桩服务器（`127.0.0.1`，返回固定状态码）和一个已关闭的端口，驱动真实的 `OpenMeteoClient`。原因：要证明的是真实客户端的错误信息里不带网格点坐标和请求 URL（reqwest 的错误默认带 URL，URL 里有坐标），假数据源测不到这一点。连接只到本机，不访问外网，不发真实请求到 Open-Meteo。其余 Open-Meteo 测试照常用内存假数据源。
 - **Seam 3：仪表盘 JSON 接口。** pytest + FastAPI `TestClient`，测试启动时用合成数据生成一个小 `running.sqlite`（用与 Rust 相同的 schema），再加 `config.toml` 和 `races.csv`。断言各接口返回的数值，以及三种状态：没有分析库或分析库为空；6 个月内没有比赛；某周有效跑步不足 2 次。
 - **公式级测试（Seam 3 之外唯一的补充）**：TRIMP、VDOT 换算、Riegel、Vickers 修正、Minetti `Cr(i)` 这几个公式，用 pytest 直接测 `running` 的公开函数，用原始出处里的数值核对。其余逻辑（稳态段筛选、跑走分类、周聚合、EWMA）都通过 Seam 3 测试。
 - 仓库目前没有代码，也就没有现成的测试可以参照。

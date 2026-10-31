@@ -52,15 +52,15 @@ impl SyncAllReport {
 }
 
 /// Sync all sources. `personal_api` is `Err` when the client could not be
-/// built (e.g. no key file); `garminconnect` is `None` when there is no token
-/// yet. Building any of them must not touch the network. Open-Meteo runs
+/// built (e.g. no key file), `open_meteo` likewise; `garminconnect` is `None`
+/// when there is no token yet. Building any of them must not touch the network. Open-Meteo runs
 /// last, so it sees the road runs this sync added.
 pub fn sync_all(
     data_dir: &DataDir,
     options: &SyncOptions,
     personal_api: anyhow::Result<&mut dyn ActivitySource>,
     garminconnect: Option<&mut dyn MetricsSource>,
-    open_meteo: &mut dyn WeatherSource,
+    open_meteo: anyhow::Result<&mut dyn WeatherSource>,
 ) -> SyncAllReport {
     let personal_api = guarded(data_dir, sync::SOURCE_NAME, options.now, || {
         let source = personal_api.map_err(|err| format!("{}: {err:#}", sync::SOURCE_NAME))?;
@@ -77,7 +77,8 @@ pub fn sync_all(
         run_garminconnect(data_dir, source, options)
     });
     let open_meteo = guarded(data_dir, weather::SOURCE_NAME, options.now, || {
-        run_open_meteo(data_dir, open_meteo, options)
+        let source = open_meteo.map_err(|err| format!("{}: {err:#}", weather::SOURCE_NAME))?;
+        run_open_meteo(data_dir, source, options)
     });
     SyncAllReport {
         personal_api,
@@ -208,16 +209,29 @@ fn run_open_meteo(
     let name = weather::SOURCE_NAME;
     let report = sync_open_meteo(data_dir, source, options.today)
         .map_err(|err| format!("{name}: {err:#}"))?;
+    if report.no_database {
+        return Ok(Outcome::Skipped(format!(
+            "{name}: skipped, there is no analysis database yet ({})",
+            data_dir.analysis_db_path().display()
+        )));
+    }
     if report.no_gps {
         return Ok(Outcome::Skipped(format!(
             "{name}: skipped, no road run has GPS records yet"
         )));
     }
-    let summary = match (report.range, &report.stopped_by) {
-        (Some((start, end)), None) => {
-            format!("{} hours of air temperature, {start}..{end}", report.hours)
-        }
-        (Some((start, end)), Some(_)) => format!("requesting {start}..{end}"),
+    let ranges: Vec<String> = report
+        .ranges
+        .iter()
+        .map(|(start, end)| format!("{start}..{end}"))
+        .collect();
+    let summary = match (ranges.split_last(), &report.stopped_by) {
+        (Some(_), None) => format!(
+            "{} hours of air temperature, {}",
+            report.hours,
+            ranges.join(", ")
+        ),
+        (Some((failed, _)), Some(_)) => format!("requesting {failed}"),
         (None, _) => "air temperature up to date".to_owned(),
     };
     finish(name, summary, report.stopped_by, || {

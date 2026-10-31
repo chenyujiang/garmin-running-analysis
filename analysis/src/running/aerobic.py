@@ -79,6 +79,17 @@ def _cr_expr(grade: pl.Expr) -> pl.Expr:
     return value
 
 
+def _placeholders(values: list) -> str:
+    """`?, ?, ...`: one SQL parameter per value."""
+    return ", ".join("?" for _ in values)
+
+
+def _tenths(expr: str) -> str:
+    """SQL for `expr` (degrees) in whole tenths of a degree, so grid points
+    and positions compare exactly."""
+    return f"CAST(round({expr} * 10) AS BIGINT)"
+
+
 def load_records(db: AnalysisDb, activity_ids: list[int]) -> pl.DataFrame:
     """Per-second records for the activities, with `ts` parsed (UTC, naive)."""
     schema = {
@@ -92,11 +103,10 @@ def load_records(db: AnalysisDb, activity_ids: list[int]) -> pl.DataFrame:
     }
     if not activity_ids or "records" not in db.tables():
         return pl.DataFrame(schema=schema)
-    id_list = ", ".join("?" for _ in activity_ids)
     df = db.query(
         "SELECT activity_id, strptime(timestamp, ?) AS ts, heart_rate, speed, cadence,"
         " altitude, distance"
-        f" FROM a.records WHERE activity_id IN ({id_list})",
+        f" FROM a.records WHERE activity_id IN ({_placeholders(activity_ids)})",
         [_TS_FORMAT, *activity_ids],
     )
     if df.is_empty():
@@ -111,10 +121,9 @@ def gps_usable(db: AnalysisDb, activity_ids: list[int], aerobic: Aerobic) -> set
     Shared by the aerobic metric and the long-run EF/decoupling."""
     if not activity_ids or "records" not in db.tables():
         return set()
-    id_list = ", ".join("?" for _ in activity_ids)
     df = db.query(
         "SELECT activity_id FROM a.records"
-        f" WHERE activity_id IN ({id_list}) GROUP BY activity_id"
+        f" WHERE activity_id IN ({_placeholders(activity_ids)}) GROUP BY activity_id"
         " HAVING count(lat) > 0 AND count(lon) > 0 AND count(altitude) > 0"
         " AND count(*) FILTER (WHERE speed > ?) <= ?",
         [*activity_ids, aerobic.max_speed_mps, aerobic.max_fast_s],
@@ -123,6 +132,7 @@ def gps_usable(db: AnalysisDb, activity_ids: list[int], aerobic: Aerobic) -> set
 
 
 _AIR_SCHEMA = {"activity_id": pl.Int64, "temperature_c": pl.Float64}
+_NEAR_SCHEMA = {"activity_id": pl.Int64, "g_lat": pl.Int64, "g_lon": pl.Int64}
 
 
 def air_temperature(db: AnalysisDb, activity_ids: list[int]) -> pl.DataFrame:
@@ -139,27 +149,39 @@ def air_temperature(db: AnalysisDb, activity_ids: list[int]) -> pl.DataFrame:
     empty = pl.DataFrame(schema=_AIR_SCHEMA)
     if not activity_ids or not {"hourly_weather", "records", "activities"} <= db.tables():
         return empty
-    # Grid points and positions in whole tenths of a degree, so they compare exactly.
+    near = _nearest_grid(db, activity_ids)
+    if near.is_empty():
+        return empty
+    mid = _midpoints(db, near, activity_ids)
+    hourly = _hourly(db)
+    if mid.is_empty() or hourly.is_empty():
+        return empty
+    return _interpolate(mid, hourly)
+
+
+def _nearest_grid(db: AnalysisDb, activity_ids: list[int]) -> pl.DataFrame:
+    """activity_id, g_lat, g_lon: each run's nearest grid point within reach,
+    in tenths of a degree. Runs without a position or grid point in reach
+    are left out."""
     grids = db.query(
-        "SELECT DISTINCT CAST(round(grid_lat * 10) AS BIGINT) AS g_lat,"
-        " CAST(round(grid_lon * 10) AS BIGINT) AS g_lon FROM a.hourly_weather"
+        f"SELECT DISTINCT {_tenths('grid_lat')} AS g_lat,"
+        f" {_tenths('grid_lon')} AS g_lon FROM a.hourly_weather"
     )
     if grids.is_empty():
-        return empty
-    id_list = ", ".join("?" for _ in activity_ids)
+        return pl.DataFrame(schema=_NEAR_SCHEMA)
     runs = db.query(
         "SELECT activity_id,"
-        " CAST(round(round(median(lat), 1) * 10) AS BIGINT) AS p_lat,"
-        " CAST(round(round(median(lon), 1) * 10) AS BIGINT) AS p_lon"
-        f" FROM a.records WHERE activity_id IN ({id_list})"
+        f" {_tenths('round(median(lat), 1)')} AS p_lat,"
+        f" {_tenths('round(median(lon), 1)')} AS p_lon"
+        f" FROM a.records WHERE activity_id IN ({_placeholders(activity_ids)})"
         " GROUP BY activity_id HAVING count(lat) > 0 AND count(lon) > 0",
         list(activity_ids),
     )
     if runs.is_empty():
-        return empty
+        return pl.DataFrame(schema=_NEAR_SCHEMA)
     dist = (pl.col("p_lat") - pl.col("g_lat")) ** 2 + (pl.col("p_lon") - pl.col("g_lon")) ** 2
     reach = _GRID_REACH_TENTHS
-    near = (
+    return (
         runs.join(grids, how="cross")
         .sort("activity_id", dist, "g_lat", "g_lon")
         .group_by("activity_id", maintain_order=True)
@@ -169,15 +191,18 @@ def air_temperature(db: AnalysisDb, activity_ids: list[int]) -> pl.DataFrame:
             & ((pl.col("p_lon") - pl.col("g_lon")).abs() <= reach)
         )
     )
-    if near.is_empty():
-        return empty
+
+
+def _midpoints(db: AnalysisDb, near: pl.DataFrame, activity_ids: list[int]) -> pl.DataFrame:
+    """activity_id, g_lat, g_lon, mid: each run's midpoint (UTC, naive),
+    sorted by it. Runs without a duration are left out."""
     acts = db.query(
         "SELECT activity_id, strptime(start_time_utc, ?) AS start_utc,"
         " coalesce(elapsed_duration_s, duration_s) AS elapsed_s"
-        f" FROM a.activities WHERE activity_id IN ({id_list})",
+        f" FROM a.activities WHERE activity_id IN ({_placeholders(activity_ids)})",
         [_TS_FORMAT, *activity_ids],
     )
-    mid = (
+    return (
         near.join(acts, on="activity_id")
         .drop_nulls("elapsed_s")
         .with_columns(
@@ -189,10 +214,14 @@ def air_temperature(db: AnalysisDb, activity_ids: list[int]) -> pl.DataFrame:
         .select("activity_id", "g_lat", "g_lon", "mid")
         .sort("mid")
     )
-    hourly = (
+
+
+def _hourly(db: AnalysisDb) -> pl.DataFrame:
+    """g_lat, g_lon, t, c: every hour with a temperature, sorted by time."""
+    return (
         db.query(
-            "SELECT CAST(round(grid_lat * 10) AS BIGINT) AS g_lat,"
-            " CAST(round(grid_lon * 10) AS BIGINT) AS g_lon,"
+            f"SELECT {_tenths('grid_lat')} AS g_lat,"
+            f" {_tenths('grid_lon')} AS g_lon,"
             " strptime(time_utc, ?) AS t, temperature_c AS c"
             " FROM a.hourly_weather WHERE temperature_c IS NOT NULL",
             [_TS_FORMAT],
@@ -200,8 +229,11 @@ def air_temperature(db: AnalysisDb, activity_ids: list[int]) -> pl.DataFrame:
         .with_columns(pl.col("t").cast(pl.Datetime("us")))
         .sort("t")
     )
-    if mid.is_empty() or hourly.is_empty():
-        return empty
+
+
+def _interpolate(mid: pl.DataFrame, hourly: pl.DataFrame) -> pl.DataFrame:
+    """The temperature at each midpoint, linear between the hours before and
+    after it when they are at most an hour apart."""
     by = ["g_lat", "g_lon"]
     before = hourly.rename({"t": "t0", "c": "c0"})
     after = hourly.rename({"t": "t1", "c": "c1"})

@@ -21,9 +21,9 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Duration, Local, NaiveDate, SecondsFormat, Utc};
+use chrono::{DateTime, Duration, Local, NaiveDate, Utc};
 use indicatif::{ProgressBar, ProgressStyle};
-use rusqlite::{Connection, params};
+use rusqlite::Connection;
 
 use crate::activity::Activity;
 use crate::daily;
@@ -31,6 +31,7 @@ use crate::data_dir::DataDir;
 use crate::db::{self, ExportCoverage};
 use crate::fit::ActivityFit;
 use crate::source::{ActivitySource, SourceError};
+use crate::sync_support::{record_sync_run, utc_now_string, write_atomically};
 
 pub const SOURCE_NAME: &str = "personal_api";
 pub const DEFAULT_PAGE_SIZE: usize = 100;
@@ -119,11 +120,7 @@ pub fn sync_activities(
         .stopped_by
         .as_ref()
         .map_or("ok", SourceError::outcome);
-    conn.execute(
-        "INSERT INTO sync_runs (source, started_at_utc, finished_at_utc, outcome)
-         VALUES (?1, ?2, ?3, ?4)",
-        params![SOURCE_NAME, started_at, utc_now_string(), outcome],
-    )?;
+    record_sync_run(&conn, SOURCE_NAME, &started_at, outcome)?;
     Ok(report)
 }
 
@@ -299,18 +296,4 @@ fn daily_ranges_to_fetch(
 
 fn daily_path(dir: &Path, day: NaiveDate) -> std::path::PathBuf {
     dir.join(format!("{}.json", day.format("%Y-%m-%d")))
-}
-
-/// Write via a `.part` file and rename, so a file in the archive is always
-/// complete. An existing file is replaced.
-fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
-    let mut part = path.as_os_str().to_owned();
-    part.push(".part");
-    std::fs::write(&part, bytes).with_context(|| format!("writing {}", path.display()))?;
-    std::fs::rename(&part, path).with_context(|| format!("writing {}", path.display()))?;
-    Ok(())
-}
-
-fn utc_now_string() -> String {
-    Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
 }

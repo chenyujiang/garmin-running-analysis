@@ -64,7 +64,8 @@ fn sync_after_an_import_asks_only_for_what_the_export_does_not_hold() {
         &options,
         Ok(&mut personal as &mut dyn ActivitySource),
         Some(&mut metrics as &mut dyn MetricsSource),
-        &mut common::fake_weather::FakeWeather::new(),
+        Ok(&mut common::fake_weather::FakeWeather::new()
+            as &mut dyn runsync::weather::WeatherSource),
     );
 
     assert!(

@@ -39,8 +39,7 @@ Most documents are written in Chinese.
 
 ## Data directory
 
-Both projects find their data through `RUNNING_DATA_DIR`, defaulting to `%USERPROFILE%
-unning-data`. It holds `config.toml`, the hand-kept `races.csv`, the raw archive (`raw/`), credentials (`secrets/`), cooldown markers (`state/`) and the analysis database `running.sqlite`.
+Both projects find their data through `RUNNING_DATA_DIR`, defaulting to `%USERPROFILE%\running-data`. It holds `config.toml`, the hand-kept `races.csv`, the raw archive (`raw/`), credentials (`secrets/`), cooldown markers (`state/`) and the analysis database `running.sqlite`.
 
 `config.toml` (only `[[physiology]]` is required; every other key shows its default):
 
@@ -109,9 +108,9 @@ An export FIT file carries no activity id, so it is matched to an activity by st
 
 `runsync sync` also fetches hourly air temperature from the free [Open-Meteo historical weather API](https://open-meteo.com/en/docs/historical-weather-api) (no key) for the aerobic chart. It runs after the two Garmin sources and independently of them.
 
-What is sent: one grid point, rounded to 0.1° (about 10 km), and a date range. The grid point is the most common one among road runs (`running`, `street_running`) with GPS: each run's median latitude and longitude are rounded to 0.1° and the most frequent result wins. Nothing else (no tracks, times or account data) leaves the machine. Without a road run with GPS, nothing is requested. The range covers every day from the first road run to two days ago that is not yet archived for that grid point, in one request. If the main grid point moves, only the new one is fetched; the old archive stays.
+What is sent: one grid point, rounded to 0.1° (about 10 km), and a date range. The grid point is the most common one among road runs (`running`, `street_running`) with GPS: each run's median latitude and longitude are rounded to 0.1° and the most frequent result wins. Nothing else (no tracks, times or account data) leaves the machine. Without a road run with GPS, nothing is requested. It asks for every day from the first road run to two days ago that has no temperature yet for that grid point, one request per run of consecutive missing days. The archive may hold only empty (null) hours for the latest days; such days count as missing and are asked for again on a later sync. If the main grid point moves, only the new one is fetched; the old archive stays.
 
-Each response is stored verbatim in `raw/open-meteo/<start>_<end>.json`, next to `<start>_<end>.request.json` recording the grid point and dates asked for, and loaded into the `hourly_weather` table (UTC hours). `runsync rebuild` loads the archive again. A rate limit (HTTP 429) skips Open-Meteo for 24 hours (`state/open_meteo.cooldown.json`). Messages and logs never show the grid point or the request URL; the archive files hold it, so keep them in the data directory.
+Each response is stored verbatim in `raw/open-meteo/<start>_<end>.json`, next to `<start>_<end>.request.json` recording the grid point and dates asked for, and loaded into the `hourly_weather` table (UTC hours). `runsync rebuild` loads the archive again; an empty hour never replaces a temperature. Without an analysis database Open-Meteo is skipped; otherwise each run is recorded in the `sync_runs` table with source `open_meteo`. A rate limit (HTTP 429) skips Open-Meteo for 24 hours (`state/open_meteo.cooldown.json`). Messages and logs never show the grid point or the request URL; the archive files hold it, so keep them in the data directory.
 
 ## Common commands
 

@@ -11,6 +11,9 @@ pub struct FakeWeather {
     pub requests: Vec<WeatherRequest>,
     /// Fail every request with this error instead of answering.
     pub fail: Option<fn() -> SourceError>,
+    /// Days the archive has no value for yet: every hour is `null`, as
+    /// Open-Meteo answers for the latest days.
+    pub null_days: Vec<NaiveDate>,
 }
 
 impl FakeWeather {
@@ -32,7 +35,11 @@ impl WeatherSource for FakeWeather {
         if let Some(fail) = self.fail {
             return Err(fail());
         }
-        Ok(response(request.start, request.end))
+        Ok(response_with_nulls(
+            request.start,
+            request.end,
+            &self.null_days,
+        ))
     }
 }
 
@@ -64,13 +71,22 @@ pub fn add_activity(
 /// An archive response shaped like Open-Meteo's for `timezone=GMT`. The
 /// latitude/longitude it reports are a model grid point, not the request's.
 pub fn response(start: NaiveDate, end: NaiveDate) -> String {
+    response_with_nulls(start, end, &[])
+}
+
+/// [`response`], with every hour of `null_days` `null`.
+pub fn response_with_nulls(start: NaiveDate, end: NaiveDate, null_days: &[NaiveDate]) -> String {
     let mut times = Vec::new();
     let mut temps = Vec::new();
     let mut day = start;
     while day <= end {
         for h in 0..24 {
             times.push(format!("{}T{h:02}:00", day.format("%Y-%m-%d")));
-            temps.push(serde_json::json!(10.0 + f64::from(h) / 10.0));
+            if null_days.contains(&day) {
+                temps.push(serde_json::Value::Null);
+            } else {
+                temps.push(serde_json::json!(10.0 + f64::from(h) / 10.0));
+            }
         }
         day += Duration::days(1);
     }

@@ -15,6 +15,7 @@ use runsync::source::SourceError;
 use runsync::source::{ActivitySource, GarminMetric, MetricsSource};
 use runsync::sync::SyncOptions;
 use runsync::sync_all::{Outcome, SyncAllReport, sync_all};
+use runsync::weather::WeatherSource;
 
 fn now() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 10, 30, 12, 0, 0).unwrap()
@@ -71,7 +72,7 @@ fn run_with_weather(
         &options_at(now),
         Ok(personal as &mut dyn ActivitySource),
         Some(metrics as &mut dyn MetricsSource),
-        weather,
+        Ok(weather as &mut dyn WeatherSource),
     )
 }
 
@@ -114,6 +115,37 @@ fn a_failing_open_meteo_does_not_affect_the_other_sources() {
     assert!(text.starts_with("open_meteo: "), "{text}");
     assert!(!report.success());
     assert_eq!(weather.requests.len(), 1);
+}
+
+#[test]
+fn an_open_meteo_client_that_cannot_be_built_fails_only_open_meteo() {
+    let (_dir, data_dir) = data_dir();
+    with_gps(&data_dir);
+    let mut personal = activities();
+    let mut metrics = FakeMetrics::new();
+
+    let report = sync_all(
+        &data_dir,
+        &options_at(now()),
+        Ok(&mut personal as &mut dyn ActivitySource),
+        Some(&mut metrics as &mut dyn MetricsSource),
+        Err(anyhow::anyhow!("building HTTP client")),
+    );
+
+    assert!(
+        matches!(report.personal_api, Outcome::Done(_)),
+        "{report:?}"
+    );
+    assert!(
+        matches!(report.garminconnect, Outcome::Done(_)),
+        "{report:?}"
+    );
+    let Outcome::Failed(text) = &report.open_meteo else {
+        panic!("expected a failure, got {:?}", report.open_meteo);
+    };
+    assert!(text.starts_with("open_meteo: "), "{text}");
+    assert!(text.contains("building HTTP client"), "{text}");
+    assert!(!report.success());
 }
 
 #[test]
@@ -191,6 +223,30 @@ fn without_gps_open_meteo_is_skipped_with_a_note() {
     );
     assert!(message(&report.open_meteo).contains("GPS"));
     assert!(report.success());
+}
+
+#[test]
+fn without_an_analysis_database_open_meteo_is_skipped_saying_so() {
+    let (_dir, data_dir) = data_dir();
+    let mut weather = FakeWeather::new();
+
+    let report = sync_all(
+        &data_dir,
+        &options_at(now()),
+        Err(anyhow::anyhow!("no key")),
+        None,
+        Ok(&mut weather as &mut dyn WeatherSource),
+    );
+
+    assert!(!data_dir.analysis_db_path().exists());
+    assert!(
+        matches!(report.open_meteo, Outcome::Skipped(_)),
+        "{report:?}"
+    );
+    let text = message(&report.open_meteo);
+    assert!(text.contains("analysis database"), "{text}");
+    assert!(!text.contains("GPS"), "{text}");
+    assert!(weather.requests.is_empty());
 }
 
 fn message(outcome: &Outcome) -> &str {
@@ -366,7 +422,7 @@ fn a_missing_personal_api_key_does_not_stop_garminconnect() {
         &options_at(now()),
         Err(anyhow::anyhow!("no key in secrets/personal_api.key")),
         Some(&mut metrics as &mut dyn MetricsSource),
-        &mut FakeWeather::new(),
+        Ok(&mut FakeWeather::new() as &mut dyn WeatherSource),
     );
 
     assert!(message(&report.personal_api).contains("personal_api.key"));
@@ -448,7 +504,7 @@ fn without_a_garminconnect_token_it_is_skipped_with_the_login_hint() {
         &options_at(now()),
         Ok(&mut activities() as &mut dyn ActivitySource),
         None,
-        &mut FakeWeather::new(),
+        Ok(&mut FakeWeather::new() as &mut dyn WeatherSource),
     );
 
     assert!(matches!(report.garminconnect, Outcome::Skipped(_)));

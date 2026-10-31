@@ -3,10 +3,6 @@
 -- m, s, m/s, bpm. start_time_utc is ISO 8601 with a trailing Z;
 -- start_time_local is the wall-clock time where the activity happened,
 -- without offset. The full JSON stays in the raw archive.
--- time_zone is an IANA name or a fixed offset: the Personal API gives the
--- IANA name; for account export activities it comes from start_time_local
--- minus start_time_utc, written 'Pacific/Auckland' when Auckland had that
--- offset at the time and otherwise as a fixed offset such as '+08:00'.
 CREATE TABLE activities (
     activity_id        INTEGER PRIMARY KEY,
     activity_type      TEXT    NOT NULL,

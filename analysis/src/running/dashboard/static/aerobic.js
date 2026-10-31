@@ -225,7 +225,7 @@ function hotBands(svg, weeks, g, y1, y2) {
   }
 }
 
-function mainChart(weeks, g, ref, raceMarks = [], hotC = 22) {
+function mainChart(weeks, g, ref, raceMarks, hotC) {
   const H = MAIN.h;
   const [wrap, svg] = frame(H, `有氧能力趋势：心率 ${ref} 时的配速`);
   hotBands(svg, weeks, g, MAIN.t, H - MAIN.b);

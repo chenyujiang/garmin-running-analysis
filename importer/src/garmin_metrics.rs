@@ -15,13 +15,14 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use chrono::{Datelike, Duration, NaiveDate, SecondsFormat, Utc};
-use rusqlite::{Connection, params};
+use chrono::{Datelike, Duration, NaiveDate};
+use rusqlite::Connection;
 use serde_json::Value;
 
 use crate::data_dir::DataDir;
 use crate::db::{self, ExportCoverage};
 use crate::source::{GarminMetric, MetricsSource, SourceError};
+use crate::sync_support::{record_sync_run, utc_now_string, write_atomically};
 
 pub const SOURCE_NAME: &str = "garminconnect";
 
@@ -76,11 +77,7 @@ pub fn sync_garmin_metrics(
         .stopped_by
         .as_ref()
         .map_or("ok", SourceError::outcome);
-    conn.execute(
-        "INSERT INTO sync_runs (source, started_at_utc, finished_at_utc, outcome)
-         VALUES (?1, ?2, ?3, ?4)",
-        params![SOURCE_NAME, started_at, utc_now_string(), outcome],
-    )?;
+    record_sync_run(&conn, SOURCE_NAME, &started_at, outcome)?;
     Ok(report)
 }
 
@@ -273,18 +270,4 @@ fn text(v: Option<&str>) -> rusqlite::types::Value {
     v.map_or(rusqlite::types::Value::Null, |s| {
         rusqlite::types::Value::Text(s.to_owned())
     })
-}
-
-/// Write via a `.part` file and rename, so a file in the archive is always
-/// complete. An existing file is replaced.
-fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
-    let mut part = path.as_os_str().to_owned();
-    part.push(".part");
-    std::fs::write(&part, bytes).with_context(|| format!("writing {}", path.display()))?;
-    std::fs::rename(&part, path).with_context(|| format!("writing {}", path.display()))?;
-    Ok(())
-}
-
-fn utc_now_string() -> String {
-    Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
 }

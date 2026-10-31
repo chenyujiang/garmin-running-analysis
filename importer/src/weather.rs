@@ -7,14 +7,16 @@
 //!   grid point that occurs most often is the main one. Without any GPS
 //!   nothing is requested.
 //! - The dates: the first road run's UTC date up to `today` minus
-//!   [`ARCHIVE_LAG_DAYS`]. Days already archived for the main grid point are
-//!   not asked for again; the missing ones go out in one request.
+//!   [`ARCHIVE_LAG_DAYS`]. Days that already have a temperature for the main
+//!   grid point are not asked for again; each run of consecutive missing
+//!   days goes out as one request. A day whose hours are all NULL (the
+//!   archive may not have the latest days yet) counts as missing.
 //! - Each response is stored verbatim as `raw/open-meteo/<start>_<end>.json`,
 //!   then `<start>_<end>.request.json` records the grid point and dates that
 //!   were asked for (the response's coordinates are a model grid point, not
 //!   the request's). A response without its request file is ignored.
 //! - Responses are loaded into `hourly_weather` at once; `rebuild` loads all
-//!   of them again ([`load_archive`]).
+//!   of them again ([`load_archive`]). A NULL never replaces a temperature.
 //!
 //! The grid point and coordinates only ever go to Open-Meteo and into the
 //! data directory: never into output, logs or error messages. [`GridPoint`]
@@ -25,7 +27,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration as StdDuration;
 
 use anyhow::{Context, Result, anyhow};
-use chrono::{Duration, NaiveDate, NaiveDateTime, SecondsFormat, Utc};
+use chrono::{Duration, NaiveDate, NaiveDateTime, SecondsFormat};
 use reqwest::StatusCode;
 use reqwest::blocking::Client;
 use rusqlite::{Connection, params};
@@ -34,6 +36,7 @@ use serde::{Deserialize, Serialize};
 use crate::data_dir::DataDir;
 use crate::db;
 use crate::source::SourceError;
+use crate::sync_support::{record_sync_run, utc_now_string, write_atomically};
 
 pub const SOURCE_NAME: &str = "open_meteo";
 pub const ARCHIVE_URL: &str = "https://archive-api.open-meteo.com/v1/archive";
@@ -122,10 +125,13 @@ pub trait WeatherSource {
 pub struct WeatherSyncReport {
     /// Hours loaded from the new response.
     pub hours: usize,
-    /// The dates requested, if a request was made.
-    pub range: Option<(NaiveDate, NaiveDate)>,
+    /// The date ranges requested, in order. On a failure, the last one is
+    /// the range that failed.
+    pub ranges: Vec<(NaiveDate, NaiveDate)>,
     /// No road run has GPS records, so there is no grid point.
     pub no_gps: bool,
+    /// There is no analysis database yet, so nothing was looked at.
+    pub no_database: bool,
     /// Set when the request failed; nothing was archived.
     pub stopped_by: Option<SourceError>,
 }
@@ -142,21 +148,23 @@ pub fn sync_open_meteo(
     let db_path = data_dir.analysis_db_path();
     if !db_path.exists() {
         // No database, no road runs: nothing to ask for, nothing to create.
-        report.no_gps = true;
+        report.no_database = true;
         return Ok(report);
     }
     let conn = db::open(&db_path)?;
 
-    match missing_request(&conn, data_dir, today)? {
-        Missing::NoGps => report.no_gps = true,
-        Missing::UpToDate => {}
-        Missing::Request(request) => {
-            report.range = Some((request.start, request.end));
-            match fetch(&conn, data_dir, source, &request) {
-                Ok(hours) => report.hours = hours,
-                Err(err) => {
-                    log::warn!("{SOURCE_NAME} sync stopped: {err}");
-                    report.stopped_by = Some(err);
+    match missing_requests(&conn, today)? {
+        None => report.no_gps = true,
+        Some(requests) => {
+            for request in requests {
+                report.ranges.push((request.start, request.end));
+                match fetch(&conn, data_dir, source, &request) {
+                    Ok(hours) => report.hours += hours,
+                    Err(err) => {
+                        log::warn!("{SOURCE_NAME} sync stopped: {err}");
+                        report.stopped_by = Some(err);
+                        break;
+                    }
                 }
             }
         }
@@ -170,40 +178,52 @@ pub fn sync_open_meteo(
             .as_ref()
             .map_or("ok", SourceError::outcome)
     };
-    conn.execute(
-        "INSERT INTO sync_runs (source, started_at_utc, finished_at_utc, outcome)
-         VALUES (?1, ?2, ?3, ?4)",
-        params![SOURCE_NAME, started_at, utc_now_string(), outcome],
-    )?;
+    record_sync_run(&conn, SOURCE_NAME, &started_at, outcome)?;
     Ok(report)
 }
 
-enum Missing {
-    NoGps,
-    UpToDate,
-    Request(WeatherRequest),
-}
-
-fn missing_request(conn: &Connection, data_dir: &DataDir, today: NaiveDate) -> Result<Missing> {
+/// One request per run of consecutive days without a temperature for the
+/// main grid point; `None` when there is no grid point.
+fn missing_requests(conn: &Connection, today: NaiveDate) -> Result<Option<Vec<WeatherRequest>>> {
     let Some(grid) = main_grid_point(conn)? else {
-        return Ok(Missing::NoGps);
+        return Ok(None);
     };
     let Some(first) = first_road_run_date(conn)? else {
-        return Ok(Missing::NoGps);
+        return Ok(None);
     };
     let last = today - Duration::days(ARCHIVE_LAG_DAYS);
-    let archived: BTreeSet<NaiveDate> = archived_requests(&data_dir.open_meteo_dir())?
-        .into_iter()
-        .filter(|(_, r)| r.grid == grid)
-        .flat_map(|(_, r)| days(r.start, r.end))
-        .collect();
-    let missing: Vec<NaiveDate> = days(first, last)
-        .filter(|d| !archived.contains(d))
-        .collect();
-    Ok(match (missing.first(), missing.last()) {
-        (Some(&start), Some(&end)) => Missing::Request(WeatherRequest { grid, start, end }),
-        _ => Missing::UpToDate,
+    let have = days_with_temperature(conn, grid)?;
+    let mut requests: Vec<WeatherRequest> = Vec::new();
+    for day in days(first, last).filter(|d| !have.contains(d)) {
+        match requests.last_mut() {
+            Some(request) if request.end.succ_opt() == Some(day) => request.end = day,
+            _ => requests.push(WeatherRequest {
+                grid,
+                start: day,
+                end: day,
+            }),
+        }
+    }
+    Ok(Some(requests))
+}
+
+/// The UTC days with at least one non-NULL hour for `grid` in
+/// `hourly_weather`.
+fn days_with_temperature(conn: &Connection, grid: GridPoint) -> Result<BTreeSet<NaiveDate>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT substr(time_utc, 1, 10) FROM hourly_weather
+         WHERE CAST(round(grid_lat * 10) AS INTEGER) = ?1
+           AND CAST(round(grid_lon * 10) AS INTEGER) = ?2
+           AND temperature_c IS NOT NULL",
+    )?;
+    let rows = stmt.query_map(params![grid.lat_tenths, grid.lon_tenths], |r| {
+        r.get::<_, String>(0)
+    })?;
+    rows.map(|day| {
+        let day = day?;
+        NaiveDate::parse_from_str(&day, "%Y-%m-%d").with_context(|| format!("hourly day {day:?}"))
     })
+    .collect()
 }
 
 /// Request, archive and load one range. Returns the hours loaded.
@@ -409,9 +429,12 @@ fn parse_response(json: &str) -> Result<Vec<(String, Option<f64>)>> {
 }
 
 fn store_hours(conn: &Connection, grid: GridPoint, hours: &[(String, Option<f64>)]) -> Result<()> {
+    // A NULL (no value yet) never replaces a temperature.
     let mut stmt = conn.prepare_cached(
-        "INSERT OR REPLACE INTO hourly_weather (grid_lat, grid_lon, time_utc, temperature_c)
-         VALUES (?1, ?2, ?3, ?4)",
+        "INSERT INTO hourly_weather (grid_lat, grid_lon, time_utc, temperature_c)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT (grid_lat, grid_lon, time_utc) DO UPDATE
+         SET temperature_c = coalesce(excluded.temperature_c, hourly_weather.temperature_c)",
     )?;
     for (time, temp) in hours {
         stmt.execute(params![grid.lat(), grid.lon(), time, temp])?;
@@ -497,18 +520,4 @@ fn request_error(err: reqwest::Error) -> SourceError {
         "request failed"
     };
     SourceError::Other(anyhow::Error::new(err.without_url()).context(format!("Open-Meteo: {kind}")))
-}
-
-/// Write via a `.part` file and rename, so an archived file is always
-/// complete.
-fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
-    let mut part = path.as_os_str().to_owned();
-    part.push(".part");
-    std::fs::write(&part, bytes).with_context(|| format!("writing {}", path.display()))?;
-    std::fs::rename(&part, path).with_context(|| format!("writing {}", path.display()))?;
-    Ok(())
-}
-
-fn utc_now_string() -> String {
-    Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
 }

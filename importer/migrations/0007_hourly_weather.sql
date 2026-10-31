@@ -7,6 +7,18 @@
 -- has no value.
 --
 -- sync_runs.source (migration 2) also takes 'open_meteo' from this version on.
+--
+-- Notes on earlier tables (shipped migrations are never edited, so they live
+-- here):
+-- * activities.time_zone (migration 1) is an IANA name or a fixed offset:
+--   the Personal API gives the IANA name; for account export activities it
+--   comes from start_time_local minus start_time_utc, written
+--   'Pacific/Auckland' when Auckland had that offset at the time and
+--   otherwise as a fixed offset such as '+08:00'.
+-- * daily_wellness.resting_hr_bpm (migration 4) is always NULL: the watch is
+--   worn in the daytime only, so Garmin's resting heart rate is too high to
+--   use. The analysis takes the resting heart rate from hr_rest in
+--   config.toml; the raw archive keeps Garmin's value.
 CREATE TABLE hourly_weather (
     grid_lat      REAL NOT NULL,
     grid_lon      REAL NOT NULL,

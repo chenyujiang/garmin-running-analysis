@@ -11,7 +11,7 @@ use runsync::personal_api::{ApiKey, PersonalApiClient};
 use runsync::source::{ActivitySource, MetricsSource};
 use runsync::sync::SyncOptions;
 use runsync::sync_all::{Outcome, sync_all};
-use runsync::weather::OpenMeteoClient;
+use runsync::weather::{OpenMeteoClient, WeatherSource};
 
 /// Sync Garmin data into the raw archive and build the analysis database.
 ///
@@ -95,7 +95,7 @@ fn sync(data_dir: &DataDir, config: &Config) -> Result<()> {
         let interval = Duration::from_secs_f64(config.sync.garminconnect_interval_s.max(0.0));
         GarminConnectScript::new(token_dir, interval)
     });
-    let mut open_meteo = OpenMeteoClient::new()?;
+    let mut open_meteo = OpenMeteoClient::new();
 
     let report = sync_all(
         data_dir,
@@ -105,7 +105,10 @@ fn sync(data_dir: &DataDir, config: &Config) -> Result<()> {
             .map(|c| c as &mut dyn ActivitySource)
             .map_err(|err| anyhow::anyhow!("{err:#}")),
         garminconnect.as_mut().map(|s| s as &mut dyn MetricsSource),
-        &mut open_meteo,
+        open_meteo
+            .as_mut()
+            .map(|c| c as &mut dyn WeatherSource)
+            .map_err(|err| anyhow::anyhow!("{err:#}")),
     );
     // Close the script so it saves its refreshed token.
     drop(garminconnect);
