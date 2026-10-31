@@ -6,7 +6,7 @@
 
 **Category:** enhancement
 
-**Status:** needs-user
+**Status:** done
 
 来源：[实施 spec](../spec.md) Out of Scope 的"温度校正"。
 
@@ -102,3 +102,5 @@ Notebook：`analysis/notebooks/temperature.ipynb`（提交时不带输出）。�
 3. 在有氧图上标注高温周：周气温中位数 ≥ 22 °C（约跑步气温的 95 分位）。阈值放进 config。
 4. 参考温度以后如果要用，取 17 °C（跑步时气温的中位数）。
 5. 另开实施 ticket（`needs-triage`）：分析包加 Open-Meteo 气温获取和缓存（只发取整格点）、仪表盘温度改用气温、标注高温周、去掉 `records.temperature` 的依赖。
+
+**用户 2026-10-31 确认全部 5 条建议。** 实施见 [22 有氧图改用 Open-Meteo 气温并标注高温周](22-air-temperature.md)。
