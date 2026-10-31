@@ -11,7 +11,7 @@ use crate::daily;
 use crate::data_dir::DataDir;
 use crate::fit::ActivityFit;
 use crate::source::GarminMetric;
-use crate::{db, export, garmin_metrics};
+use crate::{db, export, garmin_metrics, weather};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct RebuildReport {
@@ -25,6 +25,9 @@ pub struct RebuildReport {
     pub garmin_metrics: usize,
     /// Garmin account export packages (`raw/export/`) loaded.
     pub export_packages: usize,
+    /// Hours of air temperature loaded from `raw/open-meteo/` into
+    /// `hourly_weather`.
+    pub weather_hours: usize,
     /// Files (JSON or FIT) that failed to load. They stay in the raw archive.
     pub skipped: usize,
 }
@@ -89,6 +92,9 @@ pub fn rebuild(data_dir: &DataDir) -> Result<RebuildReport> {
             }
         }
     }
+    let (weather_hours, weather_skipped) = weather::load_archive(&tx, data_dir)?;
+    report.weather_hours = weather_hours;
+    report.skipped += weather_skipped;
     tx.commit()?;
     Ok(report)
 }

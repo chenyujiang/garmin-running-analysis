@@ -6,6 +6,7 @@
 pub mod export;
 pub mod fake_metrics;
 pub mod fake_source;
+pub mod fake_weather;
 pub mod fit;
 
 use std::path::{Path, PathBuf};

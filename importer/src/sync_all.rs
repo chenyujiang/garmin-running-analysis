@@ -1,5 +1,6 @@
-//! `runsync sync` as a whole: the Personal API, then garminconnect, one after
-//! the other and independent of each other. A source that is rate limited
+//! `runsync sync` as a whole: the Personal API, then garminconnect, then
+//! Open-Meteo, one after the other and independent of each other. A source
+//! that is rate limited
 //! gets a cooldown marker (see [`crate::cooldown`]) and is skipped until it
 //! expires; rejected credentials end with the fix for that source. Nothing
 //! here asks for a password.
@@ -11,6 +12,7 @@ use crate::data_dir::DataDir;
 use crate::garmin_metrics::{self, MetricsSyncOptions, sync_garmin_metrics};
 use crate::source::{ActivitySource, MetricsSource, SourceError};
 use crate::sync::{self, SyncOptions, sync_activities};
+use crate::weather::{self, WeatherSource, sync_open_meteo};
 
 /// Where to get a new Personal API key.
 pub const PERSONAL_API_KEY_URL: &str = "https://connect.garmin.com/app/settings/personalApiToken";
@@ -37,24 +39,28 @@ impl Outcome {
 pub struct SyncAllReport {
     pub personal_api: Outcome,
     pub garminconnect: Outcome,
+    pub open_meteo: Outcome,
 }
 
 impl SyncAllReport {
-    /// False when either source failed.
+    /// False when any source failed.
     pub fn success(&self) -> bool {
-        !matches!(self.personal_api, Outcome::Failed(_))
-            && !matches!(self.garminconnect, Outcome::Failed(_))
+        [&self.personal_api, &self.garminconnect, &self.open_meteo]
+            .iter()
+            .all(|outcome| !matches!(outcome, Outcome::Failed(_)))
     }
 }
 
-/// Sync both sources. `personal_api` is `Err` when the client could not be
+/// Sync all sources. `personal_api` is `Err` when the client could not be
 /// built (e.g. no key file); `garminconnect` is `None` when there is no token
-/// yet. Building either must not touch the network.
+/// yet. Building any of them must not touch the network. Open-Meteo runs
+/// last, so it sees the road runs this sync added.
 pub fn sync_all(
     data_dir: &DataDir,
     options: &SyncOptions,
     personal_api: anyhow::Result<&mut dyn ActivitySource>,
     garminconnect: Option<&mut dyn MetricsSource>,
+    open_meteo: &mut dyn WeatherSource,
 ) -> SyncAllReport {
     let personal_api = guarded(data_dir, sync::SOURCE_NAME, options.now, || {
         let source = personal_api.map_err(|err| format!("{}: {err:#}", sync::SOURCE_NAME))?;
@@ -70,9 +76,13 @@ pub fn sync_all(
         };
         run_garminconnect(data_dir, source, options)
     });
+    let open_meteo = guarded(data_dir, weather::SOURCE_NAME, options.now, || {
+        run_open_meteo(data_dir, open_meteo, options)
+    });
     SyncAllReport {
         personal_api,
         garminconnect,
+        open_meteo,
     }
 }
 
@@ -186,6 +196,32 @@ fn run_garminconnect(
     finish(name, summary, report.stopped_by, || {
         "the token is missing, expired or was rejected. Run `runsync login` to log in again."
             .to_owned()
+    })
+}
+
+/// Messages name hours and dates only, never the grid point.
+fn run_open_meteo(
+    data_dir: &DataDir,
+    source: &mut dyn WeatherSource,
+    options: &SyncOptions,
+) -> RunResult {
+    let name = weather::SOURCE_NAME;
+    let report = sync_open_meteo(data_dir, source, options.today)
+        .map_err(|err| format!("{name}: {err:#}"))?;
+    if report.no_gps {
+        return Ok(Outcome::Skipped(format!(
+            "{name}: skipped, no road run has GPS records yet"
+        )));
+    }
+    let summary = match (report.range, &report.stopped_by) {
+        (Some((start, end)), None) => {
+            format!("{} hours of air temperature, {start}..{end}", report.hours)
+        }
+        (Some((start, end)), Some(_)) => format!("requesting {start}..{end}"),
+        (None, _) => "air temperature up to date".to_owned(),
+    };
+    finish(name, summary, report.stopped_by, || {
+        "the request was rejected as unauthorized.".to_owned()
     })
 }
 

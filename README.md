@@ -39,7 +39,8 @@ Most documents are written in Chinese.
 
 ## Data directory
 
-Both projects find their data through `RUNNING_DATA_DIR`, defaulting to `%USERPROFILE%unning-data`. It holds `config.toml`, the hand-kept `races.csv`, the raw archive (`raw/`), credentials (`secrets/`), cooldown markers (`state/`) and the analysis database `running.sqlite`.
+Both projects find their data through `RUNNING_DATA_DIR`, defaulting to `%USERPROFILE%
+unning-data`. It holds `config.toml`, the hand-kept `races.csv`, the raw archive (`raw/`), credentials (`secrets/`), cooldown markers (`state/`) and the analysis database `running.sqlite`.
 
 `config.toml` (only `[[physiology]]` is required; every other key shows its default):
 
@@ -63,12 +64,14 @@ grade_window_s = 30
 max_grade = 0.15
 min_runs_per_week = 2
 rolling_weeks = 4
+max_speed_mps = 7.0             # per-second speed above this is suspect (GPS drift)
+max_fast_s = 60                 # runs with more seconds above max_speed_mps are left out
 
 [run_walk]
 cadence_spm = 140               # smoothed cadence (both feet) at or above this is running
 smoothing_s = 10
 min_walk_s = 10                 # shorter walking stretches still count as running
-pause_gap_s = 30                # a longer gap between samples is a pause
+pause_gap_s = 10                # a longer gap between samples is a pause
 
 [load]
 max_sample_gap_s = 10           # a longer gap between HR samples counts only this long in TRIMP
@@ -100,6 +103,14 @@ The full history can come from Garmin's account data export instead of thousands
 `runsync rebuild` loads the archived exports again. The export contains GPS tracks and your e-mail address: keep it in the data directory, never in the repository.
 
 An export FIT file carries no activity id, so it is matched to an activity by start time: an exact match first, otherwise the only activity starting within 120 s of it. Activity summaries (distance and so on) stay Garmin's; the FIT only provides the per-second records and laps. The export has no time zone name, so `activities.time_zone` for an export activity is `Pacific/Auckland` when the local start's offset matches Auckland's at that moment, and otherwise a fixed offset such as `+08:00`; activities from the Personal API keep their IANA name. `daily_wellness.resting_hr_bpm` is always empty: the watch is worn in the daytime only, so Garmin's resting heart rate is too high to use. The analysis takes the resting heart rate from `hr_rest` in `config.toml`. The raw files keep Garmin's value.
+
+### Air temperature from Open-Meteo
+
+`runsync sync` also fetches hourly air temperature from the free [Open-Meteo historical weather API](https://open-meteo.com/en/docs/historical-weather-api) (no key) for the aerobic chart. It runs after the two Garmin sources and independently of them.
+
+What is sent: one grid point, rounded to 0.1° (about 10 km), and a date range. The grid point is the most common one among road runs (`running`, `street_running`) with GPS: each run's median latitude and longitude are rounded to 0.1° and the most frequent result wins. Nothing else (no tracks, times or account data) leaves the machine. Without a road run with GPS, nothing is requested. The range covers every day from the first road run to two days ago that is not yet archived for that grid point, in one request. If the main grid point moves, only the new one is fetched; the old archive stays.
+
+Each response is stored verbatim in `raw/open-meteo/<start>_<end>.json`, next to `<start>_<end>.request.json` recording the grid point and dates asked for, and loaded into the `hourly_weather` table (UTC hours). `runsync rebuild` loads the archive again. A rate limit (HTTP 429) skips Open-Meteo for 24 hours (`state/open_meteo.cooldown.json`). Messages and logs never show the grid point or the request URL; the archive files hold it, so keep them in the data directory.
 
 ## Common commands
 

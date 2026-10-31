@@ -11,6 +11,7 @@ use runsync::personal_api::{ApiKey, PersonalApiClient};
 use runsync::source::{ActivitySource, MetricsSource};
 use runsync::sync::SyncOptions;
 use runsync::sync_all::{Outcome, sync_all};
+use runsync::weather::OpenMeteoClient;
 
 /// Sync Garmin data into the raw archive and build the analysis database.
 ///
@@ -60,13 +61,14 @@ fn run(cli: Cli) -> Result<()> {
         Command::Rebuild => {
             let report = runsync::rebuild::rebuild(&data_dir)?;
             println!(
-                "rebuilt {}: {} activities, {} FIT files, {} daily summaries, {} Garmin metric files, {} export packages, {} files skipped",
+                "rebuilt {}: {} activities, {} FIT files, {} daily summaries, {} Garmin metric files, {} export packages, {} hours of air temperature, {} files skipped",
                 data_dir.analysis_db_path().display(),
                 report.activities,
                 report.fit_files,
                 report.daily_summaries,
                 report.garmin_metrics,
                 report.export_packages,
+                report.weather_hours,
                 report.skipped
             );
             Ok(())
@@ -80,8 +82,8 @@ fn run(cli: Cli) -> Result<()> {
     }
 }
 
-/// Both sources run on every sync, one after the other; one failing does not
-/// stop the other. Building the sources touches neither the network nor the
+/// All three sources run on every sync, one after the other; one failing does
+/// not stop the others. Building the sources touches neither the network nor the
 /// script, so a source in cooldown makes no request at all.
 fn sync(data_dir: &DataDir, config: &Config) -> Result<()> {
     let personal_interval = Duration::from_secs_f64(config.sync.personal_api_interval_s.max(0.0));
@@ -93,6 +95,7 @@ fn sync(data_dir: &DataDir, config: &Config) -> Result<()> {
         let interval = Duration::from_secs_f64(config.sync.garminconnect_interval_s.max(0.0));
         GarminConnectScript::new(token_dir, interval)
     });
+    let mut open_meteo = OpenMeteoClient::new()?;
 
     let report = sync_all(
         data_dir,
@@ -102,11 +105,16 @@ fn sync(data_dir: &DataDir, config: &Config) -> Result<()> {
             .map(|c| c as &mut dyn ActivitySource)
             .map_err(|err| anyhow::anyhow!("{err:#}")),
         garminconnect.as_mut().map(|s| s as &mut dyn MetricsSource),
+        &mut open_meteo,
     );
     // Close the script so it saves its refreshed token.
     drop(garminconnect);
 
-    for outcome in [&report.personal_api, &report.garminconnect] {
+    for outcome in [
+        &report.personal_api,
+        &report.garminconnect,
+        &report.open_meteo,
+    ] {
         match outcome {
             Outcome::Done(m) | Outcome::Skipped(m) => println!("{m}"),
             Outcome::Failed(m) => eprintln!("error: {m}"),

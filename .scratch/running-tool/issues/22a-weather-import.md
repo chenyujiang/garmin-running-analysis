@@ -12,12 +12,12 @@
 
 ## 要求
 
-- [ ] `runsync sync` 新增第三个数据源 Open-Meteo：只请求缺少的日期，原始响应存到 `raw/open-meteo/`
-- [ ] 只发一个取整到 0.1° 的格点和日期范围；格点由 Rust 从路跑逐秒记录算出
-- [ ] 新 migration 建逐小时气温表；`sync` 和 `rebuild` 都从原始档案载入
-- [ ] 失败或限流不影响另外两个数据源；输出、日志、错误信息里没有坐标
-- [ ] Seam 测试用假数据源，不发真实请求
-- [ ] README 说明 Open-Meteo 的用途、发送的内容和存放位置
+- [x] `runsync sync` 新增第三个数据源 Open-Meteo：只请求缺少的日期，原始响应存到 `raw/open-meteo/`
+- [x] 只发一个取整到 0.1° 的格点和日期范围；格点由 Rust 从路跑逐秒记录算出
+- [x] 新 migration 建逐小时气温表；`sync` 和 `rebuild` 都从原始档案载入
+- [x] 失败或限流不影响另外两个数据源；输出、日志、错误信息里没有坐标
+- [x] Seam 测试用假数据源，不发真实请求
+- [x] README 说明 Open-Meteo 的用途、发送的内容和存放位置
 
 ## Agent Brief
 
@@ -45,13 +45,13 @@
 - 新 migration（编号接在现有最后一个之后）。
 
 **Acceptance criteria:**
-- [ ] Seam 1 测试（合成 fixture，合成坐标）：格点取众数；`rebuild` 从 `raw/open-meteo/` 载入，行数、`time_utc` 格式、主键去重正确；`rebuild` 与 `sync` 载入的结果一致
-- [ ] Seam 2 测试（假数据源，不发真实请求）：第一次请求覆盖全部日期；第二次只请求新增的日期；没有缺失日期时不请求；请求参数只有上面列出的字段，格点是一位小数
-- [ ] 测试：Open-Meteo 失败时 Personal API 和 garminconnect 的结果不受影响；429 写冷却标记，冷却期内跳过
-- [ ] 测试：失败时的错误信息不含坐标或 URL
-- [ ] 迁移测试：空库和旧版本库都能迁移到最新
-- [ ] README 说明 Open-Meteo：用途、发送的内容（一个 0.1° 格点和日期范围）、存放位置
-- [ ] `cargo test`、`cargo clippy -- -D warnings`、`cargo fmt --check` 通过
+- [x] Seam 1 测试（合成 fixture，合成坐标）：格点取众数；`rebuild` 从 `raw/open-meteo/` 载入，行数、`time_utc` 格式、主键去重正确；`rebuild` 与 `sync` 载入的结果一致
+- [x] Seam 2 测试（假数据源，不发真实请求）：第一次请求覆盖全部日期；第二次只请求新增的日期；没有缺失日期时不请求；请求参数只有上面列出的字段，格点是一位小数
+- [x] 测试：Open-Meteo 失败时 Personal API 和 garminconnect 的结果不受影响；429 写冷却标记，冷却期内跳过
+- [x] 测试：失败时的错误信息不含坐标或 URL
+- [x] 迁移测试：空库和旧版本库都能迁移到最新
+- [x] README 说明 Open-Meteo：用途、发送的内容（一个 0.1° 格点和日期范围）、存放位置
+- [x] `cargo test`、`cargo clippy -- -D warnings`、`cargo fmt --check` 通过
 - [ ] **HITL**：用户在真实数据目录运行 `runsync sync` 后，agent 只读核对并在本 ticket 记录：气温表的小时数、日期范围、格点个数。不输出坐标
 
 **Out of scope:**

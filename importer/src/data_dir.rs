@@ -67,6 +67,13 @@ impl DataDir {
         self.raw_dir().join("garminconnect")
     }
 
+    /// `raw/open-meteo/`: hourly air temperature responses, each
+    /// `<start>_<end>.json` next to `<start>_<end>.request.json` (the grid
+    /// point and dates asked for). See [`crate::weather`].
+    pub fn open_meteo_dir(&self) -> PathBuf {
+        self.raw_dir().join("open-meteo")
+    }
+
     /// `raw/export/<YYYY-MM-DD>/`: Garmin account export packages, kept
     /// verbatim under their export date.
     pub fn export_dir(&self) -> PathBuf {

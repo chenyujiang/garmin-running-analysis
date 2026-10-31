@@ -6,6 +6,8 @@ Spec, "EF 与 decoupling"; formulas in the running-tool notes, section 6.
   least `MIN_DURATION_S` (60 min). All of them are listed.
 - EF and decoupling only for outdoor road runs (`AEROBIC_TYPES`): GAP needs a
   real elevation profile, so treadmill and trail runs are listed with null EF.
+  Road runs that fail `running.aerobic.gps_usable` (no position or altitude,
+  or GPS drift) are listed with null EF too.
 - Steady seconds: the aerobic metric's steady-state filter
   (`running.aerobic.steady_state`: warm-up dropped, running, smoothed HR within
   `reference_hr` +- `hr_band_bpm`, speed stable, not right after a pause, no
@@ -26,7 +28,13 @@ from typing import TypedDict
 
 import polars as pl
 
-from running.aerobic import AEROBIC_TYPES, load_records, steady_state
+from running.aerobic import (
+    AEROBIC_TYPES,
+    exclusions_note,
+    gps_usable,
+    load_records,
+    steady_state,
+)
 from running.config import Config
 from running.db import AnalysisDb, open_analysis_db
 from running.runwalk import RUNNING_TYPES
@@ -107,7 +115,8 @@ def long_runs(
             if "activities" in db.tables():
                 acts = _long_run_rows(db, until, limit)
                 road = acts.filter(pl.col("activity_type").is_in(sorted(AEROBIC_TYPES)))
-                recs = load_records(db, road["activity_id"].to_list())
+                usable = gps_usable(db, road["activity_id"].to_list(), config.aerobic)
+                recs = load_records(db, sorted(usable))
                 efs = {}
                 if not recs.is_empty():
                     efs = {r["activity_id"]: r for r in _per_run_ef(recs, config).to_dicts()}
@@ -149,6 +158,7 @@ def _method(config: Config) -> Method:
             f"列出 {MIN_DURATION_S // 60} 分钟及以上的跑步"
             "（按 Garmin 记录的时长，含跑步机和越野）。"
             "EF 和 decoupling 只算户外路跑：跑步机和越野没有可靠的坡度，GAP 不准，留空。"
+            f"同有氧能力：{exclusions_note(a)}"
             "稳态秒沿用有氧能力的规则：去掉前 "
             f"{a.warmup_s // 60} 分钟，在跑，平滑心率在 {a.reference_hr} ± "
             f"{a.hr_band_bpm:g} bpm 内，{a.speed_window_s} 秒内平滑速度变化 ≤ "
@@ -175,6 +185,8 @@ def _method(config: Config) -> Method:
             "max_speed_change": a.max_speed_change,
             "min_hr_spm_gap": a.min_hr_spm_gap,
             "hr_band": {"reference_hr": a.reference_hr, "hr_band_bpm": a.hr_band_bpm},
+            "max_speed_mps": a.max_speed_mps,
+            "max_fast_s": a.max_fast_s,
             "activity_types": sorted(AEROBIC_TYPES),
             "listed_types": sorted(RUNNING_TYPES),
         },

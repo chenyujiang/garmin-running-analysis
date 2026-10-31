@@ -71,6 +71,66 @@ def test_treadmill_and_trail_runs_do_not_count(analysis_db, client_factory):
     assert ids(body) == [1]
 
 
+@pytest.mark.parametrize("missing", ["gps", "altitude"])
+def test_a_road_run_without_gps_or_altitude_does_not_count(analysis_db, client_factory, missing):
+    # Logged as a road run but recorded like a treadmill: no position or no
+    # altitude in the per-second records.
+    add_hr_run(analysis_db, 1, "2026-10-20T07:00:00", [steady(1800)])
+    add_hr_run(analysis_db, 2, "2026-10-21T07:00:00", [steady(1800)], **{missing: False})
+
+    body = get_aerobic(client_factory)
+
+    assert ids(body) == [1]
+    assert week(body, "2026-10-19")["runs"] == 1
+
+
+def test_a_road_run_without_gps_still_counts_for_volume(analysis_db, client_factory):
+    add_hr_run(analysis_db, 1, "2026-10-27T07:00:00", [steady(1800)], gps=False)
+
+    r = client_factory().get("/api/volume", params={"today": TODAY})
+
+    assert r.json()["this_week"]["distance_m"] == pytest.approx(5400)
+
+
+def fast_run(conn, activity_id: int, start_local: str, fast_s: int) -> None:
+    """A steady 30 min run whose last `fast_s` samples read 8 m/s (GPS drift)."""
+    add_hr_run(conn, activity_id, start_local, [steady(1800), steady(fast_s, speed=8.0)])
+
+
+def test_more_than_sixty_seconds_above_seven_mps_is_gps_drift(analysis_db, client_factory):
+    fast_run(analysis_db, 1, "2026-10-20T07:00:00", 60)
+    fast_run(analysis_db, 2, "2026-10-21T07:00:00", 61)
+
+    body = get_aerobic(client_factory)
+
+    assert ids(body) == [1]
+    assert body["method"]["params"]["max_speed_mps"] == 7.0
+    assert body["method"]["params"]["max_fast_s"] == 60
+
+
+def test_the_gps_drift_limits_come_from_config(data_dir, analysis_db, client_factory):
+    (data_dir / "config.toml").write_text(
+        "[aerobic]\nmax_fast_s = 61\nmax_speed_mps = 7.5\n", encoding="utf-8"
+    )
+    fast_run(analysis_db, 1, "2026-10-20T07:00:00", 61)
+    fast_run(analysis_db, 2, "2026-10-21T07:00:00", 62)
+
+    body = get_aerobic(client_factory)
+
+    assert ids(body) == [1]
+    assert body["method"]["params"]["max_speed_mps"] == 7.5
+    assert body["method"]["params"]["max_fast_s"] == 61
+
+
+def test_the_method_note_names_both_exclusion_rules(analysis_db, client_factory):
+    description = get_aerobic(client_factory)["method"]["description"]
+
+    assert "GPS" in description
+    assert "海拔" in description
+    assert "7 m/s" in description
+    assert "60 秒" in description
+
+
 def test_a_run_with_under_ten_minutes_of_steady_state_does_not_count(analysis_db, client_factory):
     # 19 min: 9 min of steady state after the 10 min warm-up.
     add_hr_run(analysis_db, 1, "2026-10-20T07:00:00", [steady(1140)])

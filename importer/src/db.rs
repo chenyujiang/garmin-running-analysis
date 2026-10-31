@@ -16,6 +16,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0004_daily_wellness.sql"),
     include_str!("../migrations/0005_garmin_metrics.sql"),
     include_str!("../migrations/0006_export_packages.sql"),
+    include_str!("../migrations/0007_hourly_weather.sql"),
 ];
 
 /// Whether an imported export package covers `date` for `kind`: the day

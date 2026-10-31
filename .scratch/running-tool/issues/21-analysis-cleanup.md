@@ -12,13 +12,13 @@
 
 ## 要求
 
-- [ ] **`pause_gap_s` 默认值从 30 改为 10**（`analysis/src/running/config.py`、README 的配置示例）。依据：18 里所有 > 10 s 的样本间隔之后速度中位数都是 0。`[load] max_sample_gap_s` 保持 10。如果用户的 `config.toml` 显式写了 `pause_gap_s = 30`，由用户自己改，agent 不改数据目录里的文件。
-- [ ] **跑步机**：有氧能力（以及共用 `AEROBIC_TYPES` 的长距离跑 EF 和解耦）额外要求活动的逐秒记录有 GPS 和海拔；没有的不计入。跑量和负荷照常计入。
+- [x] **`pause_gap_s` 默认值从 30 改为 10**（`analysis/src/running/config.py`、README 的配置示例）。依据：18 里所有 > 10 s 的样本间隔之后速度中位数都是 0。`[load] max_sample_gap_s` 保持 10。如果用户的 `config.toml` 显式写了 `pause_gap_s = 30`，由用户自己改，agent 不改数据目录里的文件。
+- [x] **跑步机**：有氧能力（以及共用 `AEROBIC_TYPES` 的长距离跑 EF 和解耦）额外要求活动的逐秒记录有 GPS 和海拔；没有的不计入。跑量和负荷照常计入。
   - 真实数据里受影响的是 `12772415383`、`20432321427`、`24278022641`、`20572404212`；其中只有 `20432321427` 现在判为有效。
-- [ ] **GPS 漂移**：一个活动里逐秒速度 > 7 m/s 的秒累计超过 60 s，有氧能力判为无效。两个阈值放进 `config.toml`（例如 `[aerobic] max_speed_mps = 7.0`、`max_fast_s = 60`），有默认值。距离不修正，跑量保持 Garmin 的距离。
+- [x] **GPS 漂移**：一个活动里逐秒速度 > 7 m/s 的秒累计超过 60 s，有氧能力判为无效。两个阈值放进 `config.toml`（例如 `[aerobic] max_speed_mps = 7.0`、`max_fast_s = 60`），有默认值。距离不修正，跑量保持 Garmin 的距离。
   - 真实数据里按这条规则只排除 `15966492890`。
-- [ ] 仪表盘和 JSON 接口里有氧能力的方法说明写上这两条排除规则。
-- [ ] 测试用合成数据覆盖：没有 GPS 的跑步不进有氧能力但进跑量；超速秒数刚好在阈值两侧的两个活动；新的 `pause_gap_s` 默认值。
+- [x] 仪表盘和 JSON 接口里有氧能力的方法说明写上这两条排除规则。
+- [x] 测试用合成数据覆盖：没有 GPS 的跑步不进有氧能力但进跑量；超速秒数刚好在阈值两侧的两个活动；新的 `pause_gap_s` 默认值。
 
 ## 不做
 
@@ -51,12 +51,25 @@
 - 有氧能力 JSON 的 `method`（结构保持现有的 `{name, description, params}`）。
 
 **Acceptance criteria:**
-- [ ] 测试（合成数据）：没有 GPS 的路跑不进有氧能力、不进长距离 EF，但进周跑量
-- [ ] 测试：超速秒数为 60 和 61 的两个活动，前者有效、后者无效；改 `max_fast_s` 后结果随之变化
-- [ ] 测试：`pause_gap_s` 默认 10；config 里写 30 时用 30
-- [ ] 方法说明里有两条排除规则（JSON 接口测试覆盖）
-- [ ] `ruff format --check`、`ruff check`、`pytest` 通过
-- [ ] 只读核对真实库（agent 已获授权只读）：有效有氧跑步数，与 18/19 notebook 的 612 次一致或说明差异；只输出汇总数字
+- [x] 测试（合成数据）：没有 GPS 的路跑不进有氧能力、不进长距离 EF，但进周跑量
+- [x] 测试：超速秒数为 60 和 61 的两个活动，前者有效、后者无效；改 `max_fast_s` 后结果随之变化
+- [x] 测试：`pause_gap_s` 默认 10；config 里写 30 时用 30
+- [x] 方法说明里有两条排除规则（JSON 接口测试覆盖）
+- [x] `ruff format --check`、`ruff check`、`pytest` 通过
+- [x] 只读核对真实库（agent 已获授权只读）：有效有氧跑步数，与 18/19 notebook 的 612 次一致或说明差异；只输出汇总数字
+
+## 实现记录（2026-10-31）
+
+- 判定函数 `running.aerobic.gps_usable(db, ids, aerobic)`：逐秒记录里 `lat`、`lon`、`altitude` 各至少一个非空，且 `speed > max_speed_mps` 的样本数 ≤ `max_fast_s`（按样本计，1 Hz 即秒数，与 18/19 notebook 一致）。`aerobic_runs` 的 `valid` 和长距离跑的 EF、decoupling 共用它。
+- 方法说明的排除规则文字由 `exclusions_note(aerobic)` 生成，有氧能力和长距离跑两处共用；`params` 新增 `max_speed_mps`、`max_fast_s`。
+- 测试辅助 `add_hr_run` 新增 `gps`、`altitude` 参数（默认写入合成坐标和海拔）。
+- notebook 未改（可选项，未做）。
+
+只读核对真实库（只看汇总数字，库修改时间前后一致）：
+
+- 路跑 1073 次；`gps_usable` 通过 1066 次，排除 7 次（其中 5 次是上面列出的 4 个无 GPS 活动和 `15966492890`；另外 2 次未逐个核对，可能是没有逐秒记录的路跑）。
+- 有效有氧跑步 612 次，与 18/19 notebook 的 612 一致。用户 `config.toml` 当前的 `pause_gap_s` 已是 10。
+- 上面列出的 5 个活动现在都判为无效（`20432321427` 由有效变为无效）。
 
 **Out of scope:**
 - 温度相关（22a、22b）
