@@ -6,7 +6,7 @@
 
 **Category:** enhancement
 
-**Status:** ready-for-agent
+**Status:** done
 
 来源：[18 数据质量与清洗](18-data-quality.md) 的结论，用户 2026-10-31 确认的第 2、3、4 条建议。
 
