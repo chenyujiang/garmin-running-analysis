@@ -6,7 +6,7 @@
 
 **Category:** enhancement
 
-**Status:** needs-user
+**Status:** done
 
 来源：[实施 spec](../spec.md) Out of Scope 的"数据质量与清洗"；08 回填时的发现。
 
@@ -209,3 +209,5 @@
 6. `resting_hr_bpm`：不再导入（写 NULL），并说明原因。
 7. `8234857240`：忽略，不补下载 FIT。
 8. 其余项（心率掉线、尖峰、锁步频、最大心率、`min_hr_bpm`）不处理。
+
+**用户 2026-10-31 确认全部 8 条建议。** 实施拆成两张 ticket：[20 导入侧的数据清洗](20-import-cleanup.md)（第 1、5、6 条）和 [21 分析侧的数据清洗](21-analysis-cleanup.md)（第 2、3、4 条）。第 7、8 条不需要改代码。
