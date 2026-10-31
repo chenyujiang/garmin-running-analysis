@@ -84,9 +84,9 @@ impl FakeSource {
         self
     }
 
-    /// Serve a daily summary for `day` with this resting heart rate.
-    pub fn with_daily(mut self, day: NaiveDate, resting_hr: Option<i64>) -> Self {
-        self.daily.insert(day, daily_summary_row(day, resting_hr));
+    /// Serve a daily summary for `day` with this average stress level.
+    pub fn with_daily(mut self, day: NaiveDate, stress: Option<i64>) -> Self {
+        self.daily.insert(day, daily_summary_row(day, stress));
         self
     }
 
@@ -151,16 +151,16 @@ impl ActivitySource for FakeSource {
 
 /// A daily summary row shaped like the Personal API's
 /// `/usersummary-service/v2/dailysummaries` (trimmed).
-pub fn daily_summary_row(day: NaiveDate, resting_hr: Option<i64>) -> serde_json::Value {
+pub fn daily_summary_row(day: NaiveDate, stress: Option<i64>) -> serde_json::Value {
     serde_json::json!({
         "calendarDate": day.format("%Y-%m-%d").to_string(),
         "source": "garmin",
         "includesWellnessData": true,
         "movement": { "steps": { "goal": 8000, "value": 9012, "distanceInMeters": 7210.5 } },
         "calories": { "burnedResting": 1650, "burnedActive": 540, "burnedTotal": 2190 },
-        "heartRate": { "minValue": 48, "maxValue": 171, "restingValue": resting_hr },
+        "heartRate": { "minValue": 48, "maxValue": 171, "restingValue": 52 },
         "intensityMinutes": { "goal": 150, "moderate": 12, "vigorous": 31 },
-        "stress": { "avgLevel": 27 },
+        "stress": { "avgLevel": stress },
         "bodyBattery": { "minValue": 21, "maxValue": 88 },
         "respiration": { "avgValue": 14 }
     })

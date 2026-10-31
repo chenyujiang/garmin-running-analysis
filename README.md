@@ -99,6 +99,8 @@ The full history can come from Garmin's account data export instead of thousands
 
 `runsync rebuild` loads the archived exports again. The export contains GPS tracks and your e-mail address: keep it in the data directory, never in the repository.
 
+An export FIT file carries no activity id, so it is matched to an activity by start time: an exact match first, otherwise the only activity starting within 120 s of it. Activity summaries (distance and so on) stay Garmin's; the FIT only provides the per-second records and laps. The export has no time zone name, so `activities.time_zone` for an export activity is `Pacific/Auckland` when the local start's offset matches Auckland's at that moment, and otherwise a fixed offset such as `+08:00`; activities from the Personal API keep their IANA name. `daily_wellness.resting_hr_bpm` is always empty: the watch is worn in the daytime only, so Garmin's resting heart rate is too high to use. The analysis takes the resting heart rate from `hr_rest` in `config.toml`. The raw files keep Garmin's value.
+
 ## Common commands
 
 Importer (run in `importer/`):

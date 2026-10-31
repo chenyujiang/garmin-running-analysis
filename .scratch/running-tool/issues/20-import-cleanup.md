@@ -12,14 +12,14 @@
 
 ## 要求
 
-- [ ] **FIT 匹配容差**：导出包的 activity FIT 先按 session 开始时间 == `beginTimestamp` 精确匹配；失败时，匹配到开始时间相差 ±120 s 以内、唯一最近的活动。有两个以上候选时不匹配，仍计入"matching no activity"。活动汇总（距离等）保持 Garmin 的值，FIT 只提供 `records` 和 `laps`。
+- [x] **FIT 匹配容差**：导出包的 activity FIT 先按 session 开始时间 == `beginTimestamp` 精确匹配；失败时，匹配到开始时间相差 ±120 s 以内、唯一最近的活动。有两个以上候选时不匹配，仍计入"matching no activity"。活动汇总（距离等）保持 Garmin 的值，FIT 只提供 `records` 和 `laps`。
   - 真实数据里这会让 `9136530487`（2022-07-04，FIT 开始时间晚 50 s）有逐秒记录。
-- [ ] **`time_zone`**：导出包活动按 `start_time_local − start_time_utc` 的偏移推出时区：
+- [x] **`time_zone`**：导出包活动按 `start_time_local − start_time_utc` 的偏移推出时区：
   - 偏移等于 `Pacific/Auckland` 在那个时刻的偏移时，写 `Pacific/Auckland`；
   - 其余写固定偏移，格式 `+08:00`，不猜城市。
   - API 来的活动不变。`activities` 建表 migration 的 `time_zone` 列注释和 README 说明：`time_zone` 可能是 IANA 名字，也可能是固定偏移。
-- [ ] **`resting_hr_bpm`**：导出包和 Personal API 的每日汇总都不再导入这一列，写 NULL。原始档案保持原样。`daily_wellness` 建表 migration 的 `resting_hr_bpm` 列注释和 README 说明原因：用户只在白天戴表，Garmin 的静息心率偏高，不可用；静息心率用 `config.toml` 的 `hr_rest`。
-- [ ] `runsync rebuild` 的结果与重新导入一致；Seam 1 测试覆盖上面三条（合成 fixture，不含真实 GPS 和邮箱）。
+- [x] **`resting_hr_bpm`**：导出包和 Personal API 的每日汇总都不再导入这一列，写 NULL。原始档案保持原样。`daily_wellness` 建表 migration 的 `resting_hr_bpm` 列注释和 README 说明原因：用户只在白天戴表，Garmin 的静息心率偏高，不可用；静息心率用 `config.toml` 的 `hr_rest`。
+- [x] `runsync rebuild` 的结果与重新导入一致；Seam 1 测试覆盖上面三条（合成 fixture，不含真实 GPS 和邮箱）。
 - [ ] 用户在真实数据目录运行 `runsync rebuild` 后，agent 只读核对：`9136530487` 有逐秒记录，`time_zone` 为 NULL 的活动数为 0，`resting_hr_bpm` 全部为 NULL。
 
 ## 不做
@@ -54,11 +54,11 @@
 - 每日汇总两个写入路径（导出包 UDS 和 Personal API daily summary）的 `resting_hr_bpm` 取值。
 
 **Acceptance criteria:**
-- [ ] Seam 1 测试（合成 fixture，不含真实 GPS 和邮箱）：FIT 开始时间晚 50 s 的活动有 `records` 和 `laps`；窗口内有两个候选时不匹配且计入"matching no activity"；超过 120 s 不匹配
-- [ ] Seam 1 测试：NZ 冬令时（+12:00）和夏令时（+13:00）的导出包活动写 `Pacific/Auckland`；+08:00 的活动写 `+08:00`；API 活动的 `time_zone` 不变
-- [ ] Seam 1 测试：导出包和 Personal API 来的每日汇总 `resting_hr_bpm` 都为 NULL，其他列不变
-- [ ] `rebuild` 与直接导入逐行一致（现有一致性测试继续通过）
-- [ ] `cargo test`、`cargo clippy -- -D warnings`、`cargo fmt --check` 通过
+- [x] Seam 1 测试（合成 fixture，不含真实 GPS 和邮箱）：FIT 开始时间晚 50 s 的活动有 `records` 和 `laps`；窗口内有两个候选时不匹配且计入"matching no activity"；超过 120 s 不匹配
+- [x] Seam 1 测试：NZ 冬令时（+12:00）和夏令时（+13:00）的导出包活动写 `Pacific/Auckland`；+08:00 的活动写 `+08:00`；API 活动的 `time_zone` 不变
+- [x] Seam 1 测试：导出包和 Personal API 来的每日汇总 `resting_hr_bpm` 都为 NULL，其他列不变
+- [x] `rebuild` 与直接导入逐行一致（现有一致性测试继续通过）
+- [x] `cargo test`、`cargo clippy -- -D warnings`、`cargo fmt --check` 通过
 - [ ] **HITL**：用户在真实数据目录运行 `runsync rebuild` 后，agent 只读核对并在本 ticket 记录：`9136530487` 有逐秒记录；`time_zone` 为 NULL 的活动数为 0；`resting_hr_bpm` 非 NULL 的行数为 0。只输出汇总数字，不输出 GPS
 
 **Out of scope:**

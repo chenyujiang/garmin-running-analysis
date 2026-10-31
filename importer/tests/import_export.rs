@@ -6,8 +6,11 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use chrono::NaiveDate;
-use common::export::{ExportZip, activity, day, standard_package, uds_row, utc, vo2max_row};
+use chrono::{Duration, NaiveDate};
+use common::export::{
+    ExportZip, activity, activity_fit, activity_with_offset, day, standard_package, uds_row, utc,
+    vo2max_row,
+};
 use common::{runsync, stderr, stdout};
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -79,7 +82,7 @@ fn import_archives_the_package_under_its_export_date_and_loads_activities_in_si(
     assert_eq!(row.1, "Synthetic running 9001");
     assert_eq!(row.2, "2026-10-20T06:00:00Z");
     assert_eq!(row.3, "2026-10-20T19:00:00");
-    assert_eq!(row.4, None);
+    assert_eq!(row.4.as_deref(), Some("Pacific/Auckland"));
     let expected = [
         10_000.0, 3000.0, 2970.0, 3060.0, 3.333_333, 4.5, 151.0, 176.0, 42.5, 41.0, 600.0,
     ];
@@ -124,13 +127,14 @@ fn uds_day_rows_become_daily_wellness_rows() {
         .unwrap()
     };
     let full = [
-        46.0, 47.0, 172.0, 9100.0, 7320.0, 2210.0, 560.0, 1650.0, 14.0, 33.0, 25.0, 22.0, 87.0,
-        15.0,
+        47.0, 172.0, 9100.0, 7320.0, 2210.0, 560.0, 1650.0, 14.0, 33.0, 25.0, 22.0, 87.0, 15.0,
     ];
-    assert_eq!(day("2026-10-20"), full.map(Some));
-    // No resting heart rate in the row, and stress -1 ("no data"): NULL.
+    let row = day("2026-10-20");
+    // Garmin's resting heart rate is not loaded (see migration 0004).
+    assert_eq!(row[0], None);
+    assert_eq!(row[1..], full.map(Some));
+    // Stress -1 ("no data"): NULL.
     let sparse = day("2026-10-21");
-    assert_eq!(sparse[0], None);
     assert_eq!(sparse[10], None);
     assert_eq!(sparse[1], Some(47.0));
     assert!(
@@ -253,18 +257,18 @@ fn data_already_archived_from_the_api_takes_precedence() {
             "Synthetic running 9001"
         ]
     );
-    let resting: Vec<(String, f64)> = db
-        .prepare("SELECT calendar_date, resting_hr_bpm FROM daily_wellness ORDER BY 1")
+    let steps: Vec<(String, i64)> = db
+        .prepare("SELECT calendar_date, steps FROM daily_wellness ORDER BY 1")
         .unwrap()
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
     assert_eq!(
-        resting,
+        steps,
         [
-            ("2026-10-07".to_owned(), 53.0),
-            ("2026-10-09".to_owned(), 61.0)
+            ("2026-10-07".to_owned(), 10234),
+            ("2026-10-09".to_owned(), 9100)
         ]
     );
     let vo2: Vec<(String, f64)> = db
@@ -290,9 +294,9 @@ fn data_already_archived_from_the_api_takes_precedence() {
     );
 }
 
-/// A package exported on `exported` with activity 9001 of `km` and a resting
-/// heart rate of `resting` on 2026-10-20.
-fn small_package(exported: NaiveDate, km: f64, resting: i64) -> ExportZip {
+/// A package exported on `exported` with activity 9001 of `km` and an
+/// average stress of `stress` on 2026-10-20.
+fn small_package(exported: NaiveDate, km: f64, stress: i64) -> ExportZip {
     ExportZip::new(exported)
         .activities(
             1,
@@ -304,18 +308,16 @@ fn small_package(exported: NaiveDate, km: f64, resting: i64) -> ExportZip {
                 3000.0,
             )],
         )
-        .uds("x", vec![uds_row(day(2026, 10, 20), Some(resting), 25)])
+        .uds("x", vec![uds_row(day(2026, 10, 20), Some(60), stress)])
 }
 
-fn distance_and_resting(data_dir: &Path) -> (f64, f64) {
+fn distance_and_stress(data_dir: &Path) -> (f64, i64) {
     let db = open_db(data_dir);
     (
         db.query_row("SELECT distance_m FROM activities", [], |r| r.get(0))
             .unwrap(),
-        db.query_row("SELECT resting_hr_bpm FROM daily_wellness", [], |r| {
-            r.get(0)
-        })
-        .unwrap(),
+        db.query_row("SELECT stress_avg FROM daily_wellness", [], |r| r.get(0))
+            .unwrap(),
     )
 }
 
@@ -328,11 +330,11 @@ fn a_newer_package_overrides_an_older_one_whatever_the_import_order() {
     small_package(day(2026, 10, 28), 12.0, 46).write(&newer);
 
     import(data.path(), &older);
-    assert_eq!(distance_and_resting(data.path()), (10_000.0, 50.0));
+    assert_eq!(distance_and_stress(data.path()), (10_000.0, 50));
     import(data.path(), &newer);
-    assert_eq!(distance_and_resting(data.path()), (12_000.0, 46.0));
+    assert_eq!(distance_and_stress(data.path()), (12_000.0, 46));
     import(data.path(), &older);
-    assert_eq!(distance_and_resting(data.path()), (12_000.0, 46.0));
+    assert_eq!(distance_and_stress(data.path()), (12_000.0, 46));
 
     assert!(
         data.path()
@@ -468,7 +470,7 @@ fn entries_named_outside_the_package_are_never_written() {
         .collect();
     around.sort();
     assert_eq!(around, ["export.zip", "hostile.zip"]);
-    assert_eq!(distance_and_resting(data.path()), (10_000.0, 50.0));
+    assert_eq!(distance_and_stress(data.path()), (10_000.0, 50));
 }
 
 /// Relative paths of the files under `dir`, without SQLite side files.
@@ -522,5 +524,192 @@ fn activity_fits_are_matched_by_start_time_and_the_rest_counted() {
              1 not an activity (skipped), 1 failed to parse"
         ),
         "{out}"
+    );
+}
+
+/// FIT records per activity id, and the import's FIT line.
+fn fit_outcome(data_dir: &Path, out: &str) -> (Vec<(i64, i64)>, String) {
+    let db = open_db(data_dir);
+    let per_activity: Vec<(i64, i64)> = db
+        .prepare("SELECT activity_id, count(*) FROM records GROUP BY activity_id ORDER BY 1")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let line = out
+        .lines()
+        .find(|l| l.contains("FIT files:"))
+        .unwrap_or_default()
+        .trim()
+        .to_owned();
+    (per_activity, line)
+}
+
+#[test]
+fn a_fit_starting_up_to_120_s_off_its_activity_is_matched_when_unambiguous() {
+    let (data, downloads, _) = setup();
+    let zip = downloads.path().join("late.zip");
+    let start = utc(2026, 10, 20, 6, 0);
+    ExportZip::new(day(2026, 10, 28))
+        .activities(
+            1,
+            vec![
+                activity(9001, "running", start, 10.0, 3000.0),
+                // Two activities 2 min apart: a FIT between them is ambiguous.
+                activity(9002, "running", utc(2026, 10, 22, 6, 0), 5.0, 1500.0),
+                activity(9003, "running", utc(2026, 10, 22, 6, 2), 5.0, 1500.0),
+                activity(9004, "running", utc(2026, 10, 24, 6, 0), 5.0, 1500.0),
+            ],
+        )
+        .uploaded_fits(
+            1,
+            vec![
+                // 50 s late.
+                ("a.fit", activity_fit(start + Duration::seconds(50))),
+                // 60 s from both 9002 and 9003.
+                ("b.fit", activity_fit(utc(2026, 10, 22, 6, 1))),
+                // 121 s late.
+                (
+                    "c.fit",
+                    activity_fit(utc(2026, 10, 24, 6, 0) + Duration::seconds(121)),
+                ),
+            ],
+        )
+        .write(&zip);
+
+    let out = import(data.path(), &zip);
+
+    let (records, line) = fit_outcome(data.path(), &out);
+    assert_eq!(records, [(9001, 2)]);
+    assert_eq!(count(&open_db(data.path()), "SELECT count(*) FROM laps"), 1);
+    assert_eq!(
+        line,
+        "FIT files: 1 activities loaded, 2 matching no activity, \
+         0 not an activity (skipped), 0 failed to parse"
+    );
+    // The activity summary stays Garmin's.
+    let distance: f64 = open_db(data.path())
+        .query_row(
+            "SELECT distance_m FROM activities WHERE activity_id = 9001",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(distance, 10_000.0);
+}
+
+#[test]
+fn a_tolerance_match_never_takes_an_activity_another_fit_matches_exactly() {
+    let start = utc(2026, 10, 20, 6, 0);
+    let exact = activity_fit(start);
+    let late = activity_fit(start + Duration::seconds(30));
+    // FITs are read in name order: the late one first, then the other way round.
+    for fits in [
+        vec![("a.fit", late.clone()), ("b.fit", exact.clone())],
+        vec![("a.fit", exact.clone()), ("b.fit", late.clone())],
+    ] {
+        let (data, downloads, _) = setup();
+        let zip = downloads.path().join("taken.zip");
+        ExportZip::new(day(2026, 10, 28))
+            .activities(1, vec![activity(9001, "running", start, 10.0, 3000.0)])
+            .uploaded_fits(1, fits)
+            .write(&zip);
+
+        let out = import(data.path(), &zip);
+
+        let (records, line) = fit_outcome(data.path(), &out);
+        assert_eq!(records, [(9001, 2)]);
+        let first_record: String = open_db(data.path())
+            .query_row(
+                "SELECT min(timestamp) FROM records WHERE activity_id = 9001",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(first_record, "2026-10-20T06:00:00Z");
+        assert!(
+            line.contains("1 activities loaded, 1 matching no activity"),
+            "{line}"
+        );
+    }
+}
+
+fn time_zones(data_dir: &Path) -> Vec<(i64, Option<String>)> {
+    open_db(data_dir)
+        .prepare("SELECT activity_id, time_zone FROM activities ORDER BY activity_id")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}
+
+#[test]
+fn export_activities_get_pacific_auckland_or_a_fixed_offset_as_time_zone() {
+    let (data, downloads, _) = setup();
+    let zip = downloads.path().join("zones.zip");
+    let at = |id, start, offset| activity_with_offset(id, "running", start, 5.0, 1500.0, offset);
+    let h = Duration::hours;
+    ExportZip::new(day(2026, 10, 28))
+        .activities(
+            1,
+            vec![
+                // NZST (winter) and NZDT (summer).
+                at(9001, utc(2026, 7, 1, 6, 0), h(12)),
+                at(9002, utc(2026, 1, 10, 6, 0), h(13)),
+                at(9003, utc(2026, 5, 3, 1, 0), h(8)),
+                // +12:00 in NZ summer is not Auckland.
+                at(9004, utc(2026, 1, 12, 6, 0), h(12)),
+                at(
+                    9005,
+                    utc(2026, 5, 4, 14, 0),
+                    -Duration::minutes(5 * 60 + 30),
+                ),
+            ],
+        )
+        .write(&zip);
+
+    import(data.path(), &zip);
+
+    let zone = |z: &str| Some(z.to_owned());
+    assert_eq!(
+        time_zones(data.path()),
+        [
+            (9001, zone("Pacific/Auckland")),
+            (9002, zone("Pacific/Auckland")),
+            (9003, zone("+08:00")),
+            (9004, zone("+12:00")),
+            (9005, zone("-05:30")),
+        ]
+    );
+}
+
+#[test]
+fn an_api_activity_keeps_its_time_zone() {
+    // The fixture archive has API activity 1001 in Pacific/Auckland.
+    let data = common::data_dir_from_fixture();
+    assert!(runsync(data.path(), &["rebuild"]).status.success());
+    let downloads = TempDir::new().unwrap();
+    let zip = downloads.path().join("export.zip");
+    ExportZip::new(day(2026, 10, 28))
+        .activities(
+            1,
+            vec![activity_with_offset(
+                1001,
+                "running",
+                utc(2026, 10, 7, 22, 8),
+                5.0,
+                1500.0,
+                Duration::hours(8),
+            )],
+        )
+        .write(&zip);
+
+    import(data.path(), &zip);
+
+    assert_eq!(
+        time_zones(data.path())[0],
+        (1001, Some("Pacific/Auckland".to_owned()))
     );
 }

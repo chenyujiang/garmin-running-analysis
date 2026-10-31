@@ -1,4 +1,4 @@
-//! Daily summaries (resting heart rate etc.) from the Personal API.
+//! Daily summaries (steps, stress etc.) from the Personal API.
 //!
 //! The source answers a date range with `{"data": [row, ...]}`, one row per
 //! day that has data. The raw archive keeps one file per requested day,
@@ -16,6 +16,12 @@ use serde_json::value::RawValue;
 
 /// Raw file content for a requested day without data.
 pub const NO_DATA: &str = "null";
+
+/// `daily_wellness.resting_hr_bpm` from every source. The watch is worn in
+/// the daytime only, so Garmin's resting heart rate is too high to use; the
+/// analysis takes `hr_rest` from `config.toml`. The raw archive keeps
+/// Garmin's value.
+pub const RESTING_HR: SqlValue = SqlValue::Null;
 
 #[derive(Deserialize)]
 struct Response<'a> {
@@ -65,7 +71,8 @@ pub fn store_day(conn: &Connection, text: &str) -> Result<bool> {
         conn,
         date.calendar_date,
         [
-            n("/heartRate/restingValue"),
+            // heartRate.restingValue is not loaded, see RESTING_HR.
+            RESTING_HR,
             n("/heartRate/minValue"),
             n("/heartRate/maxValue"),
             n("/movement/steps/value"),

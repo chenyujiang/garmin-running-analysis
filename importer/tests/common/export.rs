@@ -122,8 +122,20 @@ pub fn utc(y: i32, m: u32, d: u32, h: u32, min: u32) -> DateTime<Utc> {
 /// start is 13 h ahead of UTC (NZDT). `km`, `s` and `kcal` are SI/kcal and
 /// are converted to the export's units here.
 pub fn activity(id: i64, activity_type: &str, start: DateTime<Utc>, km: f64, s: f64) -> Value {
+    activity_with_offset(id, activity_type, start, km, s, Duration::hours(13))
+}
+
+/// [`activity`] with the local start `offset` ahead of UTC.
+pub fn activity_with_offset(
+    id: i64,
+    activity_type: &str,
+    start: DateTime<Utc>,
+    km: f64,
+    s: f64,
+    offset: Duration,
+) -> Value {
     let begin = start.timestamp_millis();
-    let local = (start + Duration::hours(13)).timestamp_millis();
+    let local = (start + offset).timestamp_millis();
     json!({
         "activityId": id,
         "uuidMsb": 1, "uuidLsb": 2,
