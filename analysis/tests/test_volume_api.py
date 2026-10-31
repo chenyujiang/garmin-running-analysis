@@ -205,6 +205,27 @@ def test_the_method_note_carries_the_parameters(analysis_db, client_factory):
     assert "140 spm" in method["description"]
 
 
+def test_a_gap_over_ten_seconds_is_a_pause_by_default(analysis_db, client_factory):
+    # 10 min run, 20 s without samples, 10 min run: the gap is a pause.
+    add_run(analysis_db, 1, "2026-10-27T07:00:00", [run(600), pause(20), run(600)])
+
+    body = get_volume(client_factory)
+
+    assert only_run(body, 1)["run_duration_s"] == pytest.approx(1200)
+    assert body["method"]["params"]["pause_gap_s"] == 10
+
+
+def test_pause_gap_s_from_config_overrides_the_default(data_dir, analysis_db, client_factory):
+    with (data_dir / "config.toml").open("a", encoding="utf-8") as f:
+        f.write("\n[run_walk]\npause_gap_s = 30\n")
+    add_run(analysis_db, 1, "2026-10-27T07:00:00", [run(600), pause(20), run(600)])
+
+    body = get_volume(client_factory)
+
+    assert only_run(body, 1)["run_duration_s"] == pytest.approx(1220)
+    assert body["method"]["params"]["pause_gap_s"] == 30
+
+
 def test_without_an_analysis_database_everything_is_zero(data_dir, client_factory):
     body = get_volume(client_factory)
 

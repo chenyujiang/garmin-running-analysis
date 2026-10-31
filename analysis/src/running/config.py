@@ -31,7 +31,7 @@ class RunWalk:
     cadence_spm: float = 140.0  # smoothed cadence (both feet) at or above this is running
     smoothing_s: int = 10  # trailing window for the cadence mean
     min_walk_s: int = 10  # walking stretches shorter than this still count as running
-    pause_gap_s: int = 30  # a gap between samples longer than this is a pause, not time
+    pause_gap_s: int = 10  # a gap between samples longer than this is a pause, not time
 
 
 @dataclass(frozen=True)
@@ -50,6 +50,8 @@ class Aerobic:
     max_grade: float = 0.15  # grade is clipped to +- this before Cr(i)
     min_runs_per_week: int = 2  # weeks with fewer valid runs stay empty
     rolling_weeks: int = 4  # rolling median over this many weeks
+    max_speed_mps: float = 7.0  # per-second speed above this is suspect (GPS drift)
+    max_fast_s: int = 60  # runs with more seconds above max_speed_mps are left out
 
 
 @dataclass(frozen=True)

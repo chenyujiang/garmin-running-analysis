@@ -2,7 +2,10 @@
 
 Per run (spec, "有氧能力"):
 
-1. Outdoor road runs only (`AEROBIC_TYPES`): no treadmill, no trail.
+1. Outdoor road runs only (`AEROBIC_TYPES`): no treadmill, no trail. The
+   per-second records must also have position and altitude (a road run logged
+   on a treadmill has neither), and at most `max_fast_s` samples above
+   `max_speed_mps` (GPS drift). See `gps_usable`.
 2. Each second is classified run/walk (`running.runwalk.classify_records`).
 3. HR, speed and barometric altitude get a trailing `smoothing_s` mean.
 4. Grade = rise of the smoothed altitude / distance over the last
@@ -96,6 +99,24 @@ def load_records(db: AnalysisDb, activity_ids: list[int]) -> pl.DataFrame:
     if df.is_empty():
         return pl.DataFrame(schema=schema)
     return df.cast(schema)
+
+
+def gps_usable(db: AnalysisDb, activity_ids: list[int], aerobic: Aerobic) -> set[int]:
+    """The activities whose per-second records are good enough for GAP: at
+    least one sample with lat, lon and altitude each (no treadmill-like run),
+    and at most `max_fast_s` samples faster than `max_speed_mps` (no GPS drift).
+    Shared by the aerobic metric and the long-run EF/decoupling."""
+    if not activity_ids or "records" not in db.tables():
+        return set()
+    id_list = ", ".join("?" for _ in activity_ids)
+    df = db.query(
+        "SELECT activity_id FROM a.records"
+        f" WHERE activity_id IN ({id_list}) GROUP BY activity_id"
+        " HAVING count(lat) > 0 AND count(lon) > 0 AND count(altitude) > 0"
+        " AND count(*) FILTER (WHERE speed > ?) <= ?",
+        [*activity_ids, aerobic.max_speed_mps, aerobic.max_fast_s],
+    )
+    return set(df["activity_id"].to_list()) if not df.is_empty() else set()
 
 
 def steady_state(records: pl.DataFrame, aerobic: Aerobic, run_walk: RunWalk) -> pl.DataFrame:
@@ -206,7 +227,7 @@ def aerobic_runs(
 
     Columns: activity_id, start_time_local, steady_s, mean_hr (steady seconds),
     speed_mps (GAP speed at reference HR; null when not valid), temperature_c
-    (mean over the run), valid (enough steady time)."""
+    (mean over the run), valid (enough steady time and `gps_usable`)."""
     aerobic = config.aerobic
     if "activities" not in db.tables():
         return pl.DataFrame(schema=_RUN_SCHEMA)
@@ -244,7 +265,10 @@ def aerobic_runs(
             .then(pl.col("_cov") / pl.col("_var_hr"))
             .otherwise(0.0)
         )
-        valid = pl.col("steady_s") >= aerobic.min_steady_s
+        usable = gps_usable(db, acts["activity_id"].to_list(), aerobic)
+        valid = (pl.col("steady_s") >= aerobic.min_steady_s) & pl.col("activity_id").is_in(
+            sorted(usable)
+        )
         per_run = per_run.with_columns(
             valid.fill_null(False).alias("valid"),
             pl.when(valid)
@@ -388,11 +412,25 @@ def aerobic_trend(
     }
 
 
+# The two `gps_usable` rules, worded for the method notes ({a} is an Aerobic).
+_EXCLUSIONS = (
+    "逐秒记录里没有 GPS 位置或没有海拔的跑步（实际是跑步机）不计入；"
+    "逐秒速度超过 {a.max_speed_mps:g} m/s 的秒累计超过 {a.max_fast_s} 秒的跑步"
+    "（GPS 漂移）不计入。这两类跑步照常计入跑量和训练负荷。"
+)
+
+
+def exclusions_note(a: Aerobic) -> str:
+    """The `gps_usable` rules for a method description."""
+    return _EXCLUSIONS.format(a=a)
+
+
 def _method(a: Aerobic, rw: RunWalk) -> Method:
     return {
         "name": f"参考心率 {a.reference_hr} bpm 下的 GAP 配速",
         "description": (
-            "只算户外路跑（不含跑步机和越野）。去掉前 "
+            "只算户外路跑（不含跑步机和越野）。"
+            f"{exclusions_note(a)}去掉前 "
             f"{a.warmup_s // 60} 分钟；心率、速度、气压海拔各做 {a.smoothing_s} 秒滚动平均。"
             f"稳态秒要同时满足：在跑（步频规则同周跑量）、平滑心率在 {a.reference_hr} ± "
             f"{a.hr_band_bpm:g} bpm 内、{a.speed_window_s} 秒内平滑速度变化 ≤ "
@@ -420,6 +458,8 @@ def _method(a: Aerobic, rw: RunWalk) -> Method:
             "max_grade": a.max_grade,
             "min_runs_per_week": a.min_runs_per_week,
             "rolling_weeks": a.rolling_weeks,
+            "max_speed_mps": a.max_speed_mps,
+            "max_fast_s": a.max_fast_s,
             "cadence_spm": rw.cadence_spm,
             "activity_types": sorted(AEROBIC_TYPES),
             "week": "monday-sunday, start_time_local",
