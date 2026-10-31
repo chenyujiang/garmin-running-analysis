@@ -6,7 +6,7 @@
 
 **Category:** enhancement
 
-**Status:** ready-for-agent
+**Status:** done
 
 来源：[18 数据质量与清洗](18-data-quality.md) 的结论，用户 2026-10-31 确认的第 1、5、6 条建议。
 
@@ -20,7 +20,7 @@
   - API 来的活动不变。`activities` 建表 migration 的 `time_zone` 列注释和 README 说明：`time_zone` 可能是 IANA 名字，也可能是固定偏移。
 - [x] **`resting_hr_bpm`**：导出包和 Personal API 的每日汇总都不再导入这一列，写 NULL。原始档案保持原样。`daily_wellness` 建表 migration 的 `resting_hr_bpm` 列注释和 README 说明原因：用户只在白天戴表，Garmin 的静息心率偏高，不可用；静息心率用 `config.toml` 的 `hr_rest`。
 - [x] `runsync rebuild` 的结果与重新导入一致；Seam 1 测试覆盖上面三条（合成 fixture，不含真实 GPS 和邮箱）。
-- [ ] 用户在真实数据目录运行 `runsync rebuild` 后，agent 只读核对：`9136530487` 有逐秒记录，`time_zone` 为 NULL 的活动数为 0，`resting_hr_bpm` 全部为 NULL。
+- [x] 用户在真实数据目录运行 `runsync rebuild` 后，agent 只读核对：`9136530487` 有逐秒记录，`time_zone` 为 NULL 的活动数为 0，`resting_hr_bpm` 全部为 NULL。
 
 ## 不做
 
@@ -59,10 +59,14 @@
 - [x] Seam 1 测试：导出包和 Personal API 来的每日汇总 `resting_hr_bpm` 都为 NULL，其他列不变
 - [x] `rebuild` 与直接导入逐行一致（现有一致性测试继续通过）
 - [x] `cargo test`、`cargo clippy -- -D warnings`、`cargo fmt --check` 通过
-- [ ] **HITL**：用户在真实数据目录运行 `runsync rebuild` 后，agent 只读核对并在本 ticket 记录：`9136530487` 有逐秒记录；`time_zone` 为 NULL 的活动数为 0；`resting_hr_bpm` 非 NULL 的行数为 0。只输出汇总数字，不输出 GPS
+- [x] **HITL**：用户在真实数据目录运行 `runsync rebuild` 后，agent 只读核对并在本 ticket 记录：`9136530487` 有逐秒记录；`time_zone` 为 NULL 的活动数为 0；`resting_hr_bpm` 非 NULL 的行数为 0。只输出汇总数字，不输出 GPS
 
 **Out of scope:**
 - `8234857240`（没有 FIT）：不补下载
 - 修改 Garmin 的活动汇总值；用 FIT 覆盖距离等
 - 分析包（`resting_hr_bpm` 在分析包里没有使用；静息心率仍用 `config.toml` 的 `hr_rest`）
 - agent 不在真实数据目录运行 `rebuild`、`sync`、`login`；不读取或打印任何 key 或 token
+
+## HITL 核对（2026-11-01）
+
+用户在真实数据目录运行 `runsync rebuild` 后，agent 只读核对分析库：`9136530487` 有 3734 行逐秒记录；`time_zone` 为 NULL 的活动 0 个；`resting_hr_bpm` 非 NULL 的行 0 行（`rebuild` 前分别是 0 行、1095 个、1044 行）。

@@ -6,7 +6,7 @@
 
 **Category:** enhancement
 
-**Status:** ready-for-agent
+**Status:** done
 
 来源：[19 温度校正](19-temperature-correction.md) 的结论，用户 2026-10-31 确认的第 2、5 条建议。原来的 22 在 triage 时（2026-10-31）按用户选择的方案 A 拆成 22a（本 ticket）和 [22b](22b-air-temperature-chart.md)：spec 规定两边只通过数据目录交换数据、分析库 schema 由 Rust 负责、仪表盘离线（User Story 62），所以外部请求放在导入端。
 
@@ -52,10 +52,14 @@
 - [x] 迁移测试：空库和旧版本库都能迁移到最新
 - [x] README 说明 Open-Meteo：用途、发送的内容（一个 0.1° 格点和日期范围）、存放位置
 - [x] `cargo test`、`cargo clippy -- -D warnings`、`cargo fmt --check` 通过
-- [ ] **HITL**：用户在真实数据目录运行 `runsync sync` 后，agent 只读核对并在本 ticket 记录：气温表的小时数、日期范围、格点个数。不输出坐标
+- [x] **HITL**：用户在真实数据目录运行 `runsync sync` 后，agent 只读核对并在本 ticket 记录：气温表的小时数、日期范围、格点个数。不输出坐标
 
 **Out of scope:**
 - 分析包、仪表盘、JSON 接口（22b）
 - 同时请求多个格点、按活动分别取气温
 - Open-Meteo 以外的天气服务；`temperature_2m` 以外的变量
 - agent 不在真实数据目录运行 `sync`、`rebuild`、`login`；不读取或打印任何 key 或 token
+
+## HITL 核对（2026-11-01）
+
+用户在真实数据目录运行 `runsync sync` 和 `rebuild` 后，agent 只读核对分析库：`hourly_weather` 共 45888 小时，全部有气温；范围 `2021-08-06T00:00:00Z`..`2026-10-30T23:00:00Z`；1 个格点；没有整天为 NULL 的日期。`rebuild` 载入的小时数与 `sync` 一致（45888）。
