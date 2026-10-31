@@ -8,7 +8,7 @@
 
 来源：[实施 spec](../spec.md)，User Stories 9–11；Out of Scope 里的"数据质量与清洗"和"温度校正"。
 
-- [x] 用户把导出包从仓库根目录移出，运行 `runsync import-export <zip>`
+- [x] 运行 `runsync import-export <zip>`（包已复制进 `raw/export/`；仓库根目录的原件被 `*.zip` 忽略，用户可自行删除）
 - [x] 用户再运行 `runsync sync`，补导出日期之后的新数据（中断后再次运行即可续传）
 - [x] agent 只核对汇总信息：各表行数、活动日期范围、各活动类型的数量、跳过的非 activity FIT 数量、解析失败的 FIT 数量；不读取、不输出 GPS 坐标
 - [x] 如果遇到 429，按冷却规则处理，不重试
