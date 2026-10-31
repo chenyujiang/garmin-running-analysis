@@ -136,6 +136,7 @@ uv run running-dashboard               # http://127.0.0.1:8765
 uv run pytest
 uv run ruff format
 uv run ruff check
+uv run python scripts/db_summary.py   # read-only counts, date ranges, NULLs, aerobic totals (no coordinates)
 ```
 
 Tests never touch the real data directory; they build temporary ones and point `RUNNING_DATA_DIR` at them.
