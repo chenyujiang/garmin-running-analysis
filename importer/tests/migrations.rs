@@ -86,3 +86,59 @@ fn a_database_from_a_newer_runsync_is_refused() {
 
     assert!(format!("{err:#}").contains("newer"), "{err:#}");
 }
+
+/// FNV-1a 64 over the file with CRLF normalised to LF, so the hash is the
+/// same on any checkout.
+fn migration_hash(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes).replace("\r\n", "\n");
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in text.bytes() {
+        h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
+#[test]
+fn shipped_migrations_are_never_edited() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    let manifest = std::fs::read_to_string(dir.join("checksums.txt")).unwrap();
+    let expected: Vec<(String, String)> = manifest
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+        .map(|l| {
+            let (name, hash) = l.split_once(' ').expect("line is `<file> <hash>`");
+            (name.to_string(), hash.trim().to_string())
+        })
+        .collect();
+
+    let mut files: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".sql"))
+        .collect();
+    files.sort();
+    let actual: Vec<(String, String)> = files
+        .into_iter()
+        .map(|n| {
+            let hash = migration_hash(&std::fs::read(dir.join(&n)).unwrap());
+            (n, hash)
+        })
+        .collect();
+
+    for ((name, want), (_, got)) in expected.iter().zip(&actual) {
+        assert_eq!(
+            want, got,
+            "{name} was edited after it shipped; put the change in a new migration"
+        );
+    }
+    assert_eq!(
+        expected.len(),
+        actual.len(),
+        "migrations/checksums.txt and migrations/*.sql differ; for a new migration append \
+         this line to checksums.txt: {:?}",
+        actual.last()
+    );
+    let names = |v: &[(String, String)]| v.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>();
+    assert_eq!(names(&expected), names(&actual));
+    assert_eq!(actual.len() as i64, runsync::db::LATEST_VERSION);
+}

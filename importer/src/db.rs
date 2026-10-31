@@ -8,7 +8,8 @@ use anyhow::{Context, Result, bail};
 use rusqlite::Connection;
 
 /// Migration N (1-based) is `MIGRATIONS[N - 1]`. Append only; never edit a
-/// migration that has shipped.
+/// migration that has shipped (`tests/migrations.rs` checks the files against
+/// `migrations/checksums.txt`; append a line there for each new migration).
 const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0001_activities.sql"),
     include_str!("../migrations/0002_sync_runs.sql"),
