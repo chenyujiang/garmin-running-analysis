@@ -63,12 +63,14 @@ grade_window_s = 30
 max_grade = 0.15
 min_runs_per_week = 2
 rolling_weeks = 4
+max_speed_mps = 7.0             # per-second speed above this is suspect (GPS drift)
+max_fast_s = 60                 # runs with more seconds above max_speed_mps are left out
 
 [run_walk]
 cadence_spm = 140               # smoothed cadence (both feet) at or above this is running
 smoothing_s = 10
 min_walk_s = 10                 # shorter walking stretches still count as running
-pause_gap_s = 30                # a longer gap between samples is a pause
+pause_gap_s = 10                # a longer gap between samples is a pause
 
 [load]
 max_sample_gap_s = 10           # a longer gap between HR samples counts only this long in TRIMP

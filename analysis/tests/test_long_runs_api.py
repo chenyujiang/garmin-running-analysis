@@ -41,6 +41,22 @@ def test_a_59_minute_run_is_not_a_long_run(analysis_db, client_factory):
     assert run["decoupling_high"] is False
 
 
+def test_a_road_long_run_without_gps_is_listed_without_ef(analysis_db, client_factory):
+    add_hr_run(analysis_db, 1, "2026-10-20T07:00:00", [steady(3600, hr=150)], gps=False)
+    # GPS drift: 61 s above 7 m/s.
+    add_hr_run(analysis_db, 2, "2026-10-21T07:00:00", [steady(3600, hr=150), steady(61, speed=8.0)])
+
+    body = get_long_runs(client_factory)
+    runs = by_id(body)
+
+    assert sorted(runs) == [1, 2]
+    assert runs[1]["ef"] is None
+    assert runs[1]["decoupling_pct"] is None
+    assert runs[2]["ef"] is None
+    assert "GPS" in body["method"]["description"]
+    assert body["method"]["params"]["max_fast_s"] == 60
+
+
 def drop_records(conn, activity_id: int, first_s: int, last_s: int) -> None:
     """Delete the samples at t = first_s..last_s: a pause long enough that the
     30 s smoothing and the 60 s speed window start fresh after it."""

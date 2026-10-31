@@ -34,9 +34,14 @@ def add_hr_run(
     stretches: list[Stretch],
     activity_type: str = "running",
     temperature: float | None = 15.0,
+    gps: bool = True,
+    altitude: bool = True,
 ) -> None:
     """Activity row plus 1 Hz records (t = 0 .. total seconds). Each sample's
-    speed covers the second ending at it; altitude follows distance x grade."""
+    speed covers the second ending at it; altitude follows distance x grade.
+    `gps=False` writes no lat/lon and `altitude=False` no altitude, as on a
+    treadmill-like run."""
+    lat, lon = (10.0, 20.0) if gps else (None, None)
     duration = sum(s.seconds for s in stretches)
     distance_total = sum(s.seconds * s.speed for s in stretches)
     start_utc = insert_activity(
@@ -59,7 +64,7 @@ def add_hr_run(
             rows.append((t, s.hr, s.speed, s.cadence, alt, dist))
     conn.executemany(
         "INSERT INTO records (activity_id, timestamp, heart_rate, speed, cadence, altitude,"
-        " distance, temperature) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        " distance, temperature, lat, lon) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
             (
                 activity_id,
@@ -67,9 +72,11 @@ def add_hr_run(
                 hr,
                 v,
                 c,
-                a,
+                a if altitude else None,
                 d,
                 temperature,
+                lat,
+                lon,
             )
             for sec, hr, v, c, a, d in rows
         ],
