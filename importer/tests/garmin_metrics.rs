@@ -68,10 +68,11 @@ fn a_sync_stores_todays_snapshot_of_all_three_metrics() {
         "2026-10-30"
     );
     assert_eq!(query::<f64>(&db, "SELECT vo2max FROM garmin_metrics"), 52.4);
-    // The primary training device's status, not the other device's.
+    // The primary training device's status, not the other device's, with
+    // the API's numeric suffix dropped to match the export's vocabulary.
     assert_eq!(
         query::<String>(&db, "SELECT training_status FROM garmin_metrics"),
-        "PRODUCTIVE_1"
+        "PRODUCTIVE"
     );
     assert_eq!(
         query::<f64>(&db, "SELECT acute_load FROM garmin_metrics"),
@@ -340,7 +341,7 @@ fn rebuild_reloads_garmin_metrics_from_the_raw_archive() {
             &db,
             "SELECT training_status FROM garmin_metrics WHERE date = '2026-10-25'"
         ),
-        "PRODUCTIVE_1"
+        "PRODUCTIVE"
     );
 }
 

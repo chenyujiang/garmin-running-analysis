@@ -156,7 +156,11 @@ pub fn store_metric(
             vec![
                 (
                     "training_status",
-                    text(status.map(|s| &s["trainingStatusFeedbackPhrase"])),
+                    text(
+                        status
+                            .and_then(|s| s["trainingStatusFeedbackPhrase"].as_str())
+                            .map(training_status_name),
+                    ),
                 ),
                 (
                     "acute_load",
@@ -233,6 +237,16 @@ fn primary_training_status(value: &Value) -> Option<&Value> {
         .or_else(|| devices.values().next())
 }
 
+/// The API's feedback phrase carries a numeric variant (`PRODUCTIVE_1`);
+/// the account export has only the status (`PRODUCTIVE`). Drop the suffix
+/// so both sources store the same name.
+fn training_status_name(phrase: &str) -> &str {
+    match phrase.rsplit_once('_') {
+        Some((name, n)) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => name,
+        _ => phrase,
+    }
+}
+
 /// The responses are lists with one entry per day (or a single object);
 /// take the entry for `day`, else the last one.
 fn entry_for_day<'a>(
@@ -255,11 +269,10 @@ fn real(v: Option<&Value>) -> rusqlite::types::Value {
         .map_or(rusqlite::types::Value::Null, rusqlite::types::Value::Real)
 }
 
-fn text(v: Option<&Value>) -> rusqlite::types::Value {
-    v.and_then(Value::as_str)
-        .map_or(rusqlite::types::Value::Null, |s| {
-            rusqlite::types::Value::Text(s.to_owned())
-        })
+fn text(v: Option<&str>) -> rusqlite::types::Value {
+    v.map_or(rusqlite::types::Value::Null, |s| {
+        rusqlite::types::Value::Text(s.to_owned())
+    })
 }
 
 /// Write via a `.part` file and rename, so a file in the archive is always

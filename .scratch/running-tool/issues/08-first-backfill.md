@@ -4,7 +4,7 @@
 
 **Blocked by:** 05（每日汇总同步），07（限流冷却与凭据失效处理），17（导入 Garmin 账号数据导出包）
 
-**Status:** needs-user
+**Status:** done
 
 来源：[实施 spec](../spec.md)，User Stories 9–11；Out of Scope 里的"数据质量与清洗"和"温度校正"。
 
@@ -14,7 +14,7 @@
 - [x] 如果遇到 429，按冷却规则处理，不重试
 - [x] 解析失败的 FIT 比例偏高时，评估是否换 `rustyfit`，结论记在本 ticket
 - [x] 回填完成后，在 `.scratch/running-tool/issues/` 新开两个 ticket："数据质量与清洗"和"温度校正"
-- [ ] 确认 `raw/`（包括 `raw/export/`）已纳入用户的备份
+- [x] 确认 `raw/`（包括 `raw/export/`）已纳入用户的备份（用户 2026-10-31 确认）
 
 ## 结论
 

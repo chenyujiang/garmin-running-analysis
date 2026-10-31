@@ -199,6 +199,8 @@ lthr = 170
 
 ## Further Notes
 
+- **已确认的偏离**：实现与本 spec 不同、用户 2026-10-31 确认保留的五项（9 种跑步类型、TSB 用前一天的 CTL/ATL、Riegel k 截断在 [1.01, 1.20]、单独的 `MetricsSource`、冷却跳过时退出码为 0），以及训练状态统一为不带数字后缀的写法，见 [deviations.md](deviations.md)。
+
 - **实施前提**：本机还没有 Rust。需要先装 rustup，以及带 C++ 工作负载的 Visual Studio Build Tools（`rusqlite` 的 bundled feature 要用它编译 SQLite）。
 - **凭据**：用户自己把仓库根目录的 `.env` 移到数据目录的 `secrets/` 下，`garminconnect` 的 token 从 `~/.garminconnect` 移过去。实施时不要读取、打印或提交任何 key 或 token 的内容。Personal API key 大约 2027-10 到期。
 - **登录风险**：本机的 garminconnect mobile 登录策略已经被 429，需要退到后备策略。尽量复用 token，少登录；调试时不要反复调用 `login`。

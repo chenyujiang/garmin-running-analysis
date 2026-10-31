@@ -13,7 +13,7 @@
 - **Garmin 静息心率不可用**：`daily_wellness.resting_hr_bpm`（导出包 `restingHeartRate`）全部历史中位数 106，2024 年均值 118，有的日子高于当天最低心率。原因是用户只在白天戴表。导入照原值存，没有出错。`config.toml` 的 `hr_rest = 55` 改用每日最低心率的 10 分位估算。任何用到这一列的地方要换来源或去掉。
 - **每日最低心率是白天值**：`min_hr_bpm` 中位数 65，偏高于真实静息心率。
 - **2 个活动没有逐秒记录**；导出包里 1 个 activity FIT 对不上任何活动（按 session 开始时间匹配）。查清是哪两个、为什么。
-- **训练状态两套词表**：导出包写 `PRODUCTIVE`，API 写 `PRODUCTIVE_1`，`garmin_metrics.training_status` 按原样存。决定是否统一。
+- ~~**训练状态两套词表**~~：已解决（2026-10-31），API 的数字后缀在写入时去掉，两边都存 `PRODUCTIVE` 这样的名字。
 - **导出包活动没有时区**：`activities.time_zone` 对导出来的活动是 NULL（导出包只有 Garmin 内部的时区 id）。
 
 ## 要统计的问题（spec 原列）
