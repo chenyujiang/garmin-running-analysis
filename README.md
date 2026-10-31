@@ -99,6 +99,14 @@ The full history can come from Garmin's account data export instead of thousands
 
 `runsync rebuild` loads the archived exports again. The export contains GPS tracks and your e-mail address: keep it in the data directory, never in the repository.
 
+### Air temperature from Open-Meteo
+
+`runsync sync` also fetches hourly air temperature from the free [Open-Meteo historical weather API](https://open-meteo.com/en/docs/historical-weather-api) (no key) for the aerobic chart. It runs after the two Garmin sources and independently of them.
+
+What is sent: one grid point, rounded to 0.1° (about 10 km), and a date range. The grid point is the most common one among road runs (`running`, `street_running`) with GPS: each run's median latitude and longitude are rounded to 0.1° and the most frequent result wins. Nothing else (no tracks, times or account data) leaves the machine. Without a road run with GPS, nothing is requested. The range covers every day from the first road run to two days ago that is not yet archived for that grid point, in one request. If the main grid point moves, only the new one is fetched; the old archive stays.
+
+Each response is stored verbatim in `raw/open-meteo/<start>_<end>.json`, next to `<start>_<end>.request.json` recording the grid point and dates asked for, and loaded into the `hourly_weather` table (UTC hours). `runsync rebuild` loads the archive again. A rate limit (HTTP 429) skips Open-Meteo for 24 hours (`state/open_meteo.cooldown.json`). Messages and logs never show the grid point or the request URL; the archive files hold it, so keep them in the data directory.
+
 ## Common commands
 
 Importer (run in `importer/`):

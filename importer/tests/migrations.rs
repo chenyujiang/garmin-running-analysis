@@ -29,6 +29,7 @@ fn an_empty_database_is_migrated_to_the_latest_version() {
     let t = tables(&conn);
     assert!(t.contains(&"activities".to_string()), "{t:?}");
     assert!(t.contains(&"sync_runs".to_string()), "{t:?}");
+    assert!(t.contains(&"hourly_weather".to_string()), "{t:?}");
 }
 
 #[test]
@@ -53,6 +54,7 @@ fn a_version_1_database_keeps_its_rows_and_reaches_the_latest_version() {
 
     assert_eq!(user_version(&conn), runsync::db::LATEST_VERSION);
     assert!(tables(&conn).contains(&"sync_runs".to_string()));
+    assert!(tables(&conn).contains(&"hourly_weather".to_string()));
     let n: i64 = conn
         .query_row("SELECT count(*) FROM activities", [], |r| r.get(0))
         .unwrap();
