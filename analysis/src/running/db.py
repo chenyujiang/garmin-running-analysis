@@ -109,6 +109,18 @@ class AnalysisDb:
         frames = [self._records[i] for i in ids]
         return pl.concat(frames) if frames else pl.DataFrame(schema=RECORD_COLUMNS)
 
+    def file_version(self) -> tuple[tuple[int, int], ...]:
+        """(mtime_ns, size) of the database file and its `-wal` file; any
+        write to the database changes one of them."""
+        version = []
+        for f in (self.path, self.path.with_name(self.path.name + "-wal")):
+            try:
+                st = f.stat()
+                version.append((st.st_mtime_ns, st.st_size))
+            except FileNotFoundError:
+                version.append((0, 0))
+        return tuple(version)
+
     def tables(self) -> set[str]:
         rows = self._con.execute(
             "SELECT table_name FROM information_schema.tables WHERE table_catalog = ?", [ALIAS]
