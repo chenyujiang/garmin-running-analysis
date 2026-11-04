@@ -203,3 +203,16 @@ a.brand { text-decoration: none; color: var(--ink); }
 .run-metrics .zone .track { height: 10px; background: var(--paper-2); }
 .run-metrics .zone .track i { display: block; height: 100%; background: var(--ink-2); }
 .run-metrics .zone .num { text-align: right; }
+
+/* run-detail ticket 07: report, one row per rule, verdict first; red only for watch */
+.report-items { list-style: none; margin: 0; padding: 0; max-width: 80ch; }
+.report-items li { border-bottom: 1px solid var(--rule); padding: 6px 0; }
+.report-items summary { cursor: pointer; list-style: none; display: grid; grid-template-columns: 5em 7em 1fr; gap: 10px; }
+.report-items summary::-webkit-details-marker { display: none; }
+.report-items .verdict { font-weight: 600; }
+.report-items .rule-name { color: var(--ink-2); }
+.report-items .verdict-watch .verdict, .report-items .verdict-watch .text { color: var(--red); }
+.report-items .verdict-unknown .verdict, .report-items .verdict-unknown .text { color: var(--ink-3); }
+.report-items .params { margin: 6px 0 4px 5em; padding: 8px 12px; background: var(--paper-2); border-radius: 4px; }
+.report-items .params p { margin: 0 0 4px; }
+.report-items .params td { padding: 1px 12px 1px 0; font-variant-numeric: tabular-nums; }

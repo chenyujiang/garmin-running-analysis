@@ -96,7 +96,10 @@ def activity_detail(activity_id: int, root: Path | None = None) -> dict | None:
             "start_time_local": row["start_time_local"],
             "is_running": d.is_running,
         }
-        return {"activity": header, **{key: build(d) for key, build in SECTIONS.items()}}
+        detail = {"activity": header, **{key: build(d) for key, build in SECTIONS.items()}}
+        # report (ticket 07): built last, from the sections above
+        detail["report"] = _report(d, detail)
+        return detail
 
 
 # --- summary (ticket 02) -----------------------------------------------------
@@ -749,6 +752,16 @@ def _metrics_method(config: Config) -> Method:
             "ef_unit": "m/min per bpm",
         },
     }
+
+
+# --- report (ticket 07) ------------------------------------------------------
+# Not in SECTIONS: the report reads the other sections' output.
+
+
+def _report(d: DetailInputs, detail: dict) -> dict:
+    from running.report import report_context, run_report
+
+    return dict(run_report(detail, report_context(d, detail)))
 
 
 # --- section registry --------------------------------------------------------

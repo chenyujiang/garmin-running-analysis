@@ -72,6 +72,22 @@ class Zones:
 
 
 @dataclass(frozen=True)
+class Report:
+    """`[report]` in config.toml: thresholds of the detail page's report rules.
+    The heat threshold is `[aerobic].hot_week_c`."""
+
+    interval_speed_ratio: float = 0.15  # a rep is this much faster than the run's median speed
+    interval_min_s: int = 60  # a rep lasts at least this long
+    interval_min_reps: int = 3  # an interval session has at least this many reps
+    tempo_share: float = 0.5  # Z3-Z4 share of the running time for a tempo run
+    tempo_min_s: int = 900  # ... with one unbroken Z3-Z4 stretch at least this long
+    long_easy_share: float = 0.7  # Z1-Z2 share of a long run (60 minutes or more)
+    easy_share: float = 0.8  # Z1-Z2 share of an easy run
+    aerobic_change: float = 0.02  # aerobic value this much above/below the recent median
+    split_change: float = 0.02  # second half's GAP pace this much faster/slower
+
+
+@dataclass(frozen=True)
 class Config:
     reference_hr: int = 145
     physiology: tuple[Physiology, ...] = field(default_factory=tuple)
@@ -79,6 +95,7 @@ class Config:
     aerobic: Aerobic = field(default_factory=Aerobic)
     load: Load = field(default_factory=Load)
     zones: Zones = field(default_factory=Zones)
+    report: Report = field(default_factory=Report)
 
 
 def data_dir() -> Path:
@@ -130,6 +147,7 @@ def load_config(root: Path | None = None) -> Config:
             )
         )
         zones = _zones(raw.get("zones", {}))
+        report = _report(raw.get("report", {}))
     except (KeyError, TypeError, ValueError) as err:
         raise ConfigError(f"配置文件 {path} 缺少或写错了字段：{err}") from err
     return Config(
@@ -139,6 +157,7 @@ def load_config(root: Path | None = None) -> Config:
         aerobic=aerobic,
         load=load,
         zones=zones,
+        report=report,
     )
 
 
@@ -167,3 +186,13 @@ def _zones(raw: dict) -> Zones:
     if len(pct) != 4 or any(b <= a for a, b in zip(pct, pct[1:], strict=False)):
         raise ValueError("[zones] lthr_pct 要写 4 个递增的百分比，例如 [85, 90, 95, 100]")
     return Zones(lthr_pct=pct)
+
+
+def _report(raw: dict) -> Report:
+    d = Report()
+    return Report(
+        **{
+            name: type(getattr(d, name))(raw.get(name, getattr(d, name)))
+            for name in Report.__dataclass_fields__
+        }
+    )

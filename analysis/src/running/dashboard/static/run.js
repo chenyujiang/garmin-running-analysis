@@ -478,6 +478,34 @@ function zoneBars(m) {
 
 // --- report (ticket 07) ------------------------------------------------------
 
+const VERDICT_NAMES = { good: "好", neutral: "—", watch: "注意", unknown: "无法判断" };
+
+function reportSection(v) {
+  const r = v.report;
+  if (!r) return null;
+  const value = (x) =>
+    x == null ? "—"
+      : typeof x === "number" ? (Number.isInteger(x) ? String(x) : x.toFixed(3))
+        : String(x);
+  const row = (i) =>
+    h("li", { class: `verdict-${i.verdict}` },
+      h("details", {},
+        h("summary", {},
+          h("span", { class: "verdict" }, VERDICT_NAMES[i.verdict] ?? i.verdict),
+          h("span", { class: "rule-name" }, i.name),
+          h("span", { class: "text" }, i.text)),
+        h("div", { class: "params small" },
+          h("p", { class: "muted" }, `规则 ${i.rule}`),
+          h("table", {},
+            ...Object.entries(i.params).map(([k, x]) =>
+              h("tr", {}, h("td", { class: "muted" }, k), h("td", { class: "num" }, value(x)))))),
+      ));
+  return h("section", { class: "run-report" },
+    h("div", { class: "sec-head" }, h("h2", {}, "分析报告"), h("div", { class: "tools" }, how(r.method))),
+    h("ul", { class: "report-items" }, ...r.items.map(row)),
+  );
+}
+
 
 // --- section registry --------------------------------------------------------
 // Page order. Each ticket adds its renderer on the line below its own comment;
@@ -485,6 +513,7 @@ function zoneBars(m) {
 
 const RENDERERS = [
   // report (ticket 07)
+  reportSection,
   summarySection,
   // series (ticket 03)
   seriesSection,
