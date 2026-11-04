@@ -83,7 +83,7 @@ def _ef(gap: pl.Expr, hr: pl.Expr, dt: pl.Expr) -> pl.Expr:
     return ((gap * dt).sum() * 60.0) / (hr * dt).sum()
 
 
-def _per_run_ef(records: pl.DataFrame, config: Config) -> pl.DataFrame:
+def per_run_ef(records: pl.DataFrame, config: Config) -> pl.DataFrame:
     df = steady_state(records, config.aerobic, config.run_walk)
     df = df.filter(pl.col("steady")).sort("activity_id", "ts")
     df = df.with_columns(
@@ -119,7 +119,7 @@ def long_runs(
                 recs = load_records(db, sorted(usable))
                 efs = {}
                 if not recs.is_empty():
-                    efs = {r["activity_id"]: r for r in _per_run_ef(recs, config).to_dicts()}
+                    efs = {r["activity_id"]: r for r in per_run_ef(recs, config).to_dicts()}
                 for a in acts.iter_rows(named=True):
                     e = efs.get(a["activity_id"], {})
                     steady_s = float(e.get("steady_s") or 0.0)

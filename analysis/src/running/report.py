@@ -21,14 +21,14 @@ from typing import TYPE_CHECKING, Literal, TypedDict
 import polars as pl
 
 from running import aerobic, load, longruns
-from running.config import Config
+from running.config import Config, ReportThresholds
+from running.detail import NO_RECORDS, RUNNING_ONLY
 from running.section import Method
 
 if TYPE_CHECKING:
     from running.detail import DetailInputs
 
 Verdict = Literal["good", "neutral", "watch", "unknown"]
-RUNNING_ONLY = "仅跑步类活动"
 LONG_RUN_S = longruns.MIN_DURATION_S  # "long" and the drift verdict start at 60 minutes
 
 TYPE_NAMES = {
@@ -65,7 +65,7 @@ class AerobicBaseline:
 
 @dataclass(frozen=True)
 class LoadAround:
-    """Load on and after the run day (`load._series`; TSB is the previous day's CTL - ATL)."""
+    """Load on and after the run day (`load.load_series`; TSB is the previous day's CTL - ATL)."""
 
     week_trimp: float  # TRIMP of the run's Monday-to-Sunday week
     week_start: str
@@ -130,8 +130,8 @@ def _baseline(d: DetailInputs, monday: date) -> AerobicBaseline:
 def _load_around(d: DetailInputs, day: date, monday: date) -> LoadAround:
     sunday = monday + timedelta(days=6)
     end = max(sunday, day + timedelta(days=1))
-    daily, _, _ = load._activity_trimp(d.db, d.config, end)
-    points = {p["date"]: p for p in load._series(daily, end)}
+    daily, _, _ = load.daily_trimp(d.db, d.config, end)
+    points = {p["date"]: p for p in load.load_series(daily, end)}
     on = points.get(day.isoformat())
     after = points.get((day + timedelta(days=1)).isoformat())
     week = sum(v for k, v in daily.items() if monday <= k <= sunday)
@@ -188,7 +188,7 @@ def _stretches(frame: pl.DataFrame, flag: pl.Expr) -> pl.DataFrame:
     )
 
 
-def _interval_reps(frame: pl.DataFrame, cfg) -> tuple[int, float | None]:
+def _interval_reps(frame: pl.DataFrame, cfg: ReportThresholds) -> tuple[int, float | None]:
     """Reps: stretches of running seconds whose smoothed speed is at least
     `interval_speed_ratio` above the median and that last `interval_min_s`;
     two such stretches are one rep unless the speed between them drops below
@@ -250,7 +250,7 @@ def _training_type(detail: dict, ctx: ReportContext) -> ReportItem:
     if not detail["activity"]["is_running"]:
         return _item(rule, name, "unknown", f"不判训练类型：{RUNNING_ONLY}。", {})
     if ctx.frame.is_empty():
-        return _item(rule, name, "unknown", "不判训练类型：没有逐秒记录。", {})
+        return _item(rule, name, "unknown", f"不判训练类型：{NO_RECORDS}。", {})
     reps, median = _interval_reps(ctx.frame, cfg)
     duration = detail["summary"]["duration_s"] or 0.0
     params: dict = {
@@ -275,10 +275,12 @@ def _training_type(detail: dict, ctx: ReportContext) -> ReportItem:
         )
     shares = _zone_shares(detail, ctx.frame)
     if shares is None:
-        why = detail["metrics"]["unavailable"].get("zones", "没有心率")
+        why = detail["metrics"]["unavailable"].get("zones", load.NO_HR)
         return _item(rule, name, "unknown", f"不判训练类型：{why}，也不是间歇跑。", params)
     params.update(
         shares,
+        # The shares are of running seconds with HR (`running_hr_s`).
+        zone_share_basis="running_hr_s",
         tempo_share=cfg.tempo_share,
         tempo_min_s=cfg.tempo_min_s,
         long_easy_share=cfg.long_easy_share,
@@ -292,10 +294,10 @@ def _training_type(detail: dict, ctx: ReportContext) -> ReportItem:
             f"Z3–Z4 占跑的时间 {tempo:.0%}，最长连续 {shares['longest_z3_z4_s'] / 60:.0f} 分钟",
         )
     if duration >= LONG_RUN_S and easy >= cfg.long_easy_share:
-        return done("long", f"{duration / 60:.0f} 分钟，Z1–Z2 占 {easy:.0%}")
+        return done("long", f"{duration / 60:.0f} 分钟，Z1–Z2 占跑的时间 {easy:.0%}")
     if easy >= cfg.easy_share:
         return done("easy", f"Z1–Z2 占跑的时间 {easy:.0%}")
-    return done("mixed", f"Z1–Z2 占 {easy:.0%}，Z3–Z4 占 {tempo:.0%}，不属于以上任何一类")
+    return done("mixed", f"Z1–Z2 占跑的时间 {easy:.0%}，Z3–Z4 占 {tempo:.0%}，不属于以上任何一类")
 
 
 def _aerobic_rule(detail: dict, ctx: ReportContext) -> ReportItem:
@@ -435,7 +437,7 @@ def _load_rule(detail: dict, ctx: ReportContext) -> ReportItem:
     metrics = detail["metrics"]
     trimp = metrics["trimp"]
     if trimp is None or ctx.load is None:
-        why = metrics["unavailable"].get("trimp", "没有心率")
+        why = metrics["unavailable"].get("trimp", load.NO_HR)
         return _item(rule, name, "unknown", f"算不出负荷：{why}。", {})
     ld = ctx.load
     share = trimp / ld.week_trimp if ld.week_trimp > 0 else None

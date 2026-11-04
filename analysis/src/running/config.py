@@ -72,7 +72,7 @@ class Zones:
 
 
 @dataclass(frozen=True)
-class Report:
+class ReportThresholds:
     """`[report]` in config.toml: thresholds of the detail page's report rules.
     The heat threshold is `[aerobic].hot_week_c`."""
 
@@ -95,7 +95,7 @@ class Config:
     aerobic: Aerobic = field(default_factory=Aerobic)
     load: Load = field(default_factory=Load)
     zones: Zones = field(default_factory=Zones)
-    report: Report = field(default_factory=Report)
+    report: ReportThresholds = field(default_factory=ReportThresholds)
 
 
 def data_dir() -> Path:
@@ -188,11 +188,11 @@ def _zones(raw: dict) -> Zones:
     return Zones(lthr_pct=pct)
 
 
-def _report(raw: dict) -> Report:
-    d = Report()
-    return Report(
+def _report(raw: dict) -> ReportThresholds:
+    d = ReportThresholds()
+    return ReportThresholds(
         **{
             name: type(getattr(d, name))(raw.get(name, getattr(d, name)))
-            for name in Report.__dataclass_fields__
+            for name in ReportThresholds.__dataclass_fields__
         }
     )

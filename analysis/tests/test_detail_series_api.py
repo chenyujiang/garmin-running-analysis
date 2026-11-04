@@ -63,6 +63,24 @@ def test_no_bucket_spans_a_pause(analysis_db, client_factory):
         assert hr == (140.0 if t <= 10500 else 160.0)
 
 
+def test_more_pauses_than_points_still_stay_within_1500_points(analysis_db, client_factory):
+    # 2000 stretches of 5 s, each followed by an 11 s pause: 2000 pause-free
+    # stretches, more than the 1500-point cap even at one bucket each.
+    parts: list = []
+    for _ in range(2000):
+        parts += [steady(5, hr=150.0), 11]
+    add_paused_hr_run(analysis_db, 10, START_LOCAL, parts[:-1])
+
+    s = get_series(client_factory, 10)
+
+    n = len(s["t_s"])
+    assert 0 < n <= 1500
+    assert len(s["hr_bpm"]) == n
+    assert s["t_s"] == sorted(s["t_s"])
+    assert set(s["hr_bpm"]) == {150.0}
+    assert len(s["intervals"]["pause"]) == 1999
+
+
 def test_walking_and_steady_seconds_come_back_as_intervals(analysis_db, client_factory):
     # 1800 s steady at the reference HR (145), 300 s walking, 600 s running.
     add_hr_run(

@@ -2,7 +2,7 @@
 // Prototype variant A table. Filters and page live in the hash query
 // (#/runs?type=all&min_km=10&page=2), so a filtered list can be bookmarked.
 
-import { h, fmtDate } from "./dom.js";
+import { h, fmtDate, fmtDur, fmtPace } from "./dom.js";
 
 const PAGE_SIZE = 50;
 const DISTANCES = [null, 5, 10, 15, 21, 30];
@@ -107,20 +107,6 @@ async function load(section, f) {
     return;
   }
   section.replaceChildren(head(f), ...render(v, f));
-}
-
-const pad = (n) => String(n).padStart(2, "0");
-
-function fmtDur(s) {
-  const t = Math.round(s);
-  const hh = Math.floor(t / 3600);
-  const mm = Math.floor((t % 3600) / 60);
-  return hh ? `${hh}:${pad(mm)}:${pad(t % 60)}` : `${mm}:${pad(t % 60)}`;
-}
-
-function fmtPace(s) {
-  const t = Math.round(s);
-  return `${Math.floor(t / 60)}:${pad(t % 60)}`;
 }
 
 function render(v, f) {

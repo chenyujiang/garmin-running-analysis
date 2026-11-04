@@ -154,3 +154,13 @@ Status: open
 - **心率区间的来源**：Friel 的跑步 LTHR 区间按 Joe Friel 的公开资料，写代码前核对原始出处的边界（Z1 < 85% 等），有出入时以出处为准并在 ticket 里记下。
 - **训练类型规则是自定的**，不是来自文献。阈值放在配置里，最后一个 ticket 用真实数据检查后可能要调一次。
 - 用户确认方案的时间：2026-11-04。
+
+## 实施时的偏离（已接受）
+
+- 报告条目除 `rule`、`verdict`、`text`、`params` 外还带中文 `name`；`rule` 用英文 id：`training_type`、`aerobic`、`drift`、`pacing`、`load`、`heat`。
+- 气温条目在低于阈值时也出现，verdict 为 neutral；只有没有气温数据时不出现。
+- 报告在各区块（`SECTIONS`）之后计算，以 `report: {items, method}` 返回。
+- `route_unavailable` 是详情的顶层键，不放在 `route` 里面。
+- 非跑步类活动也给海拔曲线和路线形状。
+- 列表的筛选和页码放在 hash 的查询串里，如 `#/runs?type=all&page=2`。
+- 降采样：不含暂停的段多于 1500 段时，整条时间轴一起分桶，这时桶可以跨暂停，点数仍 ≤ 1500。

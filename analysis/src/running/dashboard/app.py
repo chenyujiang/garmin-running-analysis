@@ -17,7 +17,7 @@ from running.activities import (
     activity_list,
 )
 from running.aerobic import AerobicTrend, Range, aerobic_trend
-from running.detail import activity_detail
+from running.detail import ActivityDetail, activity_detail
 from running.load import TrainingLoad, training_load
 from running.longruns import LongRuns, long_runs
 from running.races import Predictions, RaceList, race_list, race_predictions
@@ -43,7 +43,7 @@ def create_app() -> FastAPI:
         return activity_list(type_filter=type, min_distance_m=min_m, page=page, page_size=page_size)
 
     @app.get("/api/activities/{activity_id}")
-    def activity(activity_id: int) -> dict:
+    def activity(activity_id: int) -> ActivityDetail:
         detail = activity_detail(activity_id)
         if detail is None:
             raise HTTPException(status_code=404, detail=f"没有编号为 {activity_id} 的活动。")

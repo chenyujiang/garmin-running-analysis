@@ -2,12 +2,11 @@
 // Reads GET /api/activities/<id> once; every section renders from that body.
 //
 // Each section is one renderer `(detail) => Node | null` in RENDERERS, in page
-// order, with its code in its own block below. Later tickets add one line in
-// their slot of RENDERERS and their functions in their block.
+// order, with its code in its own block below.
 
-import { h, fmtDate } from "./dom.js";
+import { h, fmtDate, fmtDur, fmtPace, pad } from "./dom.js";
 import { typeName } from "./runs.js";
-import { niceStep } from "./svg.js"; // route scale bar (ticket 05)
+import { frame, niceStep, svgEl, ticks, xAxis, yGrid } from "./svg.js";
 
 /** The detail page; fills itself once the data arrives. */
 export function runPage(id) {
@@ -55,22 +54,6 @@ function headline(a) {
   );
 }
 
-// Shared formatting.
-
-const pad = (n) => String(n).padStart(2, "0");
-
-export function fmtDur(s) {
-  const t = Math.round(s);
-  const hh = Math.floor(t / 3600);
-  const mm = Math.floor((t % 3600) / 60);
-  return hh ? `${hh}:${pad(mm)}:${pad(t % 60)}` : `${mm}:${pad(t % 60)}`;
-}
-
-export function fmtPace(s) {
-  const t = Math.round(s);
-  return `${Math.floor(t / 60)}:${pad(t % 60)}`;
-}
-
 export function how(method) {
   return h("details", { class: "how" },
     h("summary", {}, "怎么算的"),
@@ -109,7 +92,6 @@ function summarySection(v) {
 // walking and steady stretches as light bands behind every chart; a dashed
 // crosshair through all of them with a one-line readout, as on the aerobic chart.
 
-const SER_NS = "http://www.w3.org/2000/svg";
 const SER_W = 960;
 const SER_M = { l: 56, r: 16 };
 const SER_PANEL = { h: 120, t: 10, b: 8, axis: 22 };
@@ -118,13 +100,6 @@ const SER_BANDS = [
   ["walking", "走路", "var(--red)", 0.08],
   ["steady", "稳态", "var(--dot)", 0.1],
 ];
-
-function serEl(tag, attrs = {}, text) {
-  const el = document.createElementNS(SER_NS, tag);
-  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
-  if (text != null) el.textContent = text;
-  return el;
-}
 
 /** Robust y range: 2nd-98th percentile, so a GPS spike or a standstill does
  *  not flatten the rest of the line. Values outside are clipped to the edge. */
@@ -194,12 +169,10 @@ function seriesSection(v) {
 function serPanel(s, p, sx, dur, last) {
   const H = SER_PANEL.h + (last ? SER_PANEL.axis : 0);
   const y1 = SER_PANEL.t, y2 = SER_PANEL.h - SER_PANEL.b;
-  const svg = serEl("svg", { viewBox: `0 0 ${SER_W} ${H}`, preserveAspectRatio: "none", role: "img", "aria-label": `${p.label}随时间变化` });
-  const wrap = h("div", { class: "chart", style: `aspect-ratio:${SER_W}/${H}` });
-  wrap.append(svg);
+  const [wrap, svg] = frame(SER_W, H, `${p.label}随时间变化`);
   for (const [k, , fill, op] of SER_BANDS) {
     for (const [a, b] of s.intervals[k] ?? []) {
-      svg.append(serEl("rect", { x: sx(a), y: y1, width: Math.max(1, sx(b) - sx(a)), height: y2 - y1, fill, "fill-opacity": op }));
+      svg.append(svgEl("rect", { x: sx(a), y: y1, width: Math.max(1, sx(b) - sx(a)), height: y2 - y1, fill, "fill-opacity": op }));
     }
   }
   const values = p.extra && s[p.extra] ? [...s[p.key], ...s[p.extra]] : s[p.key];
@@ -210,26 +183,15 @@ function serPanel(s, p, sx, dur, last) {
     return p.invert ? y1 + f * (y2 - y1) : y2 - f * (y2 - y1);
   };
   p.sy = sy;
-  for (const f of [0.15, 0.5, 0.85]) {
-    const val = r.lo + f * (r.hi - r.lo);
-    const y = sy(val);
-    svg.append(serEl("line", { x1: SER_M.l, x2: SER_W - SER_M.r, y1: y, y2: y, stroke: "var(--rule)", "stroke-width": 1 }));
-    svg.append(serEl("text", { x: SER_M.l - 8, y: y + 4, "text-anchor": "end" }, p.fmt(val)));
-  }
-  svg.append(serEl("text", { x: SER_M.l + 4, y: y1 + 12 }, `${p.label}（${p.unit}）`));
+  yGrid(svg, ticks(r.lo, r.hi, niceStep(r.hi - r.lo, 3)), sy, SER_M.l, SER_W - SER_M.r, p.fmt);
+  svg.append(svgEl("text", { x: SER_M.l + 4, y: y1 + 12 }, `${p.label}（${p.unit}）`));
   if (p.extra && s[p.extra]?.length) {
-    svg.append(serEl("path", { d: serPath(s, s[p.extra], sx, sy), fill: "none", stroke: "var(--ink-3)", "stroke-width": 1.2, "stroke-dasharray": "3 2" }));
+    svg.append(svgEl("path", { d: serPath(s, s[p.extra], sx, sy), fill: "none", stroke: "var(--ink-3)", "stroke-width": 1.2, "stroke-dasharray": "3 2" }));
   }
-  svg.append(serEl("path", { d: serPath(s, s[p.key], sx, sy), fill: "none", stroke: "var(--ink)", "stroke-width": 1.4, "stroke-linejoin": "round" }));
-  if (last) {
-    for (const t of serTimeTicks(dur)) {
-      const x = sx(t);
-      svg.append(serEl("line", { x1: x, x2: x, y1: y2, y2: y2 + 4, stroke: "var(--ink-3)" }));
-      svg.append(serEl("text", { x, y: y2 + 17, "text-anchor": "middle" }, serTimeLabel(t)));
-    }
-  }
-  svg.append(serEl("line", { class: "xhair", x1: 0, x2: 0, y1, y2 }));
-  svg.append(serEl("circle", { class: "xhair-dot", r: 3.5, cx: 0, cy: 0 }));
+  svg.append(svgEl("path", { d: serPath(s, s[p.key], sx, sy), fill: "none", stroke: "var(--ink)", "stroke-width": 1.4, "stroke-linejoin": "round" }));
+  if (last) xAxis(svg, serTimeTicks(dur).map((t) => ({ x: t, label: serTimeLabel(t) })), sx, y2);
+  svg.append(svgEl("line", { class: "xhair", x1: 0, x2: 0, y1, y2 }));
+  svg.append(svgEl("circle", { class: "xhair-dot", r: 3.5, cx: 0, cy: 0 }));
   return wrap;
 }
 
@@ -370,13 +332,6 @@ function splitLapTable(rows) {
 const ROUTE_PX = 420; // pixels per unit along the longer side
 const ROUTE_PAD = 18;
 
-function svgEl(tag, attrs = {}, text) {
-  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
-  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
-  if (text != null) el.textContent = text;
-  return el;
-}
-
 function fmtMetres(m) {
   return m >= 1000 ? `${m / 1000} km` : `${m} m`;
 }
@@ -508,19 +463,13 @@ function reportSection(v) {
 
 
 // --- section registry --------------------------------------------------------
-// Page order. Each ticket adds its renderer on the line below its own comment;
-// the comment lines between the slots keep parallel edits apart.
+// Page order.
 
 const RENDERERS = [
-  // report (ticket 07)
   reportSection,
   summarySection,
-  // series (ticket 03)
   seriesSection,
-  // splits (ticket 04)
   splitsSection,
-  // route (ticket 05)
   routeSection,
-  // metrics (ticket 06)
   metricsSection,
 ];

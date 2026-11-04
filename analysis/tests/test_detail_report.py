@@ -140,6 +140,8 @@ def test_an_easy_hour_is_a_long_run(analysis_db, client_factory):
 
     assert t["params"]["type"] == "long"
     assert t["params"]["long_easy_share"] == 0.7
+    assert "占跑的时间" in t["text"]
+    assert t["params"]["zone_share_basis"] == "running_hr_s"
 
 
 def test_half_easy_half_z5_is_mixed(analysis_db, client_factory):
@@ -149,6 +151,8 @@ def test_half_easy_half_z5_is_mixed(analysis_db, client_factory):
 
     assert t["params"]["type"] == "mixed"
     assert t["params"]["z1_z2_share"] == pytest.approx(0.5, abs=0.002)
+    assert "占跑的时间" in t["text"]
+    assert t["params"]["zone_share_basis"] == "running_hr_s"
 
 
 def test_without_heart_rate_only_intervals_can_be_told(analysis_db, client_factory):

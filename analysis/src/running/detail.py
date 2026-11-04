@@ -27,7 +27,7 @@ from typing import TypedDict
 import polars as pl
 
 from running import aerobic, load, longruns
-from running.aerobic import air_temperature, load_records
+from running.aerobic import air_temperature, load_records, steady_state
 from running.config import Config
 from running.db import AnalysisDb, open_analysis_db
 from running.runwalk import RUNNING_TYPES, classify_records, running_summaries
@@ -42,6 +42,20 @@ class ActivityHeader(TypedDict):
     activity_name: str | None
     start_time_local: str
     is_running: bool  # activity_type is one of RUNNING_TYPES
+
+
+class ActivityDetail(TypedDict):
+    """GET /api/activities/{activity_id}: the header, one key per entry in
+    SECTIONS, then the report."""
+
+    activity: ActivityHeader
+    summary: dict
+    series: dict
+    splits: dict
+    route: dict | None
+    route_unavailable: str | None
+    metrics: dict
+    report: dict  # report.Report: items and method
 
 
 @dataclass
@@ -69,7 +83,7 @@ class DetailInputs:
 Section = Callable[[DetailInputs], dict]
 
 
-def activity_detail(activity_id: int, root: Path | None = None) -> dict | None:
+def activity_detail(activity_id: int, root: Path | None = None) -> ActivityDetail | None:
     """The detail page data, or None when there is no such activity (or no
     analysis database)."""
     inputs = section_inputs(None, root)
@@ -97,9 +111,8 @@ def activity_detail(activity_id: int, root: Path | None = None) -> dict | None:
             "is_running": d.is_running,
         }
         detail = {"activity": header, **{key: build(d) for key, build in SECTIONS.items()}}
-        # report (ticket 07): built last, from the sections above
-        detail["report"] = _report(d, detail)
-        return detail
+        # Built last: the report reads the sections above.
+        return ActivityDetail(**detail, report=_report(d, detail))
 
 
 # --- summary (ticket 02) -----------------------------------------------------
@@ -178,7 +191,8 @@ def _summary_method(config: Config) -> Method:
 # Time axis: seconds from the first sample, wall clock (pauses keep their
 # length on the axis and are marked). The bucket width is the smallest whole
 # number of seconds that keeps the total at or under MAX_POINTS once every
-# pause-free stretch is bucketed on its own.
+# pause-free stretch is bucketed on its own. With more stretches than
+# MAX_POINTS the whole axis is bucketed at once and buckets may span pauses.
 
 MAX_POINTS = 1500
 # A bucket slower than this has no pace: standing still would stretch the axis.
@@ -197,9 +211,10 @@ _RUNNING_SERIES = ("pace_s_per_km", "gap_pace_s_per_km", "cadence_spm")
 
 
 def _bucket_width(spans: list[float], max_points: int) -> int:
-    """Smallest whole seconds `w` with sum(floor(span / w) + 1) <= max_points."""
+    """Smallest whole seconds `w` with sum(floor(span / w) + 1) <= max_points.
+    Needs len(spans) <= max_points: every span is at least one bucket."""
     w = max(1, int(sum(spans) // max_points))
-    while sum(int(span // w) + 1 for span in spans) > max_points and w < (max(spans) + 1):
+    while sum(int(span // w) + 1 for span in spans) > max_points:
         w += 1
     return w
 
@@ -223,9 +238,6 @@ def _pace(speed: pl.Expr) -> pl.Expr:
 
 
 def _series(d: DetailInputs) -> dict:
-    # Imported here so the shared import block stays untouched by this ticket.
-    from running.aerobic import steady_state
-
     rw = d.config.run_walk
     unavailable: dict[str, str] = {}
     out: dict = {"duration_s": 0.0, "bucket_s": None, "t_s": []}
@@ -243,6 +255,11 @@ def _series(d: DetailInputs) -> dict:
         df = df.with_columns(pl.col("_pause").cum_sum().alias("_seg"))
         df = df.with_columns((pl.col("t") - pl.col("t").min().over("_seg")).alias("_in_seg"))
         spans = df.group_by("_seg").agg(pl.col("_in_seg").max())["_in_seg"].to_list()
+        if len(spans) > MAX_POINTS:
+            # More pause-free stretches than points: bucket the whole axis,
+            # so a bucket may span a pause.
+            df = df.with_columns(pl.lit(0).alias("_seg"), pl.col("t").alias("_in_seg"))
+            spans = [float(df["t"].max())]
         w = _bucket_width(spans, MAX_POINTS)
         buckets = (
             df.with_columns((pl.col("_in_seg") // w).alias("_bucket"))
@@ -298,7 +315,8 @@ def _series_method(config: Config) -> Method:
         "description": (
             f"横轴是从第一个采样起的秒数，暂停照实占位。降采样到最多 {MAX_POINTS} 个点："
             "按时间等分成整秒宽的桶，桶内取算术平均；每段不含暂停的时间各自分桶，"
-            f"桶不跨暂停（采样间隔超过 {rw.pause_gap_s} 秒算暂停）。"
+            f"桶不跨暂停（采样间隔超过 {rw.pause_gap_s} 秒算暂停）；"
+            f"不含暂停的段多于 {MAX_POINTS} 段时整条时间轴一起分桶，桶可以跨暂停。"
             "配速 = 1000 / 桶内平均速度，速度低于 "
             f"{MIN_PACE_SPEED_MPS:g} m/s 的桶不画配速。"
             f"GAP 配速用 Minetti 2002 的坡度能耗把 {a.smoothing_s} 秒平滑速度换成平地等效速度，"
@@ -387,9 +405,6 @@ def _kilometres(d: DetailInputs) -> list[dict] | None:
     """Per-kilometre splits on `records.distance`, or None without distances.
     A sample owns the interval ending at it and goes to the kilometre that
     interval starts in."""
-    # Imported here, not at the top, to keep the parallel tickets' edits apart.
-    from running.aerobic import steady_state
-
     recs = load_records(d.db, [d.activity_id]).filter(pl.col("distance").is_not_null())
     if recs.is_empty():
         return None
@@ -593,9 +608,9 @@ def _hr_zones(d: DetailInputs, phys: load.Physiology | None) -> tuple[dict | Non
     first sample weigh nothing), or None and the reason."""
     hr = d.records.filter(pl.col("heart_rate").is_not_null() & (pl.col("dt_s") > 0))
     if hr.is_empty():
-        return None, "没有逐秒心率" if d.activity["avg_hr_bpm"] else "没有心率"
+        return None, "没有逐秒心率" if d.activity["avg_hr_bpm"] else load.NO_HR
     if phys is None:
-        return None, "该日期没有生效的生理参数"
+        return None, load.NO_PHYSIOLOGY
     floors = [phys.lthr * p / 100.0 for p in d.config.zones.lthr_pct]
     bounds = [None, *floors]
     total = float(hr["dt_s"].sum())
@@ -648,9 +663,9 @@ def _aerobic_value(d: DetailInputs) -> tuple[dict | None, str | None]:
             "reference_hr": ae.reference_hr,
         }, None
     if d.records.is_empty():
-        return None, "没有逐秒记录"
+        return None, NO_RECORDS
     if d.records["heart_rate"].is_null().all():
-        return None, "没有心率"
+        return None, load.NO_HR
     if d.activity_id not in aerobic.gps_usable(d.db, [d.activity_id], ae):
         c = d.db.query(
             "SELECT count(lat) AS lat, count(lon) AS lon, count(altitude) AS alt,"
@@ -670,12 +685,12 @@ def _aerobic_value(d: DetailInputs) -> tuple[dict | None, str | None]:
 
 
 def _ef_value(d: DetailInputs, aerobic_why: str | None) -> tuple[dict | None, str | None]:
-    """EF and decoupling as in the long-run table (`longruns._per_run_ef`).
+    """EF and decoupling as in the long-run table (`longruns.per_run_ef`).
     The gates are the aerobic value's (road run, `gps_usable`, enough steady
     time), so a run without an aerobic value has no EF, for the same reason."""
     if aerobic_why:
         return None, aerobic_why
-    rows = longruns._per_run_ef(load_records(d.db, [d.activity_id]), d.config).to_dicts()
+    rows = longruns.per_run_ef(load_records(d.db, [d.activity_id]), d.config).to_dicts()
     e = rows[0] if rows else {}
     if not e.get("ef_first") or not e.get("ef_second"):
         return None, "稳态秒不够切成前后两半"
@@ -754,7 +769,7 @@ def _metrics_method(config: Config) -> Method:
     }
 
 
-# --- report (ticket 07) ------------------------------------------------------
+# --- report ------------------------------------------------------------------
 # Not in SECTIONS: the report reads the other sections' output.
 
 
@@ -765,18 +780,13 @@ def _report(d: DetailInputs, detail: dict) -> dict:
 
 
 # --- section registry --------------------------------------------------------
-# One entry per section, in page order. Each ticket adds its own line in its
-# own slot; the comment lines between the slots keep parallel edits apart.
+# One entry per section, in page order.
 
 SECTIONS: dict[str, Section] = {
     "summary": _summary,
-    # series (ticket 03)
     "series": _series,
-    # splits (ticket 04)
     "splits": _splits,
-    # route (ticket 05)
     "route": _route,
     "route_unavailable": _route_unavailable,
-    # metrics (ticket 06)
     "metrics": _metrics,
 }

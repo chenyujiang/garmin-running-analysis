@@ -41,6 +41,10 @@ ATL_DAYS = 7
 SPIKE_RATIO = 1.5
 SERIES_DAYS = 84  # 12 weeks
 
+# Why a run has no TRIMP; detail and report reuse them.
+NO_HR = "没有心率"
+NO_PHYSIOLOGY = "该日期没有生效的生理参数"
+
 
 def heart_rate_reserve(hr: float, hr_rest: float, hr_max: float) -> float:
     """x = (HR − HRrest) / (HRmax − HRrest), clamped to [0, 1]."""
@@ -156,7 +160,7 @@ GROUP BY activity_id, heart_rate
 """
 
 
-def _activity_trimp(
+def daily_trimp(
     db: AnalysisDb, config: Config, today: date
 ) -> tuple[dict[date, float], list[LoadActivity], list[LoadActivity]]:
     """Daily TRIMP up to `today`, activities with missing TRIMP, and
@@ -215,9 +219,9 @@ def _trimp_of(
     has_summary_hr = bool(avg_hr and avg_hr > 0 and duration and duration > 0)
     phys = physiology_on(config, day)
     if not samples and not has_summary_hr:
-        return ActivityTrimp(None, None, "没有心率")
+        return ActivityTrimp(None, None, NO_HR)
     if phys is None:
-        return ActivityTrimp(None, None, "该日期没有生效的生理参数")
+        return ActivityTrimp(None, None, NO_PHYSIOLOGY)
     if samples:
         value = sum(banister_trimp(s / 60, h, phys.hr_rest, phys.hr_max) for h, s in samples)
         return ActivityTrimp(value, "records", "")
@@ -239,7 +243,7 @@ def activity_trimp(db: AnalysisDb, config: Config, activity: dict) -> ActivityTr
     return _trimp_of(activity, day, samples, config)
 
 
-def _series(daily: dict[date, float], today: date) -> list[LoadPoint]:
+def load_series(daily: dict[date, float], today: date) -> list[LoadPoint]:
     """CTL/ATL/TSB for every day from the first activity day to `today`."""
     if not daily:
         return []
@@ -286,9 +290,9 @@ def training_load(today: date | None = None, root: Path | None = None) -> Traini
     with db:
         if "activities" not in db.tables():
             return result
-        daily, missing, from_summary = _activity_trimp(db, config, today)
+        daily, missing, from_summary = daily_trimp(db, config, today)
 
-    points = _series(daily, today)
+    points = load_series(daily, today)
     if not points:
         return result
     window_start = (today - timedelta(days=SERIES_DAYS - 1)).isoformat()

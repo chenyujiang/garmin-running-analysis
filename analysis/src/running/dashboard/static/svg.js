@@ -6,11 +6,40 @@ import { h } from "./dom.js";
 
 const NS = "http://www.w3.org/2000/svg";
 
-function s(tag, attrs = {}, text) {
+/** An SVG element with `attrs` and optional text. */
+export function svgEl(tag, attrs = {}, text) {
   const el = document.createElementNS(NS, tag);
   for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
   if (text != null) el.textContent = text;
   return el;
+}
+
+const s = svgEl;
+
+/** A `<div class="chart">` holding an empty W x H `<svg>`; returns [wrap, svg]. */
+export function frame(W, H, label) {
+  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none", role: "img", "aria-label": label || "" });
+  const wrap = h("div", { class: "chart", style: `aspect-ratio:${W}/${H}` });
+  wrap.append(svg);
+  return [wrap, svg];
+}
+
+/** Horizontal grid lines from x1 to x2 with labels left of x1. */
+export function yGrid(svg, values, sy, x1, x2, fmt, zero = false) {
+  for (const v of values) {
+    const y = sy(v);
+    svg.append(s("line", { x1, x2, y1: y, y2: y, stroke: v === 0 && zero ? "var(--ink-3)" : "var(--rule)", "stroke-width": 1 }));
+    svg.append(s("text", { x: x1 - 8, y: y + 4, "text-anchor": "end" }, fmt(v)));
+  }
+}
+
+/** Tick marks and labels below the baseline `y`; xTicks: [{x, label}]. */
+export function xAxis(svg, xTicks, sx, y) {
+  for (const t of xTicks) {
+    const x = sx(t.x);
+    svg.append(s("line", { x1: x, x2: x, y1: y, y2: y + 4, stroke: "var(--ink-3)" }));
+    svg.append(s("text", { x, y: y + 17, "text-anchor": "middle" }, t.label));
+  }
 }
 
 /** A tick step giving about `n` ticks over [0, span]. */
@@ -42,17 +71,9 @@ export function chart(o) {
   const sy = (v) => m.t + ih - ((v - o.y0) / (o.y1 - o.y0 || 1)) * ih;
   const yFmt = o.yFmt || ((v) => String(Math.round(v)));
 
-  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none", role: "img", "aria-label": o.label || "" });
-  for (const v of o.yTicks || []) {
-    const y = sy(v);
-    svg.append(s("line", { x1: m.l, x2: W - m.r, y1: y, y2: y, stroke: v === 0 && o.zero ? "var(--ink-3)" : "var(--rule)", "stroke-width": 1 }));
-    svg.append(s("text", { x: m.l - 8, y: y + 4, "text-anchor": "end" }, yFmt(v)));
-  }
-  for (const t of o.xTicks || []) {
-    const x = sx(t.x);
-    svg.append(s("line", { x1: x, x2: x, y1: H - m.b, y2: H - m.b + 4, stroke: "var(--ink-3)" }));
-    svg.append(s("text", { x, y: H - m.b + 17, "text-anchor": "middle" }, t.label));
-  }
+  const [wrap, svg] = frame(W, H, o.label);
+  yGrid(svg, o.yTicks || [], sy, m.l, W - m.r, yFmt, o.zero);
+  xAxis(svg, o.xTicks || [], sx, H - m.b);
   for (const sr of o.series) {
     const pts = sr.data.filter((p) => p.v != null);
     if (!pts.length) continue;
@@ -69,8 +90,6 @@ export function chart(o) {
     }
   }
 
-  const wrap = h("div", { class: "chart", style: `aspect-ratio:${W}/${H}` });
-  wrap.append(svg);
   const placed = [];
   for (const n of (o.notes || []).slice(0, 2)) {
     const px = sx(n.x), py = sy(n.v);
