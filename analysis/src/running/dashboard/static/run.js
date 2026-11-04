@@ -108,6 +108,80 @@ function summarySection(v) {
 
 // --- splits: laps and kilometres (ticket 04) ---------------------------------
 
+function splitsSection(v) {
+  const s = v.splits;
+  if (!s) return null;
+  return h("section", { class: "run-splits" },
+    h("div", { class: "sec-head" }, h("h2", {}, "分段"), h("div", { class: "tools" }, how(s.method))),
+    h("h3", {}, "每公里"),
+    s.kilometres == null
+      ? h("p", { class: "small muted" }, s.unavailable.kilometres ?? "—")
+      : splitKmTable(s.kilometres),
+    h("h3", {}, "手表的圈"),
+    s.laps.length ? splitLapTable(s.laps) : h("p", { class: "small muted" }, s.unavailable.laps ?? "—"),
+  );
+}
+
+const splitCell = (x, fmt) => h("td", { class: x == null ? "r muted" : "r" }, x == null ? "—" : fmt(x));
+const splitKm = (m) => `${(m / 1000).toFixed(2)} km`;
+const splitPace = (p) => `${fmtPace(p)} /km`;
+const splitBpm = (b) => `${Math.round(b)}`;
+const splitSpm = (c) => `${Math.round(c)}`;
+const splitMetres = (m) => `${Math.round(m)}`;
+const splitNum = { style: "font-variant-numeric: tabular-nums" };
+
+function splitKmTable(rows) {
+  return h("table", { class: "km-table", ...splitNum },
+    h("thead", {}, h("tr", {},
+      h("th", {}, "公里"),
+      h("th", { class: "r" }, "时长"),
+      h("th", { class: "r", title: "只算跑的秒，走路不计" }, "跑步配速"),
+      h("th", { class: "r", title: "按坡度换算成平路的配速" }, "GAP 配速"),
+      h("th", { class: "r" }, "心率"),
+      h("th", { class: "r", title: "只算跑的秒" }, "步频"),
+      h("th", { class: "r" }, "升 m"),
+      h("th", { class: "r" }, "降 m"),
+    )),
+    h("tbody", {}, ...rows.map((k) => h("tr", {},
+      h("td", {}, k.partial ? `${k.km}（${splitKm(k.distance_m)}）` : `${k.km}`),
+      splitCell(k.duration_s, fmtDur),
+      splitCell(k.running_pace_s_per_km, splitPace),
+      splitCell(k.gap_pace_s_per_km, splitPace),
+      splitCell(k.avg_hr_bpm, splitBpm),
+      splitCell(k.avg_cadence_spm, splitSpm),
+      splitCell(k.elevation_gain_m, splitMetres),
+      splitCell(k.elevation_loss_m, splitMetres),
+    ))),
+  );
+}
+
+function splitLapTable(rows) {
+  return h("table", { class: "lap-table", ...splitNum },
+    h("thead", {}, h("tr", {},
+      h("th", {}, "圈"),
+      h("th", { class: "r" }, "距离"),
+      h("th", { class: "r", title: "计时时长，不含暂停" }, "时长"),
+      h("th", { class: "r", title: "手表记录的圈平均配速" }, "配速"),
+      h("th", { class: "r" }, "心率"),
+      h("th", { class: "r" }, "最大心率"),
+      h("th", { class: "r" }, "步频"),
+      h("th", { class: "r" }, "升 m"),
+      h("th", { class: "r" }, "降 m"),
+    )),
+    h("tbody", {}, ...rows.map((l) => h("tr", {},
+      h("td", {}, `${l.lap}`),
+      splitCell(l.distance_m, splitKm),
+      splitCell(l.duration_s, fmtDur),
+      splitCell(l.pace_s_per_km, splitPace),
+      splitCell(l.avg_hr_bpm, splitBpm),
+      splitCell(l.max_hr_bpm, splitBpm),
+      splitCell(l.avg_cadence_spm, splitSpm),
+      splitCell(l.elevation_gain_m, splitMetres),
+      splitCell(l.elevation_loss_m, splitMetres),
+    ))),
+  );
+}
+
 
 // --- route shape (ticket 05) -------------------------------------------------
 
@@ -127,6 +201,7 @@ const RENDERERS = [
   summarySection,
   // series (ticket 03)
   // splits (ticket 04)
+  splitsSection,
   // route (ticket 05)
   // metrics (ticket 06)
 ];
