@@ -63,12 +63,22 @@ class Load:
 
 
 @dataclass(frozen=True)
+class Zones:
+    """`[zones]` in config.toml: HR zone floors in percent of LTHR (Friel's
+    running zones). Four floors make five zones: Z1 below the first floor,
+    Z5 at or above the last."""
+
+    lthr_pct: tuple[float, ...] = (85.0, 90.0, 95.0, 100.0)
+
+
+@dataclass(frozen=True)
 class Config:
     reference_hr: int = 145
     physiology: tuple[Physiology, ...] = field(default_factory=tuple)
     run_walk: RunWalk = field(default_factory=RunWalk)
     aerobic: Aerobic = field(default_factory=Aerobic)
     load: Load = field(default_factory=Load)
+    zones: Zones = field(default_factory=Zones)
 
 
 def data_dir() -> Path:
@@ -119,6 +129,7 @@ def load_config(root: Path | None = None) -> Config:
                 raw.get("load", {}).get("max_sample_gap_s", Load.max_sample_gap_s)
             )
         )
+        zones = _zones(raw.get("zones", {}))
     except (KeyError, TypeError, ValueError) as err:
         raise ConfigError(f"配置文件 {path} 缺少或写错了字段：{err}") from err
     return Config(
@@ -127,6 +138,7 @@ def load_config(root: Path | None = None) -> Config:
         run_walk=run_walk,
         aerobic=aerobic,
         load=load,
+        zones=zones,
     )
 
 
@@ -148,3 +160,10 @@ def _aerobic(raw: dict) -> Aerobic:
             for name in Aerobic.__dataclass_fields__
         }
     )
+
+
+def _zones(raw: dict) -> Zones:
+    pct = tuple(float(v) for v in raw.get("lthr_pct", Zones.lthr_pct))
+    if len(pct) != 4 or any(b <= a for a, b in zip(pct, pct[1:], strict=False)):
+        raise ValueError("[zones] lthr_pct 要写 4 个递增的百分比，例如 [85, 90, 95, 100]")
+    return Zones(lthr_pct=pct)

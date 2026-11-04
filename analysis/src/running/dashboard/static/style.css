@@ -192,3 +192,14 @@ a.brand { text-decoration: none; color: var(--ink); }
 .route-start { fill: var(--paper); stroke: var(--ink); stroke-width: 2; }
 .route-finish { fill: var(--ink); }
 .route-scale { fill: none; stroke: var(--ink-2); stroke-width: 1.5; }
+
+/* run-detail ticket 06: run metrics, HR zones as horizontal bars */
+.run-metrics .stat-line { gap: 28px; }
+.run-metrics .num.high { color: var(--red); }
+.run-metrics .zones { max-width: 640px; }
+.run-metrics .zones p { margin: 8px 0 6px; }
+.run-metrics .zone { display: grid; grid-template-columns: 28px 84px 1fr 64px 40px; gap: 10px; align-items: center; height: 24px; }
+.run-metrics .zone .z { font-weight: 600; }
+.run-metrics .zone .track { height: 10px; background: var(--paper-2); }
+.run-metrics .zone .track i { display: block; height: 100%; background: var(--ink-2); }
+.run-metrics .zone .num { text-align: right; }

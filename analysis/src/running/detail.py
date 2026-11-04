@@ -19,12 +19,14 @@ import heapq
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 from functools import cached_property
 from pathlib import Path
 from typing import TypedDict
 
 import polars as pl
 
+from running import aerobic, load, longruns
 from running.aerobic import air_temperature, load_records
 from running.config import Config
 from running.db import AnalysisDb, open_analysis_db
@@ -578,6 +580,175 @@ def _route_method() -> Method:
 
 
 # --- run metrics: TRIMP, HR zones, aerobic value, EF (ticket 06) -------------
+# Friel's running LTHR zones: TrainingPeaks, "Joe Friel's Quick Guide to
+# Setting Zones" (2012, updated 2026): Z1 < 85 %, Z2 85-89 %, Z3 90-94 %,
+# Z4 95-99 %, Z5a-c >= 100 % of LTHR. Z5a/b/c are one zone here.
+
+
+def _hr_zones(d: DetailInputs, phys: load.Physiology | None) -> tuple[dict | None, str | None]:
+    """Time in each zone over the seconds with a heart rate (pauses and the
+    first sample weigh nothing), or None and the reason."""
+    hr = d.records.filter(pl.col("heart_rate").is_not_null() & (pl.col("dt_s") > 0))
+    if hr.is_empty():
+        return None, "没有逐秒心率" if d.activity["avg_hr_bpm"] else "没有心率"
+    if phys is None:
+        return None, "该日期没有生效的生理参数"
+    floors = [phys.lthr * p / 100.0 for p in d.config.zones.lthr_pct]
+    bounds = [None, *floors]
+    total = float(hr["dt_s"].sum())
+    zones = []
+    for k, low in enumerate(bounds):
+        high = bounds[k + 1] if k + 1 < len(bounds) else None
+        in_zone = pl.lit(True)
+        if low is not None:
+            in_zone &= pl.col("heart_rate") >= low
+        if high is not None:
+            in_zone &= pl.col("heart_rate") < high
+        seconds = float(hr.filter(in_zone)["dt_s"].sum())
+        zones.append(
+            {
+                "zone": k + 1,
+                "low_bpm": low,
+                "high_bpm": high,
+                "seconds": seconds,
+                "share": seconds / total,
+            }
+        )
+    return {
+        "lthr_bpm": phys.lthr,
+        "physiology_effective_from": phys.effective_from.isoformat(),
+        "lthr_pct": list(d.config.zones.lthr_pct),
+        "total_s": total,
+        "zones": zones,
+    }, None
+
+
+def _aerobic_value(d: DetailInputs) -> tuple[dict | None, str | None]:
+    """This run's point on the aerobic trend (`aerobic.aerobic_runs`), or None
+    and why the run does not count."""
+    a, ae = d.activity, d.config.aerobic
+    if not d.is_running:
+        return None, RUNNING_ONLY
+    if a["activity_type"] not in aerobic.AEROBIC_TYPES:
+        return None, "不是户外路跑（跑步机和越野不计入）"
+    start = a["start_time_local"]
+    # "~" sorts after every digit, so [start, start~) holds only this start time.
+    runs = aerobic.aerobic_runs(d.db, d.config, since_local=start, until_local=start + "~")
+    row = runs.filter(pl.col("activity_id") == d.activity_id).to_dicts()
+    if row and row[0]["valid"]:
+        r = row[0]
+        return {
+            "speed_mps": r["speed_mps"],
+            "pace_s_per_km": 1000.0 / r["speed_mps"],
+            "steady_s": r["steady_s"],
+            "mean_hr": r["mean_hr"],
+            "reference_hr": ae.reference_hr,
+        }, None
+    if d.records.is_empty():
+        return None, "没有逐秒记录"
+    if d.records["heart_rate"].is_null().all():
+        return None, "没有心率"
+    if d.activity_id not in aerobic.gps_usable(d.db, [d.activity_id], ae):
+        c = d.db.query(
+            "SELECT count(lat) AS lat, count(lon) AS lon, count(altitude) AS alt,"
+            " count(*) FILTER (WHERE speed > ?) AS fast FROM a.records WHERE activity_id = ?",
+            [ae.max_speed_mps, d.activity_id],
+        ).to_dicts()[0]
+        if not c["lat"] or not c["lon"]:
+            return None, "逐秒记录没有 GPS 位置（像跑步机）"
+        if not c["alt"]:
+            return None, "逐秒记录没有海拔"
+        return None, (
+            f"GPS 漂移：速度超过 {ae.max_speed_mps:g} m/s 的秒有 {c['fast']} 秒"
+            f"（上限 {ae.max_fast_s} 秒）"
+        )
+    steady_s = row[0]["steady_s"] if row else 0.0
+    return None, (f"稳态时间 {steady_s / 60:.0f} 分钟，不足 {ae.min_steady_s // 60} 分钟")
+
+
+def _ef_value(d: DetailInputs, aerobic_why: str | None) -> tuple[dict | None, str | None]:
+    """EF and decoupling as in the long-run table (`longruns._per_run_ef`).
+    The gates are the aerobic value's (road run, `gps_usable`, enough steady
+    time), so a run without an aerobic value has no EF, for the same reason."""
+    if aerobic_why:
+        return None, aerobic_why
+    rows = longruns._per_run_ef(load_records(d.db, [d.activity_id]), d.config).to_dicts()
+    e = rows[0] if rows else {}
+    if not e.get("ef_first") or not e.get("ef_second"):
+        return None, "稳态秒不够切成前后两半"
+    long_enough = d.activity["duration_s"] >= longruns.MIN_DURATION_S
+    dec = (e["ef_first"] - e["ef_second"]) / e["ef_first"] * 100.0 if long_enough else None
+    return {
+        "ef": e["ef"],
+        "ef_first": e["ef_first"],
+        "ef_second": e["ef_second"],
+        "steady_s": e["steady_s"],
+        "decoupling_pct": dec,
+        "decoupling_high": dec is not None and dec > longruns.DECOUPLING_LIMIT_PCT,
+    }, None
+
+
+def _metrics(d: DetailInputs) -> dict:
+    unavailable: dict[str, str] = {}
+    aerobic_value, why = _aerobic_value(d)
+    if why:
+        unavailable["aerobic"] = why
+    ef, why = _ef_value(d, why)
+    if why:
+        unavailable["ef"] = why
+    if ef is None or ef["decoupling_pct"] is None:
+        unavailable["decoupling"] = why or (
+            f"不足 {longruns.MIN_DURATION_S // 60} 分钟，只给 EF，不算 decoupling"
+        )
+    phys = load.physiology_on(d.config, date.fromisoformat(d.activity["start_time_local"][:10]))
+    zones, why = _hr_zones(d, phys)
+    if why:
+        unavailable["zones"] = why
+    trimp = load.activity_trimp(d.db, d.config, d.activity)
+    if trimp.value is None:
+        unavailable["trimp"] = trimp.reason
+    return {
+        "trimp": trimp.value,
+        "trimp_source": trimp.source,
+        "zones": zones,
+        "aerobic": aerobic_value,
+        "ef": ef,
+        "unavailable": unavailable,
+        "method": _metrics_method(d.config),
+    }
+
+
+def _metrics_method(config: Config) -> Method:
+    pct, a = config.zones.lthr_pct, config.aerobic
+    return {
+        "name": "本次指标",
+        "description": (
+            "TRIMP 和训练负荷页同一算法：Banister 逐秒累加，HRmax、HRrest 取活动日期"
+            f"当时生效的生理参数，采样间隔最多按 {config.load.max_sample_gap_s} 秒计；"
+            "没有逐秒心率时按摘要的平均心率和时长估算。"
+            "心率区间按 Friel 的跑步 LTHR 区间分 5 区："
+            f"Z1 < {pct[0]:g}%，Z2 {pct[0]:g}–{pct[1]:g}%，Z3 {pct[1]:g}–{pct[2]:g}%，"
+            f"Z4 {pct[2]:g}–{pct[3]:g}%，Z5 ≥ {pct[3]:g}%（Friel 的 5a–5c 合为一区），"
+            "每区含下限、不含上限。LTHR 取活动日期当时生效的那组生理参数。"
+            "只统计有心率的秒，暂停不计。"
+            "有氧能力值和有氧能力页同一算法：稳态秒的 GAP 速度按心率回归到 "
+            f"{a.reference_hr} bpm；{aerobic.exclusions_note(a)}"
+            "EF 和 decoupling 和长距离表同一算法：EF = 稳态秒平均 GAP 速度（m/min）÷ "
+            "平均心率；decoupling 把稳态秒按累计时间对半分，(EF₁ − EF₂) ÷ EF₁ × 100%，"
+            f"只给 {longruns.MIN_DURATION_S // 60} 分钟及以上的活动，"
+            f"超过 {longruns.DECOUPLING_LIMIT_PCT:g}% 标红。"
+            "不计入有氧能力的活动也不给 EF。"
+        ),
+        "params": {
+            "lthr_pct": list(pct),
+            "max_sample_gap_s": config.load.max_sample_gap_s,
+            "reference_hr": a.reference_hr,
+            "min_steady_s": a.min_steady_s,
+            "min_duration_s": longruns.MIN_DURATION_S,
+            "decoupling_limit_pct": longruns.DECOUPLING_LIMIT_PCT,
+            "ef_unit": "m/min per bpm",
+        },
+    }
 
 
 # --- section registry --------------------------------------------------------
@@ -594,4 +765,5 @@ SECTIONS: dict[str, Section] = {
     "route": _route,
     "route_unavailable": _route_unavailable,
     # metrics (ticket 06)
+    "metrics": _metrics,
 }
