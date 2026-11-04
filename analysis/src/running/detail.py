@@ -168,6 +168,153 @@ def _summary_method(config: Config) -> Method:
 
 
 # --- per-second series (ticket 03) -------------------------------------------
+# Time axis: seconds from the first sample, wall clock (pauses keep their
+# length on the axis and are marked). The bucket width is the smallest whole
+# number of seconds that keeps the total at or under MAX_POINTS once every
+# pause-free stretch is bucketed on its own.
+
+MAX_POINTS = 1500
+# A bucket slower than this has no pace: standing still would stretch the axis.
+MIN_PACE_SPEED_MPS = 0.5
+NO_RECORDS = "没有逐秒记录"
+
+# Response key -> (column in the bucket frame, reason when the column is empty).
+_SERIES_COLUMNS = {
+    "hr_bpm": ("heart_rate", "没有心率记录"),
+    "pace_s_per_km": ("speed", "没有速度记录"),
+    "gap_pace_s_per_km": ("gap_mps", "没有速度记录"),
+    "altitude_m": ("altitude", "没有海拔记录"),
+    "cadence_spm": ("spm", "没有步频记录"),
+}
+_RUNNING_SERIES = ("pace_s_per_km", "gap_pace_s_per_km", "cadence_spm")
+
+
+def _bucket_width(spans: list[float], max_points: int) -> int:
+    """Smallest whole seconds `w` with sum(floor(span / w) + 1) <= max_points."""
+    w = max(1, int(sum(spans) // max_points))
+    while sum(int(span // w) + 1 for span in spans) > max_points and w < (max(spans) + 1):
+        w += 1
+    return w
+
+
+def _flag_intervals(df: pl.DataFrame, flag: str) -> list[list[float]]:
+    """`[start_s, end_s]` for each run of consecutive `flag` samples. A sample
+    owns the `dt_s` seconds ending at it; a pause always ends a run."""
+    key = ((pl.col(flag) != pl.col(flag).shift(1)).fill_null(True) | pl.col("_pause")).cum_sum()
+    runs = (
+        df.with_columns(key.alias("_run"))
+        .filter(pl.col(flag))
+        .group_by("_run")
+        .agg((pl.col("t") - pl.col("dt_s")).first().alias("a"), pl.col("t").last().alias("b"))
+        .sort("a")
+    )
+    return [[a, b] for a, b in runs.select("a", "b").iter_rows()]
+
+
+def _pace(speed: pl.Expr) -> pl.Expr:
+    return pl.when(speed >= MIN_PACE_SPEED_MPS).then(1000.0 / speed).otherwise(None)
+
+
+def _series(d: DetailInputs) -> dict:
+    # Imported here so the shared import block stays untouched by this ticket.
+    from running.aerobic import steady_state
+
+    rw = d.config.run_walk
+    unavailable: dict[str, str] = {}
+    out: dict = {"duration_s": 0.0, "bucket_s": None, "t_s": []}
+    out.update({key: [] for key in _SERIES_COLUMNS})
+    intervals: dict = {"pause": [], "walking": [], "steady": []}
+
+    recs = d.records
+    if recs.is_empty():
+        unavailable.update({key: NO_RECORDS for key in (*_SERIES_COLUMNS, "walking", "steady")})
+    else:
+        df = steady_state(recs, d.config.aerobic, rw)
+        t0 = df["ts"].min()
+        df = df.with_columns(((pl.col("ts") - t0).dt.total_seconds(fractional=True)).alias("t"))
+        df = df.with_columns((pl.col("t").diff().fill_null(0.0) > rw.pause_gap_s).alias("_pause"))
+        df = df.with_columns(pl.col("_pause").cum_sum().alias("_seg"))
+        df = df.with_columns((pl.col("t") - pl.col("t").min().over("_seg")).alias("_in_seg"))
+        spans = df.group_by("_seg").agg(pl.col("_in_seg").max())["_in_seg"].to_list()
+        w = _bucket_width(spans, MAX_POINTS)
+        buckets = (
+            df.with_columns((pl.col("_in_seg") // w).alias("_bucket"))
+            .group_by("_seg", "_bucket")
+            .agg(pl.col("t", "heart_rate", "speed", "gap_mps", "altitude", "spm").mean())
+            .sort("t")
+            .with_columns(
+                _pace(pl.col("speed")).alias("speed"), _pace(pl.col("gap_mps")).alias("gap_mps")
+            )
+        )
+        out["duration_s"] = float(df["t"].max())
+        out["bucket_s"] = w
+        out["t_s"] = buckets["t"].round(1).to_list()
+        for key, (col, reason) in _SERIES_COLUMNS.items():
+            if df[col].is_null().all():
+                unavailable[key] = reason
+            else:
+                out[key] = buckets[col].round(1).to_list()
+
+        paused = df.with_columns(pl.col("t").shift(1).alias("_prev")).filter(pl.col("_pause"))
+        intervals["pause"] = [[a, b] for a, b in paused.select("_prev", "t").iter_rows()]
+        if df["spm"].is_null().all():
+            unavailable["walking"] = "没有步频记录"
+        else:
+            intervals["walking"] = _flag_intervals(
+                df.with_columns((~pl.col("running")).alias("_walking")), "_walking"
+            )
+        if df["heart_rate"].is_null().all():
+            unavailable["steady"] = "没有心率记录"
+        else:
+            intervals["steady"] = _flag_intervals(df, "steady")
+
+    if not d.is_running:
+        for key in (*_RUNNING_SERIES, "walking", "steady"):
+            out.pop(key, None)
+            intervals.pop(key, None)
+            unavailable[key] = RUNNING_ONLY
+        out.update({key: None for key in _RUNNING_SERIES})
+        intervals.update(walking=None, steady=None)
+
+    return {
+        **out,
+        "intervals": intervals,
+        "unavailable": unavailable,
+        "method": _series_method(d.config),
+    }
+
+
+def _series_method(config: Config) -> Method:
+    a, rw = config.aerobic, config.run_walk
+    return {
+        "name": "逐秒曲线",
+        "description": (
+            f"横轴是从第一个采样起的秒数，暂停照实占位。降采样到最多 {MAX_POINTS} 个点："
+            "按时间等分成整秒宽的桶，桶内取算术平均；每段不含暂停的时间各自分桶，"
+            f"桶不跨暂停（采样间隔超过 {rw.pause_gap_s} 秒算暂停）。"
+            "配速 = 1000 / 桶内平均速度，速度低于 "
+            f"{MIN_PACE_SPEED_MPS:g} m/s 的桶不画配速。"
+            f"GAP 配速用 Minetti 2002 的坡度能耗把 {a.smoothing_s} 秒平滑速度换成平地等效速度，"
+            f"坡度取最近 {a.grade_window_s} 秒的海拔差 / 距离，限幅 ±{a.max_grade:g}；"
+            "没有海拔时坡度按 0，和长距离表一致。"
+            "走路段是跑走分类判为走的秒；稳态段和有氧能力、长距离表的稳态口径相同："
+            f"去掉开头 {a.warmup_s // 60} 分钟，"
+            f"平滑心率在 {a.reference_hr} ± {a.hr_band_bpm:g} bpm 内，"
+            f"{a.speed_window_s} 秒内速度变化 ≤ {a.max_speed_change:.0%}。"
+            "非跑步类活动只给心率和海拔。"
+        ),
+        "params": {
+            "max_points": MAX_POINTS,
+            "min_pace_speed_mps": MIN_PACE_SPEED_MPS,
+            "pause_gap_s": rw.pause_gap_s,
+            "smoothing_s": a.smoothing_s,
+            "grade_window_s": a.grade_window_s,
+            "max_grade": a.max_grade,
+            "warmup_s": a.warmup_s,
+            "reference_hr": a.reference_hr,
+            "hr_band_bpm": a.hr_band_bpm,
+        },
+    }
 
 
 # --- splits: laps and kilometres (ticket 04) ---------------------------------
@@ -186,6 +333,7 @@ def _summary_method(config: Config) -> Method:
 SECTIONS: dict[str, Section] = {
     "summary": _summary,
     # series (ticket 03)
+    "series": _series,
     # splits (ticket 04)
     # route (ticket 05)
     # metrics (ticket 06)

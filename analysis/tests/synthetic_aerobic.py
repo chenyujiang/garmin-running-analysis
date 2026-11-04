@@ -110,3 +110,60 @@ def utc_hours(start_utc: str, temps: list[float | None]) -> dict[str, float | No
     return {
         (t0 + timedelta(hours=k)).strftime("%Y-%m-%dT%H:%M:%SZ"): c for k, c in enumerate(temps)
     }
+
+
+def add_paused_hr_run(
+    conn: sqlite3.Connection,
+    activity_id: int,
+    start_local: str,
+    parts: list[Stretch | int],
+    activity_type: str = "running",
+) -> str:
+    """Like `add_hr_run`, but a bare int in `parts` is a watch pause of that
+    many seconds: no samples, then one resume sample with the next stretch's
+    values at the same distance. Garmin duration counts the stretches only.
+    Returns `start_time_utc`."""
+    stretches = [p for p in parts if isinstance(p, Stretch)]
+    start_utc = insert_activity(
+        conn,
+        activity_id,
+        start_local,
+        activity_type,
+        distance_m=sum(s.seconds * s.speed for s in stretches),
+        duration_s=float(sum(s.seconds for s in stretches)),
+    )
+    t0 = datetime.strptime(start_utc, "%Y-%m-%dT%H:%M:%SZ")
+    first = stretches[0]
+    rows = [(0, first.hr, first.speed, first.cadence, 100.0, 0.0)]
+    t, dist, alt = 0, 0.0, 100.0
+    for i, p in enumerate(parts):
+        if isinstance(p, int):
+            nxt = next(s for s in parts[i + 1 :] if isinstance(s, Stretch))
+            t += p
+            rows.append((t, nxt.hr, nxt.speed, nxt.cadence, alt, dist))
+            continue
+        for _ in range(p.seconds):
+            t += 1
+            dist += p.speed
+            alt += p.speed * p.grade
+            rows.append((t, p.hr, p.speed, p.cadence, alt, dist))
+    conn.executemany(
+        "INSERT INTO records (activity_id, timestamp, heart_rate, speed, cadence, altitude,"
+        " distance, lat, lon) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (
+                activity_id,
+                (t0 + timedelta(seconds=sec)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                hr,
+                v,
+                c,
+                a,
+                d,
+                POSITION[0],
+                POSITION[1],
+            )
+            for sec, hr, v, c, a, d in rows
+        ],
+    )
+    conn.commit()
+    return start_utc
