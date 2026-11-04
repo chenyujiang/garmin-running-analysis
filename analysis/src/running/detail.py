@@ -15,6 +15,8 @@ Running-only fields of a non-running activity are null; the section's
 `unavailable` dict maps each such field to its reason ("仅跑步类活动").
 """
 
+import heapq
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cached_property
@@ -174,6 +176,127 @@ def _summary_method(config: Config) -> Method:
 
 
 # --- route shape (ticket 05) -------------------------------------------------
+# Privacy: only the normalised shape and a scale leave this block. No latitude,
+# longitude or centre point is returned, logged or put in `method`.
+
+ROUTE_MAX_POINTS = 500
+ROUTE_TOLERANCE_M = 0.5  # points this close to the chord add nothing visible
+EARTH_RADIUS_M = 6_371_008.8  # mean radius (IUGG)
+NO_GPS = "没有 GPS 记录（跑步机或室内活动）"
+NO_EXTENT = "GPS 定位点不足，画不出形状"
+
+
+def _route_fixes(d: DetailInputs) -> list[tuple[float, float]]:
+    """(lat, lon) of the seconds with a GPS fix, in time order. Stays in this block."""
+    fixes = d.db.query(
+        "SELECT lat, lon FROM a.records WHERE activity_id = ?"
+        " AND lat IS NOT NULL AND lon IS NOT NULL ORDER BY timestamp",
+        [d.activity_id],
+    )
+    return list(zip(fixes["lat"], fixes["lon"], strict=True))
+
+
+def _route(d: DetailInputs) -> dict | None:
+    """The normalised route shape, or None (see `_route_unavailable` for why)."""
+    points = _project(_route_fixes(d))
+    if points is None:
+        return None
+    kept = _simplify(points, ROUTE_MAX_POINTS, ROUTE_TOLERANCE_M)
+    xs = [points[i][0] for i in kept]
+    ys = [points[i][1] for i in kept]
+    x0, y_north = min(xs), max(ys)
+    span = max(max(xs) - x0, y_north - min(ys))
+    return {
+        "x": [(x - x0) / span for x in xs],
+        "y": [(y_north - y) / span for y in ys],  # screen order: y grows southwards
+        "start_index": 0,
+        "finish_index": len(kept) - 1,
+        "metres_per_unit": span,
+        "method": _route_method(),
+    }
+
+
+def _route_unavailable(d: DetailInputs) -> str | None:
+    """Why `route` is null, or None when there is a route."""
+    fixes = _route_fixes(d)
+    if not fixes:
+        return NO_GPS
+    return NO_EXTENT if _project(fixes) is None else None
+
+
+def _project(fixes: list[tuple[float, float]]) -> list[tuple[float, float]] | None:
+    """Equirectangular projection to metres east and north of the bounding-box
+    centre; None when the fixes don't span any distance."""
+    if len(fixes) < 2:
+        return None
+    lats = [lat for lat, _ in fixes]
+    lons = [lon for _, lon in fixes]
+    lat0 = (min(lats) + max(lats)) / 2
+    lon0 = (min(lons) + max(lons)) / 2
+    if max(lons) == min(lons) and max(lats) == min(lats):
+        return None
+    k = math.radians(1) * EARTH_RADIUS_M
+    kx = k * math.cos(math.radians(lat0))
+    return [((lon - lon0) * kx, (lat - lat0) * k) for lat, lon in fixes]
+
+
+def _simplify(points: list[tuple[float, float]], max_points: int, tolerance_m: float) -> list[int]:
+    """Douglas–Peucker, capped at `max_points`: start from the two ends and
+    keep splitting the segment whose farthest point is farthest from its chord
+    until `max_points` are kept or every remaining point is within
+    `tolerance_m` of its chord.
+    Returns the kept indices in order."""
+    last = len(points) - 1
+    kept = {0, last}
+    heap: list[tuple[float, int, int, int]] = []
+
+    def push(i: int, j: int) -> None:
+        if j - i < 2:
+            return
+        k, dist = max(
+            ((m, _chord_distance(points[m], points[i], points[j])) for m in range(i + 1, j)),
+            key=lambda t: t[1],
+        )
+        if dist > tolerance_m:
+            heapq.heappush(heap, (-dist, k, i, j))
+
+    push(0, last)
+    while heap and len(kept) < max_points:
+        _, k, i, j = heapq.heappop(heap)
+        kept.add(k)
+        push(i, k)
+        push(k, j)
+    return sorted(kept)
+
+
+def _chord_distance(p: tuple[float, float], a: tuple[float, float], b: tuple[float, float]):
+    """Distance from `p` to the segment `a`–`b` (to `a` when they coincide, as
+    at the ends of a loop)."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length2 = dx * dx + dy * dy
+    if length2 == 0:
+        return math.hypot(p[0] - a[0], p[1] - a[1])
+    t = max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length2))
+    return math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy)
+
+
+def _route_method() -> Method:
+    return {
+        "name": "路线形状",
+        "description": (
+            "只用有 GPS 定位的秒。按等距矩形投影换成以路线中心为原点的米制平面"
+            "（东西方向乘以中心纬度的余弦），再整体缩放到 0–1，长边占满，长宽比不变；"
+            f"用 Douglas–Peucker 简化到最多 {ROUTE_MAX_POINTS} 个点，"
+            f"离弦不到 {ROUTE_TOLERANCE_M:g} 米的点不保留，起点和终点保留。"
+            "比例尺是 0–1 的 1 个单位对应的米数。接口不返回任何经纬度或中心点，"
+            "也不加载在线底图，路线位置不离开本机。"
+        ),
+        "params": {
+            "max_points": ROUTE_MAX_POINTS,
+            "tolerance_m": ROUTE_TOLERANCE_M,
+            "projection": "equirectangular",
+        },
+    }
 
 
 # --- run metrics: TRIMP, HR zones, aerobic value, EF (ticket 06) -------------
@@ -188,5 +311,7 @@ SECTIONS: dict[str, Section] = {
     # series (ticket 03)
     # splits (ticket 04)
     # route (ticket 05)
+    "route": _route,
+    "route_unavailable": _route_unavailable,
     # metrics (ticket 06)
 }

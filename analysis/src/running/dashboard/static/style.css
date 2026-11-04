@@ -184,3 +184,11 @@ a.brand { text-decoration: none; color: var(--ink); }
 .run-summary .num { font-variant-numeric: tabular-nums; }
 .a-lower td a { text-decoration: none; }
 .a-lower td a:hover { text-decoration: underline; }
+
+/* run-detail ticket 05: route shape (SVG only, no map tiles) */
+.route-box svg { display: block; max-width: 100%; height: auto; }
+.route-box text { font-size: 12px; fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+.route-line { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.route-start { fill: var(--paper); stroke: var(--ink); stroke-width: 2; }
+.route-finish { fill: var(--ink); }
+.route-scale { fill: none; stroke: var(--ink-2); stroke-width: 1.5; }
