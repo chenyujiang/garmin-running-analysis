@@ -143,25 +143,41 @@ def test_trail_and_treadmill_long_runs_are_listed_without_ef(analysis_db, client
     assert runs[3]["ef"] == pytest.approx(180 / 145, abs=1e-6)
 
 
-def test_heart_rate_outside_the_reference_band_is_not_steady(analysis_db, client_factory):
-    # Reference HR 145 +- 15 bpm: a whole run at 162 bpm has no steady seconds
-    # (162 is 8 bpm from the 170 spm cadence, so cadence lock is not the reason).
+def test_heart_rate_outside_the_reference_band_still_counts(analysis_db, client_factory):
+    # EF and decoupling drop the aerobic metric's reference HR band: a whole
+    # run at 162 bpm (outside 145 +- 15, and 8 bpm from the 170 spm cadence, so
+    # no cadence lock) is steady from the end of the warm-up.
     add_hr_run(analysis_db, 1, "2026-10-22T07:00:00", [steady(3600, hr=162)])
-    # 159 bpm is still inside the band.
-    add_hr_run(analysis_db, 2, "2026-10-23T07:00:00", [steady(3600, hr=159)])
 
     runs = by_id(get_long_runs(client_factory))
 
-    assert runs[1]["ef"] is None
-    assert runs[1]["steady_s"] == 0
-    assert runs[2]["ef"] == pytest.approx(180 / 159, abs=1e-6)
+    assert runs[1]["ef"] == pytest.approx(180 / 162, abs=1e-6)
+    assert runs[1]["steady_s"] == pytest.approx(3000)
 
 
-def test_the_method_note_names_the_heart_rate_band(analysis_db, client_factory):
-    params = get_long_runs(client_factory)["method"]["params"]
+def test_a_drift_out_of_the_band_shows_in_the_decoupling(analysis_db, client_factory):
+    # Same pace, HR 145 then 165 bpm: with the band the second half would be
+    # cut away; without it EF_2 = 180/165 and decoupling = 1 - 145/165.
+    add_hr_run(
+        analysis_db,
+        1,
+        "2026-10-22T07:00:00",
+        [steady(2400, hr=145.0), steady(2400, hr=165.0)],
+    )
 
-    assert params["hr_band"] == {"reference_hr": 145, "hr_band_bpm": 15.0}
-    assert params["activity_types"] == ["running", "street_running"]
+    run = by_id(get_long_runs(client_factory))[1]
+
+    assert run["ef_second"] == pytest.approx(180 / 165, rel=1e-2)
+    assert run["decoupling_pct"] > 5
+    assert run["decoupling_high"] is True
+
+
+def test_the_method_note_has_no_heart_rate_band(analysis_db, client_factory):
+    method = get_long_runs(client_factory)["method"]
+
+    assert "hr_band" not in method["params"]
+    assert method["params"]["activity_types"] == ["running", "street_running"]
+    assert "不限心率" in method["description"]
 
 
 def test_a_long_run_without_heart_rate_has_no_ef(analysis_db, client_factory):

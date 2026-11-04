@@ -6,8 +6,8 @@
 // Empty weeks stay empty: no dot, and both the line and the bars break there.
 
 import { h } from "./dom.js";
+import { svgEl as s } from "./svg.js";
 
-const NS = "http://www.w3.org/2000/svg";
 const RANGES = [["6m", "半年"], ["1y", "1 年"], ["2y", "2 年"], ["all", "全部"]];
 const SINCE = { "6m": "半年前", "1y": "一年前", "2y": "两年前", all: "最早" };
 
@@ -17,13 +17,6 @@ const W = 1256;
 const M = { l: 50, r: 230 };
 const MAIN = { h: 330, t: 14, b: 26 };
 const TEMP = { h: 74, t: 6, b: 24 };
-
-function s(tag, attrs = {}, text) {
-  const el = document.createElementNS(NS, tag);
-  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
-  if (text != null) el.textContent = text;
-  return el;
-}
 
 export const fmtPace = (sec) => {
   if (sec == null) return "—";

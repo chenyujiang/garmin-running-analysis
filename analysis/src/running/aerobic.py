@@ -258,10 +258,15 @@ def _interpolate(mid: pl.DataFrame, hourly: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def steady_state(records: pl.DataFrame, aerobic: Aerobic, run_walk: RunWalk) -> pl.DataFrame:
+def steady_state(
+    records: pl.DataFrame, aerobic: Aerobic, run_walk: RunWalk, hr_band: bool = True
+) -> pl.DataFrame:
     """Classify each second and add `hr_smooth`, `speed_smooth`, `grade`,
     `gap_mps` and `steady` (bool), plus `classify_records`' `spm`, `dt_s`,
-    `dd_m`, `running`. `records` as returned by `load_records`."""
+    `dd_m`, `running`. `records` as returned by `load_records`.
+
+    `hr_band=False` drops the `reference_hr` +- `hr_band_bpm` condition (EF and
+    decoupling); every other steady-state condition stays."""
     by = "activity_id"
     smooth = f"{aerobic.smoothing_s}s"
     speed_window = f"{aerobic.speed_window_s}s"
@@ -333,11 +338,12 @@ def steady_state(records: pl.DataFrame, aerobic: Aerobic, run_walk: RunWalk) -> 
         # after the warm-up.
         & (pl.col("_moving_s") - pl.col("dt_s") >= aerobic.warmup_s)
         & (pl.col("dt_s") > 0)
-        & ((pl.col("hr_smooth") - aerobic.reference_hr).abs() <= aerobic.hr_band_bpm)
         & (pl.col("_vmean") > 0)
         & ((pl.col("_vmax") - pl.col("_vmin")) / pl.col("_vmean") <= aerobic.max_speed_change)
         & ((pl.col("heart_rate") - pl.col("spm")).abs() >= aerobic.min_hr_spm_gap)
     )
+    if hr_band:
+        steady &= (pl.col("hr_smooth") - aerobic.reference_hr).abs() <= aerobic.hr_band_bpm
     df = df.with_columns(steady.fill_null(False).alias("steady"))
     return df.drop(
         "_alt", "_moving_s", "_vmax", "_vmin", "_vmean", "_ts_q", "_ts_b", "_alt_b", "_dist_b"

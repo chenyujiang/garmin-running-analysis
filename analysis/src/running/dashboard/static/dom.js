@@ -11,7 +11,21 @@ export function h(tag, attrs = {}, ...children) {
   return el;
 }
 
-const pad = (n) => String(n).padStart(2, "0");
+export const pad = (n) => String(n).padStart(2, "0");
+
+/** Seconds as m:ss, or h:mm:ss from an hour up. */
+export function fmtDur(s) {
+  const t = Math.round(s);
+  const hh = Math.floor(t / 3600);
+  const mm = Math.floor((t % 3600) / 60);
+  return hh ? `${hh}:${pad(mm)}:${pad(t % 60)}` : `${mm}:${pad(t % 60)}`;
+}
+
+/** Seconds per km as m:ss (no unit). */
+export function fmtPace(s) {
+  const t = Math.round(s);
+  return `${Math.floor(t / 60)}:${pad(t % 60)}`;
+}
 
 /** UTC ISO timestamp ("2026-10-28T08:00:00Z") shown in the browser's local time. */
 export function fmtDateTime(isoUtc) {

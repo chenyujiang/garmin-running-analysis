@@ -70,7 +70,7 @@ function table(runs) {
 function row(r) {
   const dec = r.decoupling_pct;
   return h("tr", {},
-    h("td", {}, fmtDate(r.start_time_local)),
+    h("td", {}, h("a", { href: `#/run/${r.activity_id}` }, fmtDate(r.start_time_local))),
     h("td", { class: "r" }, r.distance_m == null ? "—" : `${(r.distance_m / 1000).toFixed(1)} km`),
     h("td", { class: "r" }, fmtDur(r.duration_s)),
     h("td", { class: "r" }, r.ef == null ? "—" : r.ef.toFixed(2)),

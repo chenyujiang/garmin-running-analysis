@@ -43,6 +43,8 @@ def insert_activity(
     distance_m: float | None = None,
     duration_s: float | None = None,
     avg_speed_mps: float | None = None,
+    activity_name: str | None = None,
+    avg_hr_bpm: float | None = None,
 ) -> str:
     """Insert one `activities` row. `start_local` is wall clock ("2026-10-26T07:00:00").
     Returns `start_time_utc` (ISO with Z)."""
@@ -52,7 +54,8 @@ def insert_activity(
         avg_speed_mps = distance_m / duration_s
     conn.execute(
         "INSERT INTO activities (activity_id, activity_type, start_time_utc, start_time_local,"
-        " time_zone, distance_m, duration_s, avg_speed_mps) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        " time_zone, distance_m, duration_s, avg_speed_mps, activity_name, avg_hr_bpm)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             activity_id,
             activity_type,
@@ -62,6 +65,8 @@ def insert_activity(
             distance_m,
             duration_s,
             avg_speed_mps,
+            activity_name,
+            avg_hr_bpm,
         ),
     )
     conn.commit()

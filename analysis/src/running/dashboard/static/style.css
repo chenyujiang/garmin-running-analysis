@@ -157,3 +157,62 @@ tr.soft td { color: var(--ink-3); }
 .mark-read .new-dot { margin: 0; vertical-align: middle; }
 .mark-read:hover { background: var(--red-wash); }
 .mark-read[hidden] { display: none; }
+
+/* run-detail ticket 01: top navigation and the activity list (#/runs) */
+a { color: inherit; text-decoration-color: var(--rule); text-underline-offset: 3px; }
+a:hover { text-decoration-color: var(--ink); }
+a.brand { text-decoration: none; color: var(--ink); }
+.topnav { display: flex; gap: 18px; font-size: 14px; }
+.topnav a { color: var(--ink-3); text-decoration: none; padding: 4px 0; border-bottom: 2px solid transparent; }
+.topnav a:hover { color: var(--ink); }
+.topnav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--ink); }
+.runs .sec-head .headline { margin: 0; }
+.runs select { font: inherit; font-size: 13px; color: var(--ink-2); background: transparent; border: 1px solid var(--rule); border-radius: 4px; padding: 3px 6px; }
+.runs .count { margin: 0 0 6px; }
+.runs-table td.name { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runs-table td a { text-decoration: none; }
+.runs-table td a:hover { text-decoration: underline; }
+.runs .foot { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+.pager { display: flex; gap: 16px; align-items: baseline; }
+
+/* run-detail ticket 02: activity detail page (#/run/<id>), summary */
+.run-head { margin-bottom: 18px; }
+.run-head p { margin: 0 0 4px; }
+.run-head .headline { margin: 0; }
+.run section { margin-bottom: 28px; }
+.run-summary .stat-line { gap: 28px; }
+.run-summary .num { font-variant-numeric: tabular-nums; }
+.a-lower td a { text-decoration: none; }
+.a-lower td a:hover { text-decoration: underline; }
+
+/* run-detail ticket 05: route shape (SVG only, no map tiles) */
+.route-box svg { display: block; max-width: 100%; height: auto; }
+.route-box text { font-size: 12px; fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+.route-line { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.route-start { fill: var(--paper); stroke: var(--ink); stroke-width: 2; }
+.route-finish { fill: var(--ink); }
+.route-scale { fill: none; stroke: var(--ink-2); stroke-width: 1.5; }
+
+/* run-detail ticket 06: run metrics, HR zones as horizontal bars */
+.run-metrics .stat-line { gap: 28px; }
+.run-metrics .num.high { color: var(--red); }
+.run-metrics .zones { max-width: 640px; }
+.run-metrics .zones p { margin: 8px 0 6px; }
+.run-metrics .zone { display: grid; grid-template-columns: 28px 84px 1fr 64px 40px; gap: 10px; align-items: center; height: 24px; }
+.run-metrics .zone .z { font-weight: 600; }
+.run-metrics .zone .track { height: 10px; background: var(--paper-2); }
+.run-metrics .zone .track i { display: block; height: 100%; background: var(--ink-2); }
+.run-metrics .zone .num { text-align: right; }
+
+/* run-detail ticket 07: report, one row per rule, verdict first; red only for watch */
+.report-items { list-style: none; margin: 0; padding: 0; max-width: 80ch; }
+.report-items li { border-bottom: 1px solid var(--rule); padding: 6px 0; }
+.report-items summary { cursor: pointer; list-style: none; display: grid; grid-template-columns: 5em 7em 1fr; gap: 10px; }
+.report-items summary::-webkit-details-marker { display: none; }
+.report-items .verdict { font-weight: 600; }
+.report-items .rule-name { color: var(--ink-2); }
+.report-items .verdict-watch .verdict, .report-items .verdict-watch .text { color: var(--red); }
+.report-items .verdict-unknown .verdict, .report-items .verdict-unknown .text { color: var(--ink-3); }
+.report-items .params { margin: 6px 0 4px 5em; padding: 8px 12px; background: var(--paper-2); border-radius: 4px; }
+.report-items .params p { margin: 0 0 4px; }
+.report-items .params td { padding: 1px 12px 1px 0; font-variant-numeric: tabular-nums; }

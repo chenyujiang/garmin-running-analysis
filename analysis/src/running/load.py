@@ -24,7 +24,7 @@ Formula sources and the choice of recursion are recorded in
 import math
 from datetime import date, timedelta
 from pathlib import Path
-from typing import TypedDict
+from typing import Literal, NamedTuple, TypedDict
 
 import polars as pl
 
@@ -40,6 +40,10 @@ CTL_DAYS = 42
 ATL_DAYS = 7
 SPIKE_RATIO = 1.5
 SERIES_DAYS = 84  # 12 weeks
+
+# Why a run has no TRIMP; detail and report reuse them.
+NO_HR = "没有心率"
+NO_PHYSIOLOGY = "该日期没有生效的生理参数"
 
 
 def heart_rate_reserve(hr: float, hr_rest: float, hr_max: float) -> float:
@@ -136,12 +140,13 @@ def _method(phys: Physiology | None, max_gap_s: float) -> Method:
     }
 
 
-# The cap on Δt is the single query parameter.
+# `{where}` may filter the records; its parameters come first, then the cap
+# on Δt.
 _HR_SECONDS_SQL = """
 WITH r AS (
     SELECT activity_id, heart_rate,
            epoch(CAST(rtrim(timestamp, 'Z') AS TIMESTAMP)) AS t
-    FROM a.records
+    FROM a.records {where}
 ), d AS (
     SELECT activity_id, heart_rate,
            least(greatest(coalesce(
@@ -155,7 +160,7 @@ GROUP BY activity_id, heart_rate
 """
 
 
-def _activity_trimp(
+def daily_trimp(
     db: AnalysisDb, config: Config, today: date
 ) -> tuple[dict[date, float], list[LoadActivity], list[LoadActivity]]:
     """Daily TRIMP up to `today`, activities with missing TRIMP, and
@@ -167,7 +172,7 @@ def _activity_trimp(
         [today],
     )
     hr = (
-        db.query(_HR_SECONDS_SQL, [config.load.max_sample_gap_s])
+        db.query(_HR_SECONDS_SQL.format(where=""), [config.load.max_sample_gap_s])
         if "records" in db.tables()
         else pl.DataFrame()
     )
@@ -181,37 +186,64 @@ def _activity_trimp(
     for act in activities.iter_rows(named=True):
         day: date = act["day"]
         samples = per_activity.get(act["activity_id"])
-        avg_hr, duration = act["avg_hr_bpm"], act["duration_s"]
-        has_summary_hr = bool(avg_hr and avg_hr > 0 and duration and duration > 0)
-        phys = physiology_on(config, day)
-
-        def entry(reason: str, act: dict = act, day: date = day) -> LoadActivity:
-            return {
-                "activity_id": act["activity_id"],
-                "date": day.isoformat(),
-                "name": act["name"],
-                "activity_type": act["activity_type"],
-                "reason": reason,
-            }
-
-        if not samples and not has_summary_hr:
-            missing.append(entry("没有心率"))
-        elif phys is None:
-            missing.append(entry("该日期没有生效的生理参数"))
-        elif samples:
-            trimp = sum(banister_trimp(s / 60, h, phys.hr_rest, phys.hr_max) for h, s in samples)
-            daily[day] = daily.get(day, 0.0) + trimp
+        trimp = _trimp_of(act, day, samples, config)
+        entry: LoadActivity = {
+            "activity_id": act["activity_id"],
+            "date": day.isoformat(),
+            "name": act["name"],
+            "activity_type": act["activity_type"],
+            "reason": trimp.reason,
+        }
+        if trimp.value is None:
+            missing.append(entry)
+            daily.setdefault(day, 0.0)
             continue
-        else:
-            trimp = banister_trimp(duration / 60, avg_hr, phys.hr_rest, phys.hr_max)
-            daily[day] = daily.get(day, 0.0) + trimp
-            from_summary.append(entry("没有逐秒心率，按摘要的平均心率估算"))
-            continue
-        daily.setdefault(day, 0.0)
+        daily[day] = daily.get(day, 0.0) + trimp.value
+        if trimp.source == "summary_hr":
+            from_summary.append(entry)
     return daily, missing, from_summary
 
 
-def _series(daily: dict[date, float], today: date) -> list[LoadPoint]:
+class ActivityTrimp(NamedTuple):
+    value: float | None  # None when missing
+    source: Literal["records", "summary_hr"] | None
+    reason: str  # why it is missing or estimated; "" for per-second records
+
+
+def _trimp_of(
+    act: dict, day: date, samples: list[tuple[float, float]] | None, config: Config
+) -> ActivityTrimp:
+    """One activity's TRIMP from its (HR, seconds) samples, falling back to the
+    summary's average HR (`act["avg_hr_bpm"]`, `act["duration_s"]`)."""
+    avg_hr, duration = act["avg_hr_bpm"], act["duration_s"]
+    has_summary_hr = bool(avg_hr and avg_hr > 0 and duration and duration > 0)
+    phys = physiology_on(config, day)
+    if not samples and not has_summary_hr:
+        return ActivityTrimp(None, None, NO_HR)
+    if phys is None:
+        return ActivityTrimp(None, None, NO_PHYSIOLOGY)
+    if samples:
+        value = sum(banister_trimp(s / 60, h, phys.hr_rest, phys.hr_max) for h, s in samples)
+        return ActivityTrimp(value, "records", "")
+    value = banister_trimp(duration / 60, avg_hr, phys.hr_rest, phys.hr_max)
+    return ActivityTrimp(value, "summary_hr", "没有逐秒心率，按摘要的平均心率估算")
+
+
+def activity_trimp(db: AnalysisDb, config: Config, activity: dict) -> ActivityTrimp:
+    """TRIMP of one activity (an `activities` row), exactly as it enters the
+    daily load."""
+    samples = None
+    if "records" in db.tables():
+        hr = db.query(
+            _HR_SECONDS_SQL.format(where="WHERE activity_id = ?"),
+            [activity["activity_id"], config.load.max_sample_gap_s],
+        )
+        samples = [(r["hr"], r["seconds"]) for r in hr.iter_rows(named=True)] or None
+    day = date.fromisoformat(activity["start_time_local"][:10])
+    return _trimp_of(activity, day, samples, config)
+
+
+def load_series(daily: dict[date, float], today: date) -> list[LoadPoint]:
     """CTL/ATL/TSB for every day from the first activity day to `today`."""
     if not daily:
         return []
@@ -258,9 +290,9 @@ def training_load(today: date | None = None, root: Path | None = None) -> Traini
     with db:
         if "activities" not in db.tables():
             return result
-        daily, missing, from_summary = _activity_trimp(db, config, today)
+        daily, missing, from_summary = daily_trimp(db, config, today)
 
-    points = _series(daily, today)
+    points = load_series(daily, today)
     if not points:
         return result
     window_start = (today - timedelta(days=SERIES_DAYS - 1)).isoformat()

@@ -47,7 +47,7 @@ function render(v) {
         h("th", {}, "备注"),
       )),
       h("tbody", {}, ...v.races.slice(0, LIMIT).map((r) => h("tr", { class: r.all_out ? "" : "soft" },
-        h("td", {}, fmtDate(r.date)),
+        h("td", {}, r.activity_id == null ? fmtDate(r.date) : h("a", { href: `#/run/${r.activity_id}` }, fmtDate(r.date))),
         h("td", {}, fmtDistance(r.distance_m)),
         h("td", { class: "r" }, fmtTime(r.time_s)),
         h("td", { class: "r" }, `${pace(r.pace_s_per_km)} /km`),
