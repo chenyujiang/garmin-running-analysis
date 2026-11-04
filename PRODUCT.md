@@ -12,7 +12,7 @@ FastAPI (localhost only, 127.0.0.1) serving JSON computed by the Python package 
 
 ## Users
 
-One person: the owner of the Garmin account, a recreational runner who analyses their own data. They run `runsync sync` by hand on their desktop computer, then open the dashboard about once or twice a week, typically after a long run or for a weekend review. Each visit lasts a few minutes on a desktop monitor. Not used on a phone. Deeper digging happens in Jupyter, not in the dashboard.
+One person: the owner of the Garmin account, a recreational runner who analyses their own data. They run `runsync sync` by hand on their desktop computer, then open the dashboard about once or twice a week, typically after a long run or for a weekend review. Each visit lasts a few minutes on a desktop monitor. Not used on a phone. Reviewing a single run happens on the dashboard's detail page; deeper digging across activities happens in Jupyter, not in the dashboard.
 
 ## Product Purpose
 
@@ -23,6 +23,8 @@ Priority on open:
 1. Recent load: is the current training enough or too much (CTL/ATL/TSB, this week's running distance, load-spike warning when ATL/CTL > 1.5).
 2. Aerobic fitness trend over months and years (running pace at reference HR 145 bpm, weekly median plus 4-week rolling median, weekly mean temperature shown alongside, EF and decoupling as supporting metrics).
 3. Race prediction as a small card (VDOT primary, Riegel comparison, marathon with mileage adjustment, Garmin prediction as reference, "stale" state when there is no recent race).
+
+Beyond the overview: an activity list and a detail page per run (route shape without a map, per-second charts, HR zones, laps, EF and decoupling) topped by a fixed-rule report (training type, aerobic comparison, HR drift, pacing, load, temperature). Each report line states its conclusion first, then the rule and numbers.
 
 ## Positioning
 
@@ -50,4 +52,5 @@ Real data exists only in the user's data directory (outside the repo). Prototype
 - Decision first: the top of the screen answers "what should I do this week".
 - Every number explains itself: formula and parameters are reachable, Garmin values shown as reference, never as the headline.
 - Honest gaps: missing or insufficient data is shown as missing, not interpolated.
-- Glanceable in minutes; depth belongs in Jupyter.
+- Glanceable in minutes; cross-activity depth belongs in Jupyter.
+- Report rules are fixed and tunable in `config.toml`, never a model's free-form judgement; a rule that cannot judge says why.
