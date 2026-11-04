@@ -1,5 +1,9 @@
 // Dashboard entry point. Native ES module, no build step.
-// Reads GET /api/status and renders either the empty state or the data summary.
+// Reads GET /api/status, then renders the page the hash names:
+//   #/ (or no hash)  home: the empty state or the data summary
+//   #/runs?...       activity list (runs.js)
+//   #/run/<id>       activity detail (placeholder until the detail ticket)
+// Without an analysis database every page shows the empty state.
 
 import { h, fmtDateTime, fmtDate } from "./dom.js";
 import { aerobicSection } from "./aerobic.js";
@@ -8,6 +12,7 @@ import { loadSection } from "./load.js";
 import { longRunsSection } from "./longruns.js";
 import { predictionsSection } from "./predictions.js";
 import { racesSection } from "./races.js";
+import { runsPage } from "./runs.js";
 import { volumeSection } from "./volume.js";
 
 const main = document.getElementById("main");
@@ -24,10 +29,36 @@ async function load() {
     main.replaceChildren(h("p", { class: "warn" }, `无法读取数据状态：${err.message}`));
     return;
   }
-  render(status);
+  render(status, parseRoute(location.hash));
 }
 
-function render(s) {
+/** "#/runs?type=all" -> { name: "runs", query }; unknown hashes go home. */
+export function parseRoute(hash) {
+  const raw = hash.replace(/^#\/?/, "");
+  const [path, search = ""] = raw.split("?", 2);
+  const query = new URLSearchParams(search);
+  if (path === "runs") return { name: "runs", query };
+  const m = /^run\/(\d+)$/.exec(path);
+  if (m) return { name: "run", id: m[1], query };
+  return { name: "home", query };
+}
+
+function page(s, route) {
+  if (!s.has_data) return empty(s);
+  if (route.name === "runs") return runsPage(route.query);
+  if (route.name === "run") return runPlaceholder(route.id);
+  return summary(s);
+}
+
+function runPlaceholder(id) {
+  return h("section", {},
+    h("p", { class: "small" }, h("a", { href: "#/runs" }, "← 全部活动")),
+    h("h1", { class: "headline" }, `活动 ${id}`),
+    h("p", { class: "dek" }, "详情页还在做。"),
+  );
+}
+
+function render(s, route) {
   syncLine.replaceChildren(...[
     s.has_data ? markAllReadButton() : null,
     h("span", {}, s.has_data
@@ -35,7 +66,13 @@ function render(s) {
       : "尚未同步"),
   ].filter(Boolean));
   const warning = s.config_error ? h("p", { class: "warn" }, s.config_error) : null;
-  main.replaceChildren(...[warning, s.has_data ? summary(s) : empty(s)].filter(Boolean));
+  main.replaceChildren(...[warning, page(s, route)].filter(Boolean));
+  document.querySelectorAll(".topnav a").forEach((a) => {
+    const here = parseRoute(a.getAttribute("href")).name === route.name;
+    if (here) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
+  });
+  window.scrollTo(0, 0);
 }
 
 function empty(s) {
@@ -95,4 +132,5 @@ function dataDirNote(s) {
     "数据目录：", h("code", {}, s.data_dir), "（由 ", h("code", {}, "RUNNING_DATA_DIR"), " 指定）");
 }
 
+window.addEventListener("hashchange", load);
 load();

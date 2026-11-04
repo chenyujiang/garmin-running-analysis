@@ -157,3 +157,20 @@ tr.soft td { color: var(--ink-3); }
 .mark-read .new-dot { margin: 0; vertical-align: middle; }
 .mark-read:hover { background: var(--red-wash); }
 .mark-read[hidden] { display: none; }
+
+/* run-detail ticket 01: top navigation and the activity list (#/runs) */
+a { color: inherit; text-decoration-color: var(--rule); text-underline-offset: 3px; }
+a:hover { text-decoration-color: var(--ink); }
+a.brand { text-decoration: none; color: var(--ink); }
+.topnav { display: flex; gap: 18px; font-size: 14px; }
+.topnav a { color: var(--ink-3); text-decoration: none; padding: 4px 0; border-bottom: 2px solid transparent; }
+.topnav a:hover { color: var(--ink); }
+.topnav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--ink); }
+.runs .sec-head .headline { margin: 0; }
+.runs select { font: inherit; font-size: 13px; color: var(--ink-2); background: transparent; border: 1px solid var(--rule); border-radius: 4px; padding: 3px 6px; }
+.runs .count { margin: 0 0 6px; }
+.runs-table td.name { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runs-table td a { text-decoration: none; }
+.runs-table td a:hover { text-decoration: underline; }
+.runs .foot { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+.pager { display: flex; gap: 16px; align-items: baseline; }

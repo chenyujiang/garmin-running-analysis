@@ -9,6 +9,13 @@ from pathlib import Path
 from fastapi import FastAPI, Query
 from fastapi.staticfiles import StaticFiles
 
+from running.activities import (
+    DEFAULT_PAGE_SIZE,
+    MAX_PAGE_SIZE,
+    ActivityList,
+    TypeFilter,
+    activity_list,
+)
 from running.aerobic import AerobicTrend, Range, aerobic_trend
 from running.load import TrainingLoad, training_load
 from running.longruns import LongRuns, long_runs
@@ -23,6 +30,16 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 def create_app() -> FastAPI:
     app = FastAPI(title="running dashboard", docs_url=None, redoc_url=None, openapi_url=None)
+
+    @app.get("/api/activities")
+    def activities(
+        type: TypeFilter = "running",  # noqa: A002
+        min_km: float | None = Query(None, ge=0),
+        page: int = Query(1, ge=1),
+        page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    ) -> ActivityList:
+        min_m = None if min_km is None else min_km * 1000.0
+        return activity_list(type_filter=type, min_distance_m=min_m, page=page, page_size=page_size)
 
     @app.get("/api/status")
     def status() -> DataStatus:

@@ -94,10 +94,15 @@ def classify_records(records: pl.DataFrame, settings: RunWalk) -> pl.DataFrame:
 
 
 def running_summaries(
-    db: AnalysisDb, settings: RunWalk, since_local: str | None = None
+    db: AnalysisDb,
+    settings: RunWalk,
+    since_local: str | None = None,
+    *,
+    activity_ids: list[int] | None = None,
 ) -> pl.DataFrame:
     """One row per running-type activity starting at or after `since_local`
-    (wall-clock ISO date or datetime; all activities when None).
+    (wall-clock ISO date or datetime; all activities when None), limited to
+    `activity_ids` when given.
 
     Columns: activity_id, activity_type, start_time_local, run_distance_m,
     run_duration_s, run_pace_s_per_km, garmin_distance_m, garmin_duration_s,
@@ -112,6 +117,11 @@ def running_summaries(
     if since_local is not None:
         where += " AND start_time_local >= ?"
         params.append(since_local)
+    if activity_ids is not None:
+        if not activity_ids:
+            return empty_run_summaries()
+        where += f" AND activity_id IN ({', '.join('?' for _ in activity_ids)})"
+        params += list(activity_ids)
     acts = db.query(
         "SELECT activity_id, activity_type, start_time_local,"
         " distance_m AS garmin_distance_m, duration_s AS garmin_duration_s,"
