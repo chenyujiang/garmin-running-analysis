@@ -20,6 +20,7 @@ from running.aerobic import AerobicTrend, Range, aerobic_trend
 from running.detail import ActivityDetail, activity_detail
 from running.load import TrainingLoad, training_load
 from running.longruns import LongRuns, long_runs
+from running.plan5k import Plan5k, plan_5k
 from running.races import Predictions, RaceList, race_list, race_predictions
 from running.status import DataStatus, data_status
 from running.volume import Volume, weekly_volume
@@ -38,9 +39,20 @@ def create_app() -> FastAPI:
         min_km: float | None = Query(None, ge=0),
         page: int = Query(1, ge=1),
         page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+        q: str | None = Query(None, max_length=100),
+        date_from: date | None = None,
+        date_to: date | None = None,
     ) -> ActivityList:
         min_m = None if min_km is None else min_km * 1000.0
-        return activity_list(type_filter=type, min_distance_m=min_m, page=page, page_size=page_size)
+        return activity_list(
+            type_filter=type,
+            min_distance_m=min_m,
+            page=page,
+            page_size=page_size,
+            query=q,
+            date_from=date_from,
+            date_to=date_to,
+        )
 
     @app.get("/api/activities/{activity_id}")
     def activity(activity_id: int) -> ActivityDetail:
@@ -78,6 +90,25 @@ def create_app() -> FastAPI:
     @app.get("/api/races")
     def races(today: date | None = None) -> RaceList:
         return race_list(today=today)
+
+    @app.get("/api/plan5k")
+    def plan5k(
+        today: date | None = None,
+        target_s: float = Query(1200, ge=600, le=3600),
+        current_s: float | None = Query(None, ge=600, le=3600),
+        days: str = Query("2,3,4,6", pattern=r"^[1-7](,[1-7])*$"),
+        parkrun_day: int = Query(6, ge=0, le=7),  # 0: no parkrun
+    ) -> Plan5k:
+        try:
+            return plan_5k(
+                today=today,
+                target_s=target_s,
+                current_s=current_s,
+                days=[int(d) for d in days.split(",")],
+                parkrun_day=parkrun_day or None,
+            )
+        except ValueError as err:
+            raise HTTPException(status_code=422, detail=str(err)) from err
 
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app

@@ -5,10 +5,15 @@ Spec (run-detail), "running/activities.py".
 - `type_filter = "running"` keeps `RUNNING_TYPES`; `"all"` keeps everything.
 - `min_distance_m` keeps activities whose Garmin distance is at least that;
   activities without a distance drop out when the filter is set.
+- `query` keeps activities whose name contains it, ignoring case;
+  `%` and `_` match themselves.
+- `date_from` / `date_to` keep activities whose local start date lies in the
+  range, both ends included.
 - Order: `start_time_local` descending, then `activity_id` descending.
 - `total` counts every activity that passes the filters, for paging.
 """
 
+from datetime import date
 from pathlib import Path
 from typing import Literal, TypedDict
 
@@ -37,6 +42,9 @@ class ActivityList(TypedDict):
     has_data: bool  # the analysis database holds at least one activity
     type_filter: TypeFilter
     min_distance_m: float | None
+    query: str | None
+    date_from: str | None
+    date_to: str | None
     page: int
     page_size: int
     total: int  # activities passing the filters
@@ -44,7 +52,21 @@ class ActivityList(TypedDict):
     method: Method
 
 
-def _where(type_filter: TypeFilter, min_distance_m: float | None) -> tuple[str, list]:
+class Filters(TypedDict, total=False):
+    query: str | None
+    date_from: date | None
+    date_to: date | None
+
+
+def _like(text: str) -> str:
+    """LIKE pattern for "contains `text`", with `!` as the escape character."""
+    escaped = text.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+    return f"%{escaped}%"
+
+
+def _where(
+    type_filter: TypeFilter, min_distance_m: float | None, filters: Filters
+) -> tuple[str, list]:
     clauses, params = [], []
     if type_filter == "running":
         types = sorted(RUNNING_TYPES)
@@ -53,6 +75,16 @@ def _where(type_filter: TypeFilter, min_distance_m: float | None) -> tuple[str, 
     if min_distance_m is not None:
         clauses.append("distance_m >= ?")
         params.append(min_distance_m)
+    query = (filters.get("query") or "").strip()
+    if query:
+        clauses.append("lower(activity_name) LIKE lower(?) ESCAPE '!'")
+        params.append(_like(query))
+    if filters.get("date_from") is not None:
+        clauses.append("substr(start_time_local, 1, 10) >= ?")
+        params.append(filters["date_from"].isoformat())
+    if filters.get("date_to") is not None:
+        clauses.append("substr(start_time_local, 1, 10) <= ?")
+        params.append(filters["date_to"].isoformat())
     return (" WHERE " + " AND ".join(clauses)) if clauses else "", params
 
 
@@ -62,8 +94,9 @@ def _page_rows(
     min_distance_m: float | None,
     page: int,
     page_size: int,
+    filters: Filters,
 ) -> tuple[int, list[dict]]:
-    where, params = _where(type_filter, min_distance_m)
+    where, params = _where(type_filter, min_distance_m, filters)
     total = int(db.query(f"SELECT count(*) FROM a.activities{where}", params).item())
     rows = db.query(
         "SELECT activity_id, activity_type, activity_name, start_time_local,"
@@ -92,7 +125,11 @@ def activity_list(
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
     root: Path | None = None,
+    query: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> ActivityList:
+    filters: Filters = {"query": query, "date_from": date_from, "date_to": date_to}
     inputs = section_inputs(None, root)
     has_data, total, rows, paces = False, 0, [], {}
     db = open_analysis_db(inputs.root)
@@ -100,12 +137,15 @@ def activity_list(
         with db:
             if "activities" in db.tables():
                 has_data = bool(db.query("SELECT count(*) FROM a.activities").item())
-                total, rows = _page_rows(db, type_filter, min_distance_m, page, page_size)
+                total, rows = _page_rows(db, type_filter, min_distance_m, page, page_size, filters)
                 paces = _running_paces(db, rows, inputs.config.run_walk)
     return {
         "has_data": has_data,
         "type_filter": type_filter,
         "min_distance_m": min_distance_m,
+        "query": (query or "").strip() or None,
+        "date_from": None if date_from is None else date_from.isoformat(),
+        "date_to": None if date_to is None else date_to.isoformat(),
         "page": page,
         "page_size": page_size,
         "total": total,

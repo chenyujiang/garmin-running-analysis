@@ -124,7 +124,7 @@ function render(A, races = []) {
     stack,
     h("div", { class: "legend" },
       h("span", {}, h("i", { class: "dotk" }), "每周中位数（空白 = 有效跑步少于 2 次）"),
-      h("span", {}, h("i", { style: "border-color:var(--ink)" }), "4 周滚动中位数"),
+      h("span", {}, h("i", { style: "border-color:var(--accent)" }), "4 周滚动中位数"),
       h("span", {}, h("i", { class: "dotk open" }), "本周（未完）"),
       hasHot ? h("span", {}, h("i", { class: "bar hot" }), `高温周（≥ ${hotC} °C）`) : null,
       races.length ? h("span", {}, h("i", { class: "race" }), "比赛（races.csv）") : null,
@@ -253,7 +253,7 @@ function mainChart(weeks, g, ref, raceMarks, hotC) {
     else if (next != null) d += `M${x},${y}`;
     else d += `M${(+x - 4).toFixed(1)},${y}L${(+x + 4).toFixed(1)},${y}`;
   });
-  svg.append(s("path", { d, fill: "none", stroke: "var(--ink)", "stroke-width": 2.4, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+  svg.append(s("path", { d, fill: "none", stroke: "var(--accent)", "stroke-width": 2.4, "stroke-linejoin": "round", "stroke-linecap": "round" }));
 
   const xhair = s("line", { class: "xhair", x1: 0, x2: 0, y1: MAIN.t, y2: H - MAIN.b });
   const mark = s("circle", { class: "xhair-dot", r: 4, cx: 0, cy: 0 });
