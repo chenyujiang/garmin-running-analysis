@@ -140,13 +140,13 @@ def _method(phys: Physiology | None, max_gap_s: float) -> Method:
     }
 
 
-# `{where}` may filter the records; its parameters come first, then the cap
-# on Δt.
+# `{source}` is `a.records` (every activity) or `recs` (`query_records`); the
+# only parameter is the cap on Δt.
 _HR_SECONDS_SQL = """
 WITH r AS (
     SELECT activity_id, heart_rate,
            epoch(CAST(rtrim(timestamp, 'Z') AS TIMESTAMP)) AS t
-    FROM a.records {where}
+    FROM {source}
 ), d AS (
     SELECT activity_id, heart_rate,
            least(greatest(coalesce(
@@ -172,7 +172,7 @@ def daily_trimp(
         [today],
     )
     hr = (
-        db.query(_HR_SECONDS_SQL.format(where=""), [config.load.max_sample_gap_s])
+        db.query(_HR_SECONDS_SQL.format(source="a.records"), [config.load.max_sample_gap_s])
         if "records" in db.tables()
         else pl.DataFrame()
     )
@@ -234,9 +234,10 @@ def activity_trimp(db: AnalysisDb, config: Config, activity: dict) -> ActivityTr
     daily load."""
     samples = None
     if "records" in db.tables():
-        hr = db.query(
-            _HR_SECONDS_SQL.format(where="WHERE activity_id = ?"),
-            [activity["activity_id"], config.load.max_sample_gap_s],
+        hr = db.query_records(
+            _HR_SECONDS_SQL.format(source="recs"),
+            [activity["activity_id"]],
+            [config.load.max_sample_gap_s],
         )
         samples = [(r["hr"], r["seconds"]) for r in hr.iter_rows(named=True)] or None
     day = date.fromisoformat(activity["start_time_local"][:10])

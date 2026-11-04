@@ -30,6 +30,7 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 .headline { font: 900 30px/1.25 var(--serif); margin: 0 0 6px; letter-spacing: 0.01em; text-wrap: balance; }
 .dek { color: var(--ink-2); margin: 0; max-width: 62ch; }
 .muted { color: var(--ink-3); }
+.loading { margin: 2rem 0; font-size: 1.05rem; color: var(--ink-2, inherit); }
 .small { font-size: 13px; }
 .num { font-family: var(--sans); font-weight: 600; }
 .big { font: 600 34px/1 var(--sans); letter-spacing: -0.01em; }

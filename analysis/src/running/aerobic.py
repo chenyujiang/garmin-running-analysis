@@ -103,11 +103,11 @@ def load_records(db: AnalysisDb, activity_ids: list[int]) -> pl.DataFrame:
     }
     if not activity_ids or "records" not in db.tables():
         return pl.DataFrame(schema=schema)
-    df = db.query(
+    df = db.query_records(
         "SELECT activity_id, strptime(timestamp, ?) AS ts, heart_rate, speed, cadence,"
-        " altitude, distance"
-        f" FROM a.records WHERE activity_id IN ({_placeholders(activity_ids)})",
-        [_TS_FORMAT, *activity_ids],
+        " altitude, distance FROM recs",
+        activity_ids,
+        [_TS_FORMAT],
     )
     if df.is_empty():
         return pl.DataFrame(schema=schema)
@@ -121,12 +121,12 @@ def gps_usable(db: AnalysisDb, activity_ids: list[int], aerobic: Aerobic) -> set
     Shared by the aerobic metric and the long-run EF/decoupling."""
     if not activity_ids or "records" not in db.tables():
         return set()
-    df = db.query(
-        "SELECT activity_id FROM a.records"
-        f" WHERE activity_id IN ({_placeholders(activity_ids)}) GROUP BY activity_id"
+    df = db.query_records(
+        "SELECT activity_id FROM recs GROUP BY activity_id"
         " HAVING count(lat) > 0 AND count(lon) > 0 AND count(altitude) > 0"
         " AND count(*) FILTER (WHERE speed > ?) <= ?",
-        [*activity_ids, aerobic.max_speed_mps, aerobic.max_fast_s],
+        activity_ids,
+        [aerobic.max_speed_mps, aerobic.max_fast_s],
     )
     return set(df["activity_id"].to_list()) if not df.is_empty() else set()
 
@@ -169,13 +169,12 @@ def _nearest_grid(db: AnalysisDb, activity_ids: list[int]) -> pl.DataFrame:
     )
     if grids.is_empty():
         return pl.DataFrame(schema=_NEAR_SCHEMA)
-    runs = db.query(
+    runs = db.query_records(
         "SELECT activity_id,"
         f" {_tenths('round(median(lat), 1)')} AS p_lat,"
         f" {_tenths('round(median(lon), 1)')} AS p_lon"
-        f" FROM a.records WHERE activity_id IN ({_placeholders(activity_ids)})"
-        " GROUP BY activity_id HAVING count(lat) > 0 AND count(lon) > 0",
-        list(activity_ids),
+        " FROM recs GROUP BY activity_id HAVING count(lat) > 0 AND count(lon) > 0",
+        activity_ids,
     )
     if runs.is_empty():
         return pl.DataFrame(schema=_NEAR_SCHEMA)

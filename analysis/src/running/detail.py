@@ -486,9 +486,8 @@ NO_EXTENT = "GPS 定位点不足，画不出形状"
 
 def _route_fixes(d: DetailInputs) -> list[tuple[float, float]]:
     """(lat, lon) of the seconds with a GPS fix, in time order. Stays in this block."""
-    fixes = d.db.query(
-        "SELECT lat, lon FROM a.records WHERE activity_id = ?"
-        " AND lat IS NOT NULL AND lon IS NOT NULL ORDER BY timestamp",
+    fixes = d.db.query_records(
+        "SELECT lat, lon FROM recs WHERE lat IS NOT NULL AND lon IS NOT NULL ORDER BY timestamp",
         [d.activity_id],
     )
     return list(zip(fixes["lat"], fixes["lon"], strict=True))
@@ -655,10 +654,11 @@ def _road_run_gate(d: DetailInputs) -> str | None:
     if d.records["heart_rate"].is_null().all():
         return load.NO_HR
     if d.activity_id not in aerobic.gps_usable(d.db, [d.activity_id], ae):
-        c = d.db.query(
+        c = d.db.query_records(
             "SELECT count(lat) AS lat, count(lon) AS lon, count(altitude) AS alt,"
-            " count(*) FILTER (WHERE speed > ?) AS fast FROM a.records WHERE activity_id = ?",
-            [ae.max_speed_mps, d.activity_id],
+            " count(*) FILTER (WHERE speed > ?) AS fast FROM recs",
+            [d.activity_id],
+            [ae.max_speed_mps],
         ).to_dicts()[0]
         if not c["lat"] or not c["lon"]:
             return "逐秒记录没有 GPS 位置（像跑步机）"
