@@ -34,3 +34,4 @@
 - **气温**：≥ `hot_week_c` 为 watch，低于时也出一条 neutral（spec 只说了 watch 和没有数据不出现）。
 - 前端 `static/run.js` 的 `reportSection`（ticket 07 槽，放在概要之前）：每条一行 `<details>`，摘要行是"结论、规则名、一句话"，展开后显示规则 id 和 `params` 表；"怎么算的"显示 `method.description`。CSS 在 `style.css` 末尾 ticket 07 区块，只有 watch 用红色，unknown 用浅灰。
 - 测试 `analysis/tests/test_detail_report.py`（Seam 3，31 个）：间歇 3 段命中、2 段不命中，`interval_min_reps = 4` 后 3 段也不命中；节奏跑 20 分钟连续命中、分段不命中，`tempo_min_s = 480` 后命中；长距离、轻松、混合；没有心率时 unknown；有氧能力好、持平、留意三档，`aerobic_change = 0.05` 后变持平，没有基线和不计入时 unknown；漂移 > 5% watch、0% good、不足 60 分钟 neutral；配速负分割、匀速、正分割，`split_change = 0.04` 后变匀速，间歇不判；负荷首次一小时突增 watch、每天同量 neutral；气温 25 °C watch、15 °C neutral，`hot_week_c = 14` 后 watch，没有气温时不出现；骑车只给负荷。
+- 2026-11-04 用户决定：有氧能力基线放宽为前 4 周所有有效跑的中位数，不要求每周至少 2 次，也不先取周中位数；`params.baseline_weeks` 改为 `baseline_runs`。

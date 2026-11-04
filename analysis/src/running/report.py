@@ -55,10 +55,10 @@ class Report(TypedDict):
 
 @dataclass(frozen=True)
 class AerobicBaseline:
-    """Median of the weekly median aerobic values in the weeks before the run's week."""
+    """Median aerobic value of all valid runs in the weeks before the run's week."""
 
     speed_mps: float | None
-    weeks: int  # weeks with enough valid runs that went into the median
+    runs: int  # valid runs that went into the median
     since: str  # first Monday of the window
     until: str  # the run week's Monday (exclusive)
 
@@ -111,20 +111,12 @@ def report_context(d: DetailInputs, detail: dict) -> ReportContext:
 
 
 def _baseline(d: DetailInputs, monday: date) -> AerobicBaseline:
-    ae = d.config.aerobic
-    since = monday - timedelta(weeks=ae.rolling_weeks)
+    since = monday - timedelta(weeks=d.config.aerobic.rolling_weeks)
     runs = aerobic.aerobic_runs(
         d.db, d.config, since_local=since.isoformat(), until_local=monday.isoformat()
     ).filter(pl.col("valid"))
-    weekly = (
-        runs.with_columns(pl.col("start_time_local").str.slice(0, 10).str.to_date().alias("day"))
-        .with_columns(pl.col("day").dt.truncate("1w").alias("week"))
-        .group_by("week")
-        .agg(pl.col("speed_mps").median(), pl.len().alias("n"))
-        .filter(pl.col("n") >= ae.min_runs_per_week)
-    )
-    speed = float(weekly["speed_mps"].median()) if not weekly.is_empty() else None
-    return AerobicBaseline(speed, weekly.height, since.isoformat(), monday.isoformat())
+    speed = float(runs["speed_mps"].median()) if not runs.is_empty() else None
+    return AerobicBaseline(speed, runs.height, since.isoformat(), monday.isoformat())
 
 
 def _load_around(d: DetailInputs, day: date, monday: date) -> LoadAround:
@@ -315,7 +307,7 @@ def _aerobic_rule(detail: dict, ctx: ReportContext) -> ReportItem:
         "aerobic_change": change,
         "baseline_since": base.since if base else None,
         "baseline_until": base.until if base else None,
-        "baseline_weeks": base.weeks if base else 0,
+        "baseline_runs": base.runs if base else 0,
         "baseline_speed_mps": base.speed_mps if base else None,
     }
     if base is None or base.speed_mps is None:
@@ -323,8 +315,7 @@ def _aerobic_rule(detail: dict, ctx: ReportContext) -> ReportItem:
             rule,
             name,
             "unknown",
-            "本周之前 4 周没有足够的有氧能力数据（每周至少 "
-            f"{ctx.config.aerobic.min_runs_per_week} 次有效跑），无从比较。",
+            f"本周之前 {ctx.config.aerobic.rolling_weeks} 周没有计入有氧能力的跑步，无从比较。",
             params,
         )
     ratio = value["speed_mps"] / base.speed_mps - 1
@@ -493,8 +484,8 @@ def _method(config: Config) -> Method:
             f"长距离（≥ {LONG_RUN_S // 60} 分钟且 Z1–Z2 ≥ {r.long_easy_share:.0%}）；"
             f"轻松跑（Z1–Z2 ≥ {r.easy_share:.0%}）；其余为混合。区间占比只算跑的、有心率的秒。"
             "有氧能力对比：本次有氧能力值和本周之前 "
-            f"{a.rolling_weeks} 周的周中位数的中位数比较"
-            f"（每周至少 {a.min_runs_per_week} 次有效跑），"
+            f"{a.rolling_weeks} 周所有计入有氧能力的跑步的中位数比较"
+            "（不要求每周的次数），"
             f"快 ≥ {r.aerobic_change:.0%} 为好，慢 ≥ {r.aerobic_change:.0%} 需留意。"
             f"心率漂移：≥ {LONG_RUN_S // 60} 分钟的跑看 decoupling，"
             f"> {longruns.DECOUPLING_LIMIT_PCT:g}% 需留意；更短的只给 EF。"

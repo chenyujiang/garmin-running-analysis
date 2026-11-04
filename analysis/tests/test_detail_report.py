@@ -183,9 +183,36 @@ def test_the_aerobic_value_against_the_4_week_median(analysis_db, client_factory
 
     assert a["verdict"] == verdict
     assert a["params"]["baseline_speed_mps"] == pytest.approx(3.0)
-    assert a["params"]["baseline_weeks"] == 1
+    assert a["params"]["baseline_runs"] == 2
     assert a["params"]["change"] == pytest.approx(speed / 3.0 - 1, abs=1e-6)
     assert a["params"]["aerobic_change"] == 0.02
+
+
+def test_one_valid_run_a_week_is_enough_for_the_baseline(analysis_db, client_factory):
+    # One valid run in each of the two weeks before: the baseline is the median
+    # of all valid runs in the 4 weeks, (2.8 + 3.0 + 3.2) / 3 -> 3.0.
+    add_hr_run(analysis_db, 101, "2026-10-06T07:00:00", [steady(1800, speed=2.8, hr=145.0)])
+    add_hr_run(analysis_db, 102, "2026-10-08T07:00:00", [steady(1800, speed=3.2, hr=145.0)])
+    add_hr_run(analysis_db, 103, "2026-10-14T07:00:00", [steady(1800, speed=3.0, hr=145.0)])
+    add_hr_run(analysis_db, 1, START_LOCAL, [steady(1800, speed=3.0, hr=145.0)])
+
+    a = item(get_report(client_factory, 1), "aerobic")
+
+    assert a["verdict"] == "neutral"
+    assert a["params"]["baseline_speed_mps"] == pytest.approx(3.0)
+    assert a["params"]["baseline_runs"] == 3
+
+
+def test_the_baseline_is_the_median_of_runs_not_of_weeks(analysis_db, client_factory):
+    # Week 1: one run at 2.0. Week 2: two runs at 3.0. Median of runs is 3.0;
+    # a median of weekly medians would be 2.5.
+    add_hr_run(analysis_db, 100, "2026-10-06T07:00:00", [steady(1800, speed=2.0, hr=145.0)])
+    add_baseline(analysis_db)
+    add_hr_run(analysis_db, 1, START_LOCAL, [steady(1800, speed=3.0, hr=145.0)])
+
+    a = item(get_report(client_factory, 1), "aerobic")
+
+    assert a["params"]["baseline_speed_mps"] == pytest.approx(3.0)
 
 
 def test_the_aerobic_threshold_comes_from_the_report_config(data_dir, analysis_db, client_factory):

@@ -322,7 +322,7 @@ def _series_method(config: Config) -> Method:
             f"GAP 配速用 Minetti 2002 的坡度能耗把 {a.smoothing_s} 秒平滑速度换成平地等效速度，"
             f"坡度取最近 {a.grade_window_s} 秒的海拔差 / 距离，限幅 ±{a.max_grade:g}；"
             "没有海拔时坡度按 0，和长距离表一致。"
-            "走路段是跑走分类判为走的秒；稳态段和有氧能力、长距离表的稳态口径相同："
+            "走路段是跑走分类判为走的秒；稳态段和有氧能力的稳态口径相同："
             f"去掉开头 {a.warmup_s // 60} 分钟，"
             f"平滑心率在 {a.reference_hr} ± {a.hr_band_bpm:g} bpm 内，"
             f"{a.speed_window_s} 秒内速度变化 ≤ {a.max_speed_change:.0%}。"
@@ -641,14 +641,46 @@ def _hr_zones(d: DetailInputs, phys: load.Physiology | None) -> tuple[dict | Non
     }, None
 
 
-def _aerobic_value(d: DetailInputs) -> tuple[dict | None, str | None]:
-    """This run's point on the aerobic trend (`aerobic.aerobic_runs`), or None
-    and why the run does not count."""
+def _road_run_gate(d: DetailInputs) -> str | None:
+    """Why this activity cannot have an aerobic value or EF, apart from steady
+    time: not a road run, no records, no heart rate, GPS unusable. None if it
+    passes."""
     a, ae = d.activity, d.config.aerobic
     if not d.is_running:
-        return None, RUNNING_ONLY
+        return RUNNING_ONLY
     if a["activity_type"] not in aerobic.AEROBIC_TYPES:
-        return None, "不是户外路跑（跑步机和越野不计入）"
+        return "不是户外路跑（跑步机和越野不计入）"
+    if d.records.is_empty():
+        return NO_RECORDS
+    if d.records["heart_rate"].is_null().all():
+        return load.NO_HR
+    if d.activity_id not in aerobic.gps_usable(d.db, [d.activity_id], ae):
+        c = d.db.query(
+            "SELECT count(lat) AS lat, count(lon) AS lon, count(altitude) AS alt,"
+            " count(*) FILTER (WHERE speed > ?) AS fast FROM a.records WHERE activity_id = ?",
+            [ae.max_speed_mps, d.activity_id],
+        ).to_dicts()[0]
+        if not c["lat"] or not c["lon"]:
+            return "逐秒记录没有 GPS 位置（像跑步机）"
+        if not c["alt"]:
+            return "逐秒记录没有海拔"
+        return (
+            f"GPS 漂移：速度超过 {ae.max_speed_mps:g} m/s 的秒有 {c['fast']} 秒"
+            f"（上限 {ae.max_fast_s} 秒）"
+        )
+    return None
+
+
+def _short_steady(steady_s: float, min_steady_s: int) -> str:
+    return f"稳态时间 {steady_s / 60:.0f} 分钟，不足 {min_steady_s // 60} 分钟"
+
+
+def _aerobic_value(d: DetailInputs, gate: str | None) -> tuple[dict | None, str | None]:
+    """This run's point on the aerobic trend (`aerobic.aerobic_runs`), or None
+    and why the run does not count."""
+    if gate:
+        return None, gate
+    a, ae = d.activity, d.config.aerobic
     start = a["start_time_local"]
     # "~" sorts after every digit, so [start, start~) holds only this start time.
     runs = aerobic.aerobic_runs(d.db, d.config, since_local=start, until_local=start + "~")
@@ -662,36 +694,20 @@ def _aerobic_value(d: DetailInputs) -> tuple[dict | None, str | None]:
             "mean_hr": r["mean_hr"],
             "reference_hr": ae.reference_hr,
         }, None
-    if d.records.is_empty():
-        return None, NO_RECORDS
-    if d.records["heart_rate"].is_null().all():
-        return None, load.NO_HR
-    if d.activity_id not in aerobic.gps_usable(d.db, [d.activity_id], ae):
-        c = d.db.query(
-            "SELECT count(lat) AS lat, count(lon) AS lon, count(altitude) AS alt,"
-            " count(*) FILTER (WHERE speed > ?) AS fast FROM a.records WHERE activity_id = ?",
-            [ae.max_speed_mps, d.activity_id],
-        ).to_dicts()[0]
-        if not c["lat"] or not c["lon"]:
-            return None, "逐秒记录没有 GPS 位置（像跑步机）"
-        if not c["alt"]:
-            return None, "逐秒记录没有海拔"
-        return None, (
-            f"GPS 漂移：速度超过 {ae.max_speed_mps:g} m/s 的秒有 {c['fast']} 秒"
-            f"（上限 {ae.max_fast_s} 秒）"
-        )
-    steady_s = row[0]["steady_s"] if row else 0.0
-    return None, (f"稳态时间 {steady_s / 60:.0f} 分钟，不足 {ae.min_steady_s // 60} 分钟")
+    return None, _short_steady(row[0]["steady_s"] if row else 0.0, ae.min_steady_s)
 
 
-def _ef_value(d: DetailInputs, aerobic_why: str | None) -> tuple[dict | None, str | None]:
-    """EF and decoupling as in the long-run table (`longruns.per_run_ef`).
-    The gates are the aerobic value's (road run, `gps_usable`, enough steady
-    time), so a run without an aerobic value has no EF, for the same reason."""
-    if aerobic_why:
-        return None, aerobic_why
+def _ef_value(d: DetailInputs, gate: str | None) -> tuple[dict | None, str | None]:
+    """EF and decoupling as in the long-run table (`longruns.per_run_ef`, no
+    heart rate band). Same gates as the aerobic value, except that steady time
+    is counted without the band."""
+    if gate:
+        return None, gate
     rows = longruns.per_run_ef(load_records(d.db, [d.activity_id]), d.config).to_dicts()
     e = rows[0] if rows else {}
+    steady_s = float(e.get("steady_s") or 0.0)
+    if steady_s < d.config.aerobic.min_steady_s:
+        return None, _short_steady(steady_s, d.config.aerobic.min_steady_s)
     if not e.get("ef_first") or not e.get("ef_second"):
         return None, "稳态秒不够切成前后两半"
     long_enough = d.activity["duration_s"] >= longruns.MIN_DURATION_S
@@ -708,10 +724,11 @@ def _ef_value(d: DetailInputs, aerobic_why: str | None) -> tuple[dict | None, st
 
 def _metrics(d: DetailInputs) -> dict:
     unavailable: dict[str, str] = {}
-    aerobic_value, why = _aerobic_value(d)
+    gate = _road_run_gate(d)
+    aerobic_value, why = _aerobic_value(d, gate)
     if why:
         unavailable["aerobic"] = why
-    ef, why = _ef_value(d, why)
+    ef, why = _ef_value(d, gate)
     if why:
         unavailable["ef"] = why
     if ef is None or ef["decoupling_pct"] is None:
@@ -751,11 +768,13 @@ def _metrics_method(config: Config) -> Method:
             "只统计有心率的秒，暂停不计。"
             "有氧能力值和有氧能力页同一算法：稳态秒的 GAP 速度按心率回归到 "
             f"{a.reference_hr} bpm；{aerobic.exclusions_note(a)}"
-            "EF 和 decoupling 和长距离表同一算法：EF = 稳态秒平均 GAP 速度（m/min）÷ "
+            "EF 和 decoupling 和长距离表同一算法，稳态秒不限心率："
+            "EF = 稳态秒平均 GAP 速度（m/min）÷ "
             "平均心率；decoupling 把稳态秒按累计时间对半分，(EF₁ − EF₂) ÷ EF₁ × 100%，"
             f"只给 {longruns.MIN_DURATION_S // 60} 分钟及以上的活动，"
             f"超过 {longruns.DECOUPLING_LIMIT_PCT:g}% 标红。"
-            "不计入有氧能力的活动也不给 EF。"
+            "不是户外路跑、没有逐秒心率或 GPS 不可用的活动不给 EF；"
+            f"不限心率的稳态时间不足 {a.min_steady_s // 60} 分钟时也不给。"
         ),
         "params": {
             "lthr_pct": list(pct),

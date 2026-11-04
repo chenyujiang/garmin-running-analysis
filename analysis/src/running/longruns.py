@@ -8,10 +8,11 @@ Spec, "EF 与 decoupling"; formulas in the running-tool notes, section 6.
   real elevation profile, so treadmill and trail runs are listed with null EF.
   Road runs that fail `running.aerobic.gps_usable` (no position or altitude,
   or GPS drift) are listed with null EF too.
-- Steady seconds: the aerobic metric's steady-state filter
-  (`running.aerobic.steady_state`: warm-up dropped, running, smoothed HR within
-  `reference_hr` +- `hr_band_bpm`, speed stable, not right after a pause, no
-  cadence lock), exactly as the spec defines steady state.
+- Steady seconds: the aerobic metric's steady-state filter without its heart
+  rate band (`running.aerobic.steady_state(..., hr_band=False)`: warm-up
+  dropped, running, speed stable, not right after a pause, no cadence lock).
+  The band would cut away the seconds a drifting heart rate leaves it, and
+  with them the drift decoupling is meant to show.
 - EF = time-weighted mean GAP speed (m/min) / time-weighted mean smoothed HR,
   over the steady seconds. Unit: m/min per bpm (Friel's yd/min per bpm value is
   this / 0.9144). GAP uses Minetti 2002 instead of TrainingPeaks' NGP, so the
@@ -84,7 +85,7 @@ def _ef(gap: pl.Expr, hr: pl.Expr, dt: pl.Expr) -> pl.Expr:
 
 
 def per_run_ef(records: pl.DataFrame, config: Config) -> pl.DataFrame:
-    df = steady_state(records, config.aerobic, config.run_walk)
+    df = steady_state(records, config.aerobic, config.run_walk, hr_band=False)
     df = df.filter(pl.col("steady")).sort("activity_id", "ts")
     df = df.with_columns(
         pl.col("dt_s").cum_sum().over("activity_id").alias("_cum"),
@@ -159,9 +160,9 @@ def _method(config: Config) -> Method:
             "（按 Garmin 记录的时长，含跑步机和越野）。"
             "EF 和 decoupling 只算户外路跑：跑步机和越野没有可靠的坡度，GAP 不准，留空。"
             f"同有氧能力：{exclusions_note(a)}"
-            "稳态秒沿用有氧能力的规则：去掉前 "
-            f"{a.warmup_s // 60} 分钟，在跑，平滑心率在 {a.reference_hr} ± "
-            f"{a.hr_band_bpm:g} bpm 内，{a.speed_window_s} 秒内平滑速度变化 ≤ "
+            "稳态秒沿用有氧能力的规则，但不限心率（心率带会把漂移出带的秒剔掉，"
+            "decoupling 就看不出漂移）：去掉前 "
+            f"{a.warmup_s // 60} 分钟，在跑，{a.speed_window_s} 秒内平滑速度变化 ≤ "
             f"{a.max_speed_change:.0%}，不是暂停后的第一秒，心率与 spm 相差 ≥ "
             f"{a.min_hr_spm_gap:g}。"
             "EF = 平均 GAP 速度（m/min）÷ 平均心率（bpm），只用稳态秒，按时间加权；"
@@ -184,7 +185,6 @@ def _method(config: Config) -> Method:
             "speed_window_s": a.speed_window_s,
             "max_speed_change": a.max_speed_change,
             "min_hr_spm_gap": a.min_hr_spm_gap,
-            "hr_band": {"reference_hr": a.reference_hr, "hr_band_bpm": a.hr_band_bpm},
             "max_speed_mps": a.max_speed_mps,
             "max_fast_s": a.max_fast_s,
             "activity_types": sorted(AEROBIC_TYPES),

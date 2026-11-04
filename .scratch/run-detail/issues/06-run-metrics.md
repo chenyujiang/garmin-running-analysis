@@ -34,3 +34,4 @@
 - 缺生理参数时区间的原因是 `该日期没有生效的生理参数`；没有逐秒心率但有摘要心率时是 `没有逐秒心率`，都没有时是 `没有心率`。
 - 前端：`static/run.js` 的 `metricsSection`（`RENDERERS` 的 ticket 06 槽位）：TRIMP、有氧能力（GAP 配速）、EF、decoupling 为数字，缺项显示原因；心率区间为横向条（区号、bpm 范围、时长、占比）。CSS 在 `style.css` 末尾的 ticket 06 区块。
 - 测试 `analysis/tests/test_detail_metrics_api.py`（Seam 3，22 个）：各区时长与边界；按日期换 LTHR；`[zones]` 改下限；暂停和无心率的秒不计；TRIMP 与 `/api/load` 一致、1 小时 HRmax 的已知值、摘要心率估算；没有心率；有氧能力值与 `/api/aerobic` 一致；8 种不计入原因；60 分钟 EF = 1.2、decoupling 0；漂移跑的 EF、decoupling 与 `/api/long-runs` 一致且标红；59 分钟有 EF 没有 decoupling；骑车和跑步机没有 EF。
+- 2026-11-04 用户决定：EF 和 decoupling 不限心率带，`longruns` 一起改。详情页 EF 不再以有氧能力值为门槛，改为户外路跑、有逐秒心率、GPS 可用，加上不限心率的稳态时间 ≥ 10 分钟。

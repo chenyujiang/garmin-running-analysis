@@ -240,8 +240,7 @@ def test_ef_and_decoupling_of_a_60_minute_run(analysis_db, client_factory):
 
 
 def test_ef_and_decoupling_are_the_long_run_table_values(analysis_db, client_factory):
-    # HR drifts from 140 to 155 bpm (both inside the steady HR band) at the same
-    # pace: EF falls in the second half.
+    # HR drifts from 140 to 155 bpm at the same pace: EF falls in the second half.
     add_hr_run(
         analysis_db,
         1,
@@ -256,6 +255,21 @@ def test_ef_and_decoupling_are_the_long_run_table_values(analysis_db, client_fac
         assert m["ef"][key] == pytest.approx(row[key], rel=1e-12), key
     assert m["ef"]["decoupling_pct"] > 5
     assert m["ef"]["decoupling_high"] is True
+
+
+def test_ef_without_an_aerobic_value_when_hr_is_outside_the_band(analysis_db, client_factory):
+    # 162 bpm the whole way: no seconds in the aerobic band (145 +- 15), so no
+    # aerobic value, but EF has no HR band and uses the 50 min after warm-up.
+    add_hr_run(analysis_db, 1, START_LOCAL, [steady(3600, speed=3.0, hr=162.0)])
+
+    m = get_metrics(client_factory, 1)
+    row = long_run(client_factory, 1)
+
+    assert m["aerobic"] is None
+    assert m["unavailable"]["aerobic"].startswith("稳态时间")
+    assert m["ef"]["ef"] == pytest.approx(180 / 162, abs=1e-6)
+    assert m["ef"]["steady_s"] == pytest.approx(row["steady_s"])
+    assert "ef" not in m["unavailable"]
 
 
 def test_a_59_minute_run_has_ef_but_no_decoupling(analysis_db, client_factory):
