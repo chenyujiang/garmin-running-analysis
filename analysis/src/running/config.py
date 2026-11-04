@@ -76,7 +76,7 @@ class ReportThresholds:
     """`[report]` in config.toml: thresholds of the detail page's report rules.
     The heat threshold is `[aerobic].hot_week_c`."""
 
-    interval_speed_ratio: float = 0.15  # a rep is this much faster than the run's median speed
+    interval_speed_ratio: float = 0.10  # a rep is this much faster than the run's median speed
     interval_min_s: int = 60  # a rep lasts at least this long
     interval_min_reps: int = 3  # an interval session has at least this many reps
     tempo_share: float = 0.5  # Z3-Z4 share of the running time for a tempo run
