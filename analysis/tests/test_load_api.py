@@ -238,3 +238,36 @@ def test_the_load_read_does_not_modify_the_analysis_database(data_dir, analysis_
     get_load(client_factory, "2026-10-02")
 
     assert db.read_bytes() == before
+
+
+def test_the_full_records_scan_is_reused_until_the_database_changes(
+    data_dir, analysis_db, monkeypatch
+):
+    from running import load
+    from running.config import load_config
+    from running.db import AnalysisDb
+
+    scans = []
+    real_query = AnalysisDb.query
+
+    def counting_query(self, sql, params=None):
+        if "lead(t)" in sql:
+            scans.append(sql)
+        return real_query(self, sql, params)
+
+    monkeypatch.setattr(AnalysisDb, "query", counting_query)
+    config = load_config()
+    insert_run(analysis_db, 1, "2026-10-01", heart_rate=192)
+
+    def trimp_on(day: date) -> float:
+        with AnalysisDb(data_dir / "running.sqlite") as db:
+            daily, _, _ = load.daily_trimp(db, config, date(2026, 10, 3))
+        return daily.get(day, 0.0)
+
+    assert trimp_on(date(2026, 10, 1)) == pytest.approx(HOUR_AT_MAX, abs=1e-3)
+    assert trimp_on(date(2026, 10, 1)) == pytest.approx(HOUR_AT_MAX, abs=1e-3)
+    assert len(scans) == 1
+
+    insert_run(analysis_db, 2, "2026-10-02", heart_rate=192)
+    assert trimp_on(date(2026, 10, 2)) == pytest.approx(HOUR_AT_MAX, abs=1e-3)
+    assert len(scans) == 2

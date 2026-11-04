@@ -102,7 +102,7 @@ Status: open
   4. **配速分布**：按距离把跑的秒对半分，比较前后两半的 GAP 配速。后半快 ≥ 2% 为负分割（negative split），慢 ≥ 2% 为正分割，其间为匀速。间歇跑不判配速分布。
   5. **负荷**：本次 TRIMP、占当周（周一到周日）TRIMP 的比例、当天跑前和第二天的 TSB。当天 ATL/CTL > 1.5 时沿用"负荷突增"的提示，verdict 为 watch。
   6. **气温**：本次平均气温（Open-Meteo）≥ `hot_week_c`（22 °C）时提示心率可能因热偏高，verdict 为 watch。没有气温数据时这一条不出现。
-- 报告阈值放在新的 `[report]` 配置里，代码给默认值：`interval_speed_ratio = 0.15`、`interval_min_s = 60`、`interval_min_reps = 3`、`tempo_share = 0.5`、`tempo_min_s = 900`、`long_easy_share = 0.7`、`easy_share = 0.8`、`aerobic_change = 0.02`、`split_change = 0.02`。`hot_c` 不另设，沿用 `[aerobic].hot_week_c`。
+- 报告阈值放在新的 `[report]` 配置里，代码给默认值：`interval_speed_ratio = 0.10`（原为 0.15，见 ticket 08）、`interval_min_s = 60`、`interval_min_reps = 3`、`tempo_share = 0.5`、`tempo_min_s = 900`、`long_easy_share = 0.7`、`easy_share = 0.8`、`aerobic_change = 0.02`、`split_change = 0.02`。`hot_c` 不另设，沿用 `[aerobic].hot_week_c`。
 - 非跑步类活动：详情页照样打开，给概要、心率曲线、心率区间和 TRIMP；跑步专属的部分（跑步配速、每公里分段、有氧能力、配速分布、训练类型）返回 null，并带原因"仅跑步类活动"。
 
 **仪表盘**

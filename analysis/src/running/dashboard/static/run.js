@@ -10,9 +10,23 @@ import { frame, niceStep, svgEl, ticks, xAxis, yGrid } from "./svg.js";
 
 /** The detail page; fills itself once the data arrives. */
 export function runPage(id) {
-  const section = h("section", { class: "run" }, back(), h("p", { class: "small muted" }, "正在读取…"));
+  const section = h("section", { class: "run" }, back(), loading());
   load(section, id);
   return section;
+}
+
+/** "正在读取活动详情…" with the seconds waited so far; the counter stops
+ * once the section's content is replaced. */
+function loading() {
+  const seconds = h("span", { class: "num" }, "");
+  const p = h("p", { class: "loading", role: "status" }, "正在读取活动详情…", seconds);
+  const started = Date.now();
+  const timer = setInterval(() => {
+    if (!p.isConnected && Date.now() - started > 1000) return clearInterval(timer);
+    const s = Math.floor((Date.now() - started) / 1000);
+    seconds.textContent = s >= 1 ? ` 已等 ${s} 秒` : "";
+  }, 500);
+  return p;
 }
 
 function back() {

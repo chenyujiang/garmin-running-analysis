@@ -140,13 +140,13 @@ def _method(phys: Physiology | None, max_gap_s: float) -> Method:
     }
 
 
-# `{where}` may filter the records; its parameters come first, then the cap
-# on Δt.
+# `{source}` is `a.records` (every activity) or `recs` (`query_records`); the
+# only parameter is the cap on Δt.
 _HR_SECONDS_SQL = """
 WITH r AS (
     SELECT activity_id, heart_rate,
            epoch(CAST(rtrim(timestamp, 'Z') AS TIMESTAMP)) AS t
-    FROM a.records {where}
+    FROM {source}
 ), d AS (
     SELECT activity_id, heart_rate,
            least(greatest(coalesce(
@@ -160,6 +160,27 @@ GROUP BY activity_id, heart_rate
 """
 
 
+# Per-activity heart-rate seconds over all records: a full scan of `records`
+# (seconds on a real database), so it is kept per database path and reused
+# until the file or its WAL changes.
+_HR_CACHE: dict[Path, tuple[tuple, pl.DataFrame]] = {}
+
+
+def _hr_seconds(db: AnalysisDb, max_sample_gap_s: float) -> pl.DataFrame:
+    key = (db.file_version(), max_sample_gap_s)
+    path = db.path.resolve()
+    cached = _HR_CACHE.get(path)
+    if cached is not None and cached[0] == key:
+        return cached[1]
+    hr = (
+        db.query(_HR_SECONDS_SQL.format(source="a.records"), [max_sample_gap_s])
+        if "records" in db.tables()
+        else pl.DataFrame()
+    )
+    _HR_CACHE[path] = (key, hr)
+    return hr
+
+
 def daily_trimp(
     db: AnalysisDb, config: Config, today: date
 ) -> tuple[dict[date, float], list[LoadActivity], list[LoadActivity]]:
@@ -171,11 +192,7 @@ def daily_trimp(
         " WHERE CAST(substr(start_time_local, 1, 10) AS DATE) <= ? ORDER BY start_time_local",
         [today],
     )
-    hr = (
-        db.query(_HR_SECONDS_SQL.format(where=""), [config.load.max_sample_gap_s])
-        if "records" in db.tables()
-        else pl.DataFrame()
-    )
+    hr = _hr_seconds(db, config.load.max_sample_gap_s)
     per_activity: dict[int, list[tuple[float, float]]] = {}
     for row in hr.iter_rows(named=True):
         per_activity.setdefault(row["activity_id"], []).append((row["hr"], row["seconds"]))
@@ -234,9 +251,10 @@ def activity_trimp(db: AnalysisDb, config: Config, activity: dict) -> ActivityTr
     daily load."""
     samples = None
     if "records" in db.tables():
-        hr = db.query(
-            _HR_SECONDS_SQL.format(where="WHERE activity_id = ?"),
-            [activity["activity_id"], config.load.max_sample_gap_s],
+        hr = db.query_records(
+            _HR_SECONDS_SQL.format(source="recs"),
+            [activity["activity_id"]],
+            [config.load.max_sample_gap_s],
         )
         samples = [(r["hr"], r["seconds"]) for r in hr.iter_rows(named=True)] or None
     day = date.fromisoformat(activity["start_time_local"][:10])

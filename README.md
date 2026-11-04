@@ -82,7 +82,7 @@ max_sample_gap_s = 10           # a longer gap between HR samples counts only th
 lthr_pct = [85, 90, 95, 100]    # HR zone floors in % of LTHR: Z1 below 85 %, Z5 at or above 100 %
 
 [report]                        # thresholds of the detail page's report rules
-interval_speed_ratio = 0.15     # a rep is this much faster than the run's median speed
+interval_speed_ratio = 0.10     # a rep is this much faster than the run's median speed
 interval_min_s = 60             # a rep lasts at least this long
 interval_min_reps = 3           # an interval session has at least this many reps
 tempo_share = 0.5               # Z3-Z4 share of the running time for a tempo run

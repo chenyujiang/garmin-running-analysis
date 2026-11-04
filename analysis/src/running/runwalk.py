@@ -135,11 +135,10 @@ def running_summaries(
     per_activity = _empty_record_totals()
     if "records" in tables:
         ids = acts["activity_id"].to_list()
-        id_list = ", ".join("?" for _ in ids)
-        recs = db.query(
-            "SELECT activity_id, strptime(timestamp, ?) AS ts, cadence, speed, distance"
-            f" FROM a.records WHERE activity_id IN ({id_list})",
-            [_TS_FORMAT, *ids],
+        recs = db.query_records(
+            "SELECT activity_id, strptime(timestamp, ?) AS ts, cadence, speed, distance FROM recs",
+            ids,
+            [_TS_FORMAT],
         )
         if not recs.is_empty():
             classified = classify_records(recs, settings)
