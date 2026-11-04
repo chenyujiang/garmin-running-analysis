@@ -2,7 +2,7 @@
 // Reads GET /api/status, then renders the page the hash names:
 //   #/ (or no hash)  home: the empty state or the data summary
 //   #/runs?...       activity list (runs.js)
-//   #/run/<id>       activity detail (placeholder until the detail ticket)
+//   #/run/<id>       activity detail (run.js)
 // Without an analysis database every page shows the empty state.
 
 import { h, fmtDateTime, fmtDate } from "./dom.js";
@@ -12,6 +12,7 @@ import { loadSection } from "./load.js";
 import { longRunsSection } from "./longruns.js";
 import { predictionsSection } from "./predictions.js";
 import { racesSection } from "./races.js";
+import { runPage } from "./run.js";
 import { runsPage } from "./runs.js";
 import { volumeSection } from "./volume.js";
 
@@ -46,16 +47,8 @@ export function parseRoute(hash) {
 function page(s, route) {
   if (!s.has_data) return empty(s);
   if (route.name === "runs") return runsPage(route.query);
-  if (route.name === "run") return runPlaceholder(route.id);
+  if (route.name === "run") return runPage(route.id);
   return summary(s);
-}
-
-function runPlaceholder(id) {
-  return h("section", {},
-    h("p", { class: "small" }, h("a", { href: "#/runs" }, "← 全部活动")),
-    h("h1", { class: "headline" }, `活动 ${id}`),
-    h("p", { class: "dek" }, "详情页还在做。"),
-  );
 }
 
 function render(s, route) {

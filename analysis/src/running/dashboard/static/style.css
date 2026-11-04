@@ -174,3 +174,13 @@ a.brand { text-decoration: none; color: var(--ink); }
 .runs-table td a:hover { text-decoration: underline; }
 .runs .foot { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
 .pager { display: flex; gap: 16px; align-items: baseline; }
+
+/* run-detail ticket 02: activity detail page (#/run/<id>), summary */
+.run-head { margin-bottom: 18px; }
+.run-head p { margin: 0 0 4px; }
+.run-head .headline { margin: 0; }
+.run section { margin-bottom: 28px; }
+.run-summary .stat-line { gap: 28px; }
+.run-summary .num { font-variant-numeric: tabular-nums; }
+.a-lower td a { text-decoration: none; }
+.a-lower td a:hover { text-decoration: underline; }
