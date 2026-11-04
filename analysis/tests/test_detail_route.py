@@ -6,8 +6,10 @@ indices and a scale in metres per unit. No absolute latitude, longitude or
 centre point leaves the server. A run without GPS has `route: null` and the
 reason.
 
-The coordinates below are fictional (open ocean in the South Pacific), not
-anyone's running spot.
+The coordinates below are fictional (open ocean in the Southern Ocean), not
+anyone's running spot. They have four decimals so that other numbers in the
+response (heart rate, altitude, rounded to 0.1) cannot fall in the check
+window by chance.
 """
 
 import math
@@ -17,8 +19,10 @@ import pytest
 from synthetic import insert_activity
 from synthetic_route import LatLon, add_route_run
 
-ORIGIN_LAT = -31.7
-ORIGIN_LON = -128.3
+ORIGIN_LAT = -63.4371
+ORIGIN_LON = 171.2853
+# Half-width of the window around the raw fixes: about 500 m of latitude.
+WINDOW_DEG = 0.005
 EARTH_RADIUS_M = 6_371_008.8
 START_LOCAL = "2026-10-20T07:00:00"
 
@@ -55,13 +59,14 @@ def numbers(value) -> Iterator[float]:
 
 
 def assert_no_coordinates(body: dict, track: list[LatLon]) -> None:
-    """No number anywhere in the response is within 0.5 degree of a raw
-    latitude or longitude, sign ignored."""
+    """No number anywhere in the response is within WINDOW_DEG of a raw
+    latitude or longitude, sign ignored. That catches any raw fix and the
+    centre point, which lies inside the fixes' bounding box."""
     fixes = [fix for fix in track if fix is not None]
     windows = []
     for axis in (0, 1):
         raw = [abs(fix[axis]) for fix in fixes]
-        windows.append((min(raw) - 0.5, max(raw) + 0.5))
+        windows.append((min(raw) - WINDOW_DEG, max(raw) + WINDOW_DEG))
     for n in numbers(body):
         assert not any(lo <= abs(n) <= hi for lo, hi in windows), n
 

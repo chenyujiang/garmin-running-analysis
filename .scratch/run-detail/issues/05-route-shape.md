@@ -27,7 +27,7 @@
 - **为 null 的原因（自定）**：spec 只说 `route: null` 并说明原因，没定字段。用同级的 `route_unavailable`：没有任何 GPS 定位（跑步机、没有逐秒记录）为"没有 GPS 记录（跑步机或室内活动）"；所有定位点在同一处为"GPS 定位点不足，画不出形状"；有路线时为 null。非跑步类活动有 GPS 时照样给路线（spec 的跑步专属清单不含路线）。
 - `method.params`：`max_points, tolerance_m, projection`，不含任何坐标。
 - 前端 `static/run.js` 的 route 块：`routeSection`，手写 SVG（不用地图库、不加载底图），长边 420 px，路线墨黑折线，空心圆为起点、实心圆为终点，左下比例尺取接近长边 1/4 的整数长度（复用 `svg.js` 的 `niceStep`，文件头多一行 import）。细长路线（如直线往返）给比例尺留最小宽度。没有路线时显示 `route_unavailable`。CSS 在 `style.css` 末尾 ticket 05 区块。
-- 测试 `analysis/tests/test_detail_route.py`（Seam 3，6 个），合成数据 `tests/synthetic_route.py` 的 `add_route_run`（新函数，按测试给的轨迹逐秒写 `lat`/`lon`）。坐标是写在测试文件里的虚构点（南太平洋公海）。每个有路线的测试都遍历整个响应 JSON 的所有数字，断言没有任何数在原始纬度或经度 ±0.5° 以内（不计符号）。
+- 测试 `analysis/tests/test_detail_route.py`（Seam 3，6 个），合成数据 `tests/synthetic_route.py` 的 `add_route_run`（新函数，按测试给的轨迹逐秒写 `lat`/`lon`）。坐标是写在测试文件里的虚构点（南大洋公海，带 4 位小数）。每个有路线的测试都遍历整个响应 JSON 的所有数字，断言没有任何数在原始纬度或经度 ±0.005°（约 500 m）以内（不计符号）。最初用 ±0.5°，合并 ticket 03 的逐秒曲线后，心率和海拔的数值会碰巧落进窗口，所以收窄并换了坐标。
   - 2000 × 1000 m 的矩形环线：`x, y` 在 `[0, 1]`，x 占满、y 跨 0.5（长宽比 2:1），比例尺 2000 m，起终点在西南角，四个角都保留，直线段被简化到 ≤ 10 个点。
   - 3000 m 长、每秒一个 2 m 拐点的锯齿：正好 500 个点，比例尺 3000 m。
   - 前 100 秒和后 50 秒没有定位的直线往返：只用有定位的秒，起终点在南端，折返点保留，比例尺 900 m。
