@@ -1,6 +1,7 @@
 // Activity list page, #/runs (run-detail ticket 01). Reads GET /api/activities.
-// Prototype variant A table. Filters and page live in the hash query
-// (#/runs?type=all&min_km=10&page=2), so a filtered list can be bookmarked.
+// Prototype variant A table. Running types only. Search, filters and page
+// live in the hash query (#/runs?q=parkrun&from=2026-01-01&to=2026-06-30&
+// min_km=10&page=2), so a search can be bookmarked.
 
 import { h, fmtDate, fmtDur, fmtPace } from "./dom.js";
 
@@ -30,13 +31,16 @@ export function typeName(key) {
   return TYPE_NAMES[key] ?? key;
 }
 
+const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s ?? "");
+
 /** Filters from the hash query; anything invalid falls back to the default. */
 function readQuery(query) {
-  const type = query.get("type") === "all" ? "all" : "running";
   const km = Number.parseFloat(query.get("min_km"));
   const page = Number.parseInt(query.get("page"), 10);
   return {
-    type,
+    q: (query.get("q") ?? "").trim(),
+    from: isDate(query.get("from")) ? query.get("from") : null,
+    to: isDate(query.get("to")) ? query.get("to") : null,
     min_km: Number.isFinite(km) && km > 0 ? km : null,
     page: Number.isInteger(page) && page >= 1 ? page : 1,
   };
@@ -44,7 +48,9 @@ function readQuery(query) {
 
 function hashFor(f) {
   const q = new URLSearchParams();
-  if (f.type !== "running") q.set("type", f.type);
+  if (f.q) q.set("q", f.q);
+  if (f.from) q.set("from", f.from);
+  if (f.to) q.set("to", f.to);
   if (f.min_km != null) q.set("min_km", String(f.min_km));
   if (f.page > 1) q.set("page", String(f.page));
   const s = q.toString();
@@ -61,21 +67,29 @@ export function runsPage(query) {
 
 function head(f) {
   return h("div", { class: "sec-head" },
-    h("h1", { class: "headline" }, "全部活动"),
-    h("div", { class: "tools" }, typeSwitch(f), distanceSelect(f)),
+    h("h1", { class: "headline" }, "全部跑步"),
+    h("div", { class: "tools" }, searchForm(f), distanceSelect(f)),
   );
 }
 
-function typeSwitch(f) {
-  const button = (type, label) => {
-    const b = h("button", { type: "button", "aria-pressed": String(f.type === type) }, label);
-    b.addEventListener("click", () => { location.hash = hashFor({ ...f, type, page: 1 }); });
-    return b;
-  };
-  return h("div", { class: "seg", role: "group", "aria-label": "活动类型" },
-    button("running", "跑步类"),
-    button("all", "全部类型"),
+/** Name keyword plus a date range; submitting (Enter or the button) searches. */
+function searchForm(f) {
+  const text = h("input", { type: "search", value: f.q, placeholder: "搜名称，如 parkrun",
+    "aria-label": "按名称搜索", size: "16" });
+  const from = h("input", { type: "date", value: f.from ?? "", "aria-label": "开始日期" });
+  const to = h("input", { type: "date", value: f.to ?? "", "aria-label": "结束日期" });
+  const form = h("form", { class: "runs-search", role: "search" },
+    text, from, h("span", { class: "muted" }, "–"), to,
+    h("button", { type: "submit" }, "搜索"),
+    f.q || f.from || f.to ? h("a", { href: hashFor({ min_km: f.min_km, page: 1 }), class: "small" }, "清除") : null,
   );
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    location.hash = hashFor({
+      ...f, q: text.value.trim(), from: from.value || null, to: to.value || null, page: 1,
+    });
+  });
+  return form;
 }
 
 function distanceSelect(f) {
@@ -95,8 +109,11 @@ function distanceSelect(f) {
 }
 
 async function load(section, f) {
-  const q = new URLSearchParams({ type: f.type, page: String(f.page), page_size: String(PAGE_SIZE) });
+  const q = new URLSearchParams({ page: String(f.page), page_size: String(PAGE_SIZE) });
   if (f.min_km != null) q.set("min_km", String(f.min_km));
+  if (f.q) q.set("q", f.q);
+  if (f.from) q.set("date_from", f.from);
+  if (f.to) q.set("date_to", f.to);
   let v;
   try {
     const r = await fetch(`api/activities?${q}`);
@@ -111,11 +128,11 @@ async function load(section, f) {
 
 function render(v, f) {
   if (!v.activities.length) {
-    const msg = v.total ? "这一页没有活动。" : "没有符合筛选条件的活动。";
+    const msg = v.total ? "这一页没有活动。" : "没有符合条件的跑步。";
     return [h("p", { class: "small muted" }, msg), pager(v, f), how(v.method)];
   }
   return [
-    h("p", { class: "small muted count" }, `共 ${v.total} 个活动`),
+    h("p", { class: "small muted count" }, `${f.q || f.from || f.to ? "找到" : "共"} ${v.total} 次跑步`),
     table(v.activities),
     h("div", { class: "foot" }, pager(v, f), how(v.method)),
   ];

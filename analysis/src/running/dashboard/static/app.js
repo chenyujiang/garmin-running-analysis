@@ -3,6 +3,7 @@
 //   #/ (or no hash)  home: the empty state or the data summary
 //   #/runs?...       activity list (runs.js)
 //   #/run/<id>       activity detail (run.js)
+//   #/plan?...       5K plan after Daniels (plan.js)
 // Without an analysis database every page shows the empty state.
 
 import { h, fmtDateTime, fmtDate } from "./dom.js";
@@ -10,6 +11,7 @@ import { aerobicSection } from "./aerobic.js";
 import { markAllReadButton } from "./changes.js";
 import { loadSection } from "./load.js";
 import { longRunsSection } from "./longruns.js";
+import { planPage } from "./plan.js";
 import { predictionsSection } from "./predictions.js";
 import { racesSection } from "./races.js";
 import { runPage } from "./run.js";
@@ -33,12 +35,13 @@ async function load() {
   render(status, parseRoute(location.hash));
 }
 
-/** "#/runs?type=all" -> { name: "runs", query }; unknown hashes go home. */
+/** "#/runs?q=parkrun" -> { name: "runs", query }; unknown hashes go home. */
 export function parseRoute(hash) {
   const raw = hash.replace(/^#\/?/, "");
   const [path, search = ""] = raw.split("?", 2);
   const query = new URLSearchParams(search);
   if (path === "runs") return { name: "runs", query };
+  if (path === "plan") return { name: "plan", query };
   const m = /^run\/(\d+)$/.exec(path);
   if (m) return { name: "run", id: m[1], query };
   return { name: "home", query };
@@ -48,6 +51,7 @@ function page(s, route) {
   if (!s.has_data) return empty(s);
   if (route.name === "runs") return runsPage(route.query);
   if (route.name === "run") return runPage(route.id);
+  if (route.name === "plan") return planPage(route.query);
   return summary(s);
 }
 

@@ -1,5 +1,5 @@
 // Weekly volume column of the top band (ticket 10). Reads GET /api/volume.
-// Prototype variant A: three numbers, a 12-week bar chart (this week in grey),
+// Prototype variant A: three numbers, a 12-week bar chart (this week lighter),
 // and a "how is this calculated" note.
 
 import { watch } from "./changes.js";
@@ -79,7 +79,7 @@ function svg(tag, attrs = {}, text) {
   return el;
 }
 
-/** Hand-written SVG bars, one per week, oldest left. Unfinished week in grey. */
+/** Hand-written SVG bars, one per week, oldest left. Unfinished week lighter. */
 function barChart(weeks) {
   const W = 380, H = 190, m = { t: 14, r: 8, b: 26, l: 30 };
   const iw = W - m.l - m.r, ih = H - m.t - m.b;
@@ -101,7 +101,7 @@ function barChart(weeks) {
     const k = w.distance_m / 1000;
     if (k > 0) {
       const bar = svg("rect", { x, y: sy(k), width: bw, height: sy(0) - sy(k),
-        fill: w.complete ? "var(--ink)" : "var(--ink-3)" });
+        fill: w.complete ? "var(--accent)" : "var(--accent-soft)" });
       bar.append(svg("title", {}, `${w.week_start} 起一周：${km(w.distance_m)} km，${w.runs} 次跑步${w.complete ? "" : "（未完）"}`));
       root.append(bar);
     }

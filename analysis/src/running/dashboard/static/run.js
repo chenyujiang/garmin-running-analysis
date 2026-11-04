@@ -81,21 +81,21 @@ function summarySection(v) {
   const s = v.summary;
   const missing = (key) => s.unavailable[key] ?? "—";
   const value = (key, fmt) => (s[key] == null ? missing(key) : fmt(s[key]));
-  const item = (label, key, fmt, title) =>
+  const item = (label, key, fmt, title, tone) =>
     h("div", title ? { title } : {},
       h("span", { class: "l" }, label),
-      h("span", { class: s[key] == null ? "num muted" : "num" }, value(key, fmt)));
+      h("span", { class: s[key] == null ? "num muted" : tone ? `num tone-${tone}` : "num" }, value(key, fmt)));
   return h("section", { class: "run-summary" },
     h("div", { class: "sec-head" }, h("h2", {}, "概要"), h("div", { class: "tools" }, how(s.method))),
     h("div", { class: "stat-line" },
       item("距离", "distance_m", (m) => `${(m / 1000).toFixed(2)} km`),
       item("时长", "duration_s", fmtDur),
-      item("跑步配速", "running_pace_s_per_km", (p) => `${fmtPace(p)} /km`, "只算跑的秒，走路不计"),
+      item("跑步配速", "running_pace_s_per_km", (p) => `${fmtPace(p)} /km`, "只算跑的秒，走路不计", "pace"),
       item("Garmin 平均配速", "garmin_pace_s_per_km", (p) => `${fmtPace(p)} /km`, "含走路，仅作参照"),
-      item("平均心率", "avg_hr_bpm", (b) => `${Math.round(b)} bpm`),
-      item("最大心率", "max_hr_bpm", (b) => `${Math.round(b)} bpm`),
-      item("平均步频", "avg_cadence_spm", (c) => `${Math.round(c)} spm`, "只算跑的秒"),
-      item("累计爬升", "elevation_gain_m", (m) => `${Math.round(m)} m`),
+      item("平均心率", "avg_hr_bpm", (b) => `${Math.round(b)} bpm`, undefined, "hr"),
+      item("最大心率", "max_hr_bpm", (b) => `${Math.round(b)} bpm`, undefined, "hr"),
+      item("平均步频", "avg_cadence_spm", (c) => `${Math.round(c)} spm`, "只算跑的秒", "cad"),
+      item("累计爬升", "elevation_gain_m", (m) => `${Math.round(m)} m`, undefined, "alt"),
       item("气温", "air_temperature_c", (c) => `${c.toFixed(1)} °C`, "Open-Meteo，活动中点时刻"),
     ),
   );
@@ -151,10 +151,10 @@ function seriesSection(v) {
   const dur = Math.max(s.duration_s, s.t_s[s.t_s.length - 1], 1);
   const sx = (t) => SER_M.l + (t / dur) * (SER_W - SER_M.l - SER_M.r);
   const panels = [
-    { key: "hr_bpm", label: "心率", unit: "bpm", fmt: (x) => `${Math.round(x)}` },
-    { key: "pace_s_per_km", label: "配速", unit: "/km", fmt: fmtPace, invert: true, extra: "gap_pace_s_per_km" },
-    { key: "altitude_m", label: "海拔", unit: "m", fmt: (x) => `${Math.round(x)}` },
-    { key: "cadence_spm", label: "步频", unit: "spm", fmt: (x) => `${Math.round(x)}` },
+    { key: "hr_bpm", label: "心率", unit: "bpm", fmt: (x) => `${Math.round(x)}`, color: "var(--hr)" },
+    { key: "pace_s_per_km", label: "配速", unit: "/km", fmt: fmtPace, invert: true, extra: "gap_pace_s_per_km", color: "var(--pace)" },
+    { key: "altitude_m", label: "海拔", unit: "m", fmt: (x) => `${Math.round(x)}`, color: "var(--alt)" },
+    { key: "cadence_spm", label: "步频", unit: "spm", fmt: (x) => `${Math.round(x)}`, color: "var(--cad)" },
   ];
   const shown = panels.filter((p) => Array.isArray(s[p.key]) && s[p.key].length);
   const missing = panels.filter((p) => !shown.includes(p));
@@ -198,11 +198,11 @@ function serPanel(s, p, sx, dur, last) {
   };
   p.sy = sy;
   yGrid(svg, ticks(r.lo, r.hi, niceStep(r.hi - r.lo, 3)), sy, SER_M.l, SER_W - SER_M.r, p.fmt);
-  svg.append(svgEl("text", { x: SER_M.l + 4, y: y1 + 12 }, `${p.label}（${p.unit}）`));
+  svg.append(svgEl("text", { x: SER_M.l + 4, y: y1 + 12, class: "ser-label", fill: p.color }, `${p.label}（${p.unit}）`));
   if (p.extra && s[p.extra]?.length) {
     svg.append(svgEl("path", { d: serPath(s, s[p.extra], sx, sy), fill: "none", stroke: "var(--ink-3)", "stroke-width": 1.2, "stroke-dasharray": "3 2" }));
   }
-  svg.append(svgEl("path", { d: serPath(s, s[p.key], sx, sy), fill: "none", stroke: "var(--ink)", "stroke-width": 1.4, "stroke-linejoin": "round" }));
+  svg.append(svgEl("path", { d: serPath(s, s[p.key], sx, sy), fill: "none", stroke: p.color, "stroke-width": 1.5, "stroke-linejoin": "round" }));
   if (last) xAxis(svg, serTimeTicks(dur).map((t) => ({ x: t, label: serTimeLabel(t) })), sx, y2);
   svg.append(svgEl("line", { class: "xhair", x1: 0, x2: 0, y1, y2 }));
   svg.append(svgEl("circle", { class: "xhair-dot", r: 3.5, cx: 0, cy: 0 }));
@@ -435,9 +435,9 @@ function zoneBars(m) {
     h("p", { class: "small muted" }, `心率区间（LTHR ${z.lthr_bpm} bpm，自 ${z.physiology_effective_from} 起）`),
     ...z.zones.map((x) =>
       h("div", { class: "zone" },
-        h("span", { class: "z" }, `Z${x.zone}`),
+        h("span", { class: `z z${x.zone}` }, `Z${x.zone}`),
         h("span", { class: "bpm small muted" }, `${range(x)} bpm`),
-        h("span", { class: "track" }, h("i", { style: `width: ${(x.share * 100).toFixed(1)}%` })),
+        h("span", { class: "track" }, h("i", { class: `z${x.zone}`, style: `width: ${(x.share * 100).toFixed(1)}%` })),
         h("span", { class: "num" }, fmtDur(x.seconds)),
         h("span", { class: "num small muted" }, `${Math.round(x.share * 100)}%`),
       )),
@@ -448,6 +448,13 @@ function zoneBars(m) {
 // --- report (ticket 07) ------------------------------------------------------
 
 const VERDICT_NAMES = { good: "好", neutral: "—", watch: "注意", unknown: "无法判断" };
+
+/** "结论：依据" -> the conclusion in bold, the rest as it is. */
+function verdictText(text) {
+  const k = text.indexOf("：");
+  if (k <= 0 || k > 12) return [text];
+  return [h("b", {}, text.slice(0, k)), text.slice(k)];
+}
 
 function reportSection(v) {
   const r = v.report;
@@ -462,7 +469,7 @@ function reportSection(v) {
         h("summary", {},
           h("span", { class: "verdict" }, VERDICT_NAMES[i.verdict] ?? i.verdict),
           h("span", { class: "rule-name" }, i.name),
-          h("span", { class: "text" }, i.text)),
+          h("span", { class: "text" }, ...verdictText(i.text))),
         h("div", { class: "params small" },
           h("p", { class: "muted" }, `规则 ${i.rule}`),
           h("table", {},

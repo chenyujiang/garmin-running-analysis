@@ -144,3 +144,57 @@ def test_filters_that_match_nothing_still_report_data(analysis_db, client_factor
 
     assert body["has_data"] is True
     assert body["total"] == 0
+
+
+def test_a_search_matches_part_of_the_name_ignoring_case(analysis_db, client_factory):
+    insert_activity(
+        analysis_db,
+        1,
+        "2026-10-17T08:00:00",
+        distance_m=5000,
+        duration_s=1300,
+        activity_name="Morning Parkrun",
+    )
+    insert_activity(
+        analysis_db,
+        2,
+        "2026-10-24T08:00:00",
+        distance_m=5000,
+        duration_s=1250,
+        activity_name="parkrun PB",
+    )
+    insert_activity(
+        analysis_db,
+        3,
+        "2026-10-25T07:00:00",
+        distance_m=12000,
+        duration_s=4000,
+        activity_name="周日长距离",
+    )
+    insert_activity(
+        analysis_db,
+        4,
+        "2026-10-26T07:00:00",
+        distance_m=6000,
+        duration_s=1800,
+        activity_name="100% effort",
+    )
+
+    assert ids(get_activities(client_factory, q="PARKRUN")) == [2, 1]
+    assert ids(get_activities(client_factory, q="长距离")) == [3]
+    # % is a character to find, not a wildcard.
+    assert ids(get_activities(client_factory, q="%")) == [4]
+    body = get_activities(client_factory, q="  parkrun ")
+    assert body["query"] == "parkrun"
+    assert body["total"] == 2
+
+
+def test_a_date_range_includes_both_ends(analysis_db, client_factory):
+    for i, day in enumerate(["2026-09-30", "2026-10-01", "2026-10-15", "2026-10-31", "2026-11-01"]):
+        insert_activity(analysis_db, i + 1, f"{day}T07:00:00", distance_m=5000, duration_s=1500)
+
+    body = get_activities(client_factory, date_from="2026-10-01", date_to="2026-10-31")
+
+    assert ids(body) == [4, 3, 2]
+    assert (body["date_from"], body["date_to"]) == ("2026-10-01", "2026-10-31")
+    assert ids(get_activities(client_factory, date_from="2026-10-31")) == [5, 4]

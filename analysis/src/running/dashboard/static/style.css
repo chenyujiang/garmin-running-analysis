@@ -1,5 +1,9 @@
 /* Visual base from the dashboard prototype, variant A (commit 8013fab):
-   newsprint background, ink text, red only for annotations and warnings. */
+   newsprint background, ink text, red only for annotations and warnings.
+   Colour by role (2026-11): one accent for the user's own headline data
+   (weekly bars, aerobic trend, route, current nav), one colour per metric
+   shared by the summary numbers and the per-second curves, a cool-to-warm
+   ramp for HR zones, green and red for report verdicts. */
 :root {
   --paper: #f3efe6;
   --paper-2: #e9e3d6;
@@ -10,6 +14,19 @@
   --ink-3: #6b6458;
   --red: #b0281f;
   --red-wash: #f3ddd5;
+  --accent: #1d5c78;
+  --accent-soft: #9fbccb;
+  --hr: #a1365a;
+  --pace: #1d5c78;
+  --alt: #86642a;
+  --cad: #5a4f94;
+  --good: #2f6a45;
+  --good-wash: #dce8da;
+  --z1: #a9b6bf;
+  --z2: #5b97a8;
+  --z3: #5f9550;
+  --z4: #d38b2c;
+  --z5: #b0281f;
   --sans: "IBM Plex Sans", "Noto Sans SC", system-ui, sans-serif;
   --serif: "Noto Serif SC", "Songti SC", serif;
 }
@@ -107,6 +124,10 @@ details.how .body p { margin: 0 0 6px; }
 .aerobic { margin-bottom: 36px; }
 .sec-head { display: flex; align-items: baseline; gap: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--rule-strong); margin-bottom: 14px; flex-wrap: wrap; }
 .sec-head .tools { margin-left: auto; display: flex; gap: 12px; align-items: center; position: relative; }
+.runs-search { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.runs-search input { font: inherit; font-size: 13px; padding: 2px 6px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); font-variant-numeric: tabular-nums; }
+.runs-search input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+.runs-search button { font: inherit; font-size: 13px; padding: 2px 10px; border: 1px solid var(--accent); background: var(--accent); color: var(--paper); border-radius: 3px; cursor: pointer; }
 .sec-head details.how .body { position: absolute; right: 0; z-index: 3; width: min(70ch, 90vw); box-shadow: 0 6px 20px rgba(0,0,0,.12); }
 .seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
 .seg button { font: inherit; border: 0; background: transparent; padding: 3px 10px; font-size: 13px; cursor: pointer; color: var(--ink-2); }
@@ -166,7 +187,7 @@ a.brand { text-decoration: none; color: var(--ink); }
 .topnav { display: flex; gap: 18px; font-size: 14px; }
 .topnav a { color: var(--ink-3); text-decoration: none; padding: 4px 0; border-bottom: 2px solid transparent; }
 .topnav a:hover { color: var(--ink); }
-.topnav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--ink); }
+.topnav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
 .runs .sec-head .headline { margin: 0; }
 .runs select { font: inherit; font-size: 13px; color: var(--ink-2); background: transparent; border: 1px solid var(--rule); border-radius: 4px; padding: 3px 6px; }
 .runs .count { margin: 0 0 6px; }
@@ -189,9 +210,9 @@ a.brand { text-decoration: none; color: var(--ink); }
 /* run-detail ticket 05: route shape (SVG only, no map tiles) */
 .route-box svg { display: block; max-width: 100%; height: auto; }
 .route-box text { font-size: 12px; fill: var(--ink-2); font-variant-numeric: tabular-nums; }
-.route-line { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.route-start { fill: var(--paper); stroke: var(--ink); stroke-width: 2; }
-.route-finish { fill: var(--ink); }
+.route-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.route-start { fill: var(--paper); stroke: var(--good); stroke-width: 2.5; }
+.route-finish { fill: var(--red); }
 .route-scale { fill: none; stroke: var(--ink-2); stroke-width: 1.5; }
 
 /* run-detail ticket 06: run metrics, HR zones as horizontal bars */
@@ -201,8 +222,19 @@ a.brand { text-decoration: none; color: var(--ink); }
 .run-metrics .zones p { margin: 8px 0 6px; }
 .run-metrics .zone { display: grid; grid-template-columns: 28px 84px 1fr 64px 40px; gap: 10px; align-items: center; height: 24px; }
 .run-metrics .zone .z { font-weight: 600; }
+.run-metrics .zone .z::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: 1px; background: currentColor; }
+.run-metrics .zone .z.z1::before { background: var(--z1); }
+.run-metrics .zone .z.z2::before { background: var(--z2); }
+.run-metrics .zone .z.z3::before { background: var(--z3); }
+.run-metrics .zone .z.z4::before { background: var(--z4); }
+.run-metrics .zone .z.z5::before { background: var(--z5); }
 .run-metrics .zone .track { height: 10px; background: var(--paper-2); }
 .run-metrics .zone .track i { display: block; height: 100%; background: var(--ink-2); }
+.run-metrics .zone .track i.z1 { background: var(--z1); }
+.run-metrics .zone .track i.z2 { background: var(--z2); }
+.run-metrics .zone .track i.z3 { background: var(--z3); }
+.run-metrics .zone .track i.z4 { background: var(--z4); }
+.run-metrics .zone .track i.z5 { background: var(--z5); }
 .run-metrics .zone .num { text-align: right; }
 
 /* run-detail ticket 07: report, one row per rule, verdict first; red only for watch */
@@ -210,10 +242,61 @@ a.brand { text-decoration: none; color: var(--ink); }
 .report-items li { border-bottom: 1px solid var(--rule); padding: 6px 0; }
 .report-items summary { cursor: pointer; list-style: none; display: grid; grid-template-columns: 5em 7em 1fr; gap: 10px; }
 .report-items summary::-webkit-details-marker { display: none; }
-.report-items .verdict { font-weight: 600; }
+.report-items .verdict { font-weight: 600; justify-self: start; align-self: start; padding: 0 7px; border-radius: 3px; color: var(--ink-3); }
+.report-items .verdict-good .verdict { background: var(--good-wash); color: var(--good); }
+.report-items .verdict-watch .verdict { background: var(--red-wash); }
+.report-items .text b { font-weight: 600; color: var(--ink); }
 .report-items .rule-name { color: var(--ink-2); }
 .report-items .verdict-watch .verdict, .report-items .verdict-watch .text { color: var(--red); }
 .report-items .verdict-unknown .verdict, .report-items .verdict-unknown .text { color: var(--ink-3); }
 .report-items .params { margin: 6px 0 4px 5em; padding: 8px 12px; background: var(--paper-2); border-radius: 4px; }
 .report-items .params p { margin: 0 0 4px; }
 .report-items .params td { padding: 1px 12px 1px 0; font-variant-numeric: tabular-nums; }
+
+/* colour by role: summary numbers in their series colour, run detail back link */
+.num.tone-hr { color: var(--hr); }
+.num.tone-pace { color: var(--pace); }
+.num.tone-alt { color: var(--alt); }
+.num.tone-cad { color: var(--cad); }
+.chart text.ser-label { font-weight: 600; }
+.run > p.small:first-child a { color: var(--accent); text-decoration: none; }
+.run > p.small:first-child a:hover { text-decoration: underline; }
+
+/* 5K plan page (#/plan): pace keys share the HR-zone ramp, E cool to R hot */
+.plan-head { margin-bottom: 18px; }
+.plan-nums { display: flex; flex-wrap: wrap; gap: 14px 40px; margin: 18px 0 10px; }
+.plan-num .big { font: 700 30px/1.15 var(--serif); font-variant-numeric: tabular-nums; }
+.plan-num .tone-goal { color: var(--accent); }
+.feas { display: inline-block; margin-top: 4px; padding: 0 7px; border-radius: 3px; font-size: 12.5px; font-weight: 600; }
+.feas-good { background: var(--good-wash); color: var(--good); }
+.feas-stretch { background: #f6e6cc; color: #8a5a12; }
+.feas-far { background: var(--red-wash); color: var(--red); }
+.plan-form { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 0 0 18px; }
+.plan-form select { font: inherit; padding: 1px 4px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); }
+.plan-days { display: inline-flex; gap: 2px 8px; align-items: center; flex-wrap: wrap; }
+.plan-days label { display: inline-flex; gap: 2px; align-items: center; cursor: pointer; }
+.plan-form input[type="checkbox"] { padding: 0; accent-color: var(--accent); }
+.plan-form input { font: inherit; padding: 2px 6px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); font-variant-numeric: tabular-nums; }
+.plan-form button { font: inherit; padding: 2px 10px; border: 1px solid var(--accent); background: var(--accent); color: var(--paper); border-radius: 3px; cursor: pointer; }
+.plan-h { margin: 30px 0 8px; }
+.plan-paces table, .plan-week table { max-width: 980px; }
+.pk { display: inline-block; min-width: 1.6em; text-align: center; padding: 0 4px; border-radius: 3px; font-weight: 700; font-size: 12.5px; color: #fff; }
+.pk-E { background: var(--z2); color: var(--ink); }
+.pk-M { background: var(--z3); color: var(--ink); }
+.pk-T { background: var(--z4); color: var(--ink); }
+.pk-I { background: var(--z5); }
+.pk-R { background: var(--cad); }
+.plan-week { margin: 18px 0 0; }
+.plan-week h3 { font: 700 17px/1.3 var(--serif); margin: 0 0 4px; }
+.plan-week h3 .muted { font: 400 13.5px/1.3 var(--sans, inherit); }
+.plan-week td.day { width: 4em; color: var(--ink-3); }
+.plan-week td.kind { width: 5em; }
+.plan-week td.r { width: 6em; }
+.plan-week tr.k-Q td { background: var(--paper-2); }
+.plan-week tr.k-Q td.kind, .plan-week tr.k-race td.kind, .plan-week tr.k-parkrun td.kind { font-weight: 600; }
+.plan-week tr.k-parkrun td { background: var(--paper-2); }
+.plan-week tr.k-parkrun td:first-child { box-shadow: inset 3px 0 0 var(--z5); }
+.plan-week tr.k-race td { background: var(--good-wash); }
+.plan-week tr.k-rest td { color: var(--ink-3); }
+.plan-rules ul { max-width: 70ch; padding-left: 1.2em; }
+.plan-rules li { margin: 4px 0; }
