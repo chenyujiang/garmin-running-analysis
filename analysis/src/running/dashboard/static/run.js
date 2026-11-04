@@ -114,6 +114,55 @@ function summarySection(v) {
 
 // --- run metrics (ticket 06) -------------------------------------------------
 
+function metricsSection(v) {
+  const m = v.metrics;
+  if (!m) return null;
+  const why = (key) => m.unavailable[key] ?? "—";
+  const item = (label, value, key, title) =>
+    h("div", title ? { title } : {},
+      h("span", { class: "l" }, label),
+      h("span", { class: value == null ? "num muted" : "num" }, value ?? why(key)));
+  const a = m.aerobic;
+  const e = m.ef;
+  const dec = e?.decoupling_pct;
+  const decText = dec == null ? null : `${dec >= 0 ? "" : "−"}${Math.abs(dec).toFixed(1)}%`;
+  return h("section", { class: "run-metrics" },
+    h("div", { class: "sec-head" }, h("h2", {}, "本次指标"), h("div", { class: "tools" }, how(m.method))),
+    h("div", { class: "stat-line" },
+      item("TRIMP", m.trimp == null ? null : `${Math.round(m.trimp)}`, "trimp",
+        m.trimp_source === "summary_hr" ? "没有逐秒心率，按平均心率估算" : "逐秒心率累加"),
+      item("有氧能力", a ? `${fmtPace(a.pace_s_per_km)} /km` : null, "aerobic",
+        a ? `心率 ${a.reference_hr} bpm 时的 GAP 配速，稳态 ${Math.round(a.steady_s / 60)} 分钟` : null),
+      item("EF", e ? e.ef.toFixed(2) : null, "ef", "m/min per bpm，只用稳态秒"),
+      h("div", {},
+        h("span", { class: "l" }, "decoupling"),
+        h("span", { class: decText == null ? "num muted" : e.decoupling_high ? "num high" : "num" },
+          decText ?? why("decoupling"))),
+    ),
+    zoneBars(m),
+  );
+}
+
+function zoneBars(m) {
+  const z = m.zones;
+  if (!z) return h("p", { class: "small muted" }, `心率区间：${m.unavailable.zones ?? "—"}`);
+  const range = (x) =>
+    x.low_bpm == null ? `< ${Math.round(x.high_bpm)}`
+      : x.high_bpm == null ? `≥ ${Math.round(x.low_bpm)}`
+        : `${Math.round(x.low_bpm)}–${Math.round(x.high_bpm)}`;
+  return h("div", { class: "zones" },
+    h("p", { class: "small muted" }, `心率区间（LTHR ${z.lthr_bpm} bpm，自 ${z.physiology_effective_from} 起）`),
+    ...z.zones.map((x) =>
+      h("div", { class: "zone" },
+        h("span", { class: "z" }, `Z${x.zone}`),
+        h("span", { class: "bpm small muted" }, `${range(x)} bpm`),
+        h("span", { class: "track" }, h("i", { style: `width: ${(x.share * 100).toFixed(1)}%` })),
+        h("span", { class: "num" }, fmtDur(x.seconds)),
+        h("span", { class: "num small muted" }, `${Math.round(x.share * 100)}%`),
+      )),
+  );
+}
+
 
 // --- report (ticket 07) ------------------------------------------------------
 
@@ -129,4 +178,5 @@ const RENDERERS = [
   // splits (ticket 04)
   // route (ticket 05)
   // metrics (ticket 06)
+  metricsSection,
 ];
