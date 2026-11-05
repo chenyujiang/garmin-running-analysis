@@ -273,3 +273,37 @@ def test_a_utf8_bom_from_excel_is_accepted(data_dir, client_factory):
     races = get(client_factory, "/api/races")["races"]
 
     assert races[0]["note"] == "奥克兰 parkrun"
+
+
+def test_without_races_csv_recent_parkruns_are_the_basis(data_dir, analysis_db, client_factory):
+    # Saturdays 2026-10-24 and 2026-10-17; the evening run, the Wednesday run
+    # and the 10K do not look like a parkrun.
+    insert_activity(analysis_db, 1, "2026-10-24T08:00:00", distance_m=5040, duration_s=1250)
+    insert_activity(analysis_db, 2, "2026-10-17T08:00:00", distance_m=4980, duration_s=1300)
+    insert_activity(analysis_db, 3, "2026-10-17T17:00:00", distance_m=5000, duration_s=1150)
+    insert_activity(analysis_db, 4, "2026-10-21T08:00:00", distance_m=5000, duration_s=1150)
+    insert_activity(analysis_db, 5, "2026-10-10T08:00:00", distance_m=10000, duration_s=2400)
+    analysis_db.commit()
+
+    body = predictions(client_factory)
+
+    assert body["races_error"]["kind"] == "missing"
+    assert body["basis_source"] == "parkrun"
+    assert not body["stale"]
+    assert body["basis"]["date"] == "2026-10-24"
+    assert body["basis"]["time_s"] == 1250
+    assert body["basis"]["note"] == "parkrun"
+    assert body["last_race_date"] == "2026-10-24"
+    assert body["riegel_k_source"] == "default"  # 5040 vs 4980 m is GPS noise
+    assert row(body, "5k")["predicted_s"] == pytest.approx(1250 * (5000 / 5040) ** 1.06, abs=3)
+
+
+def test_a_recent_race_in_races_csv_wins_over_parkrun(data_dir, analysis_db, client_factory):
+    insert_activity(analysis_db, 1, "2026-10-24T08:00:00", distance_m=5040, duration_s=1150)
+    analysis_db.commit()
+    write_races(data_dir, "2026-10-04,,10000,2700,yes,")
+
+    body = predictions(client_factory)
+
+    assert body["basis_source"] == "races"
+    assert body["basis"]["distance_m"] == 10000

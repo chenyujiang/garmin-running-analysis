@@ -220,8 +220,8 @@ a.brand { text-decoration: none; color: var(--ink); }
 .run-metrics .num.high { color: var(--red); }
 .run-metrics .zones { max-width: 640px; }
 .run-metrics .zones p { margin: 8px 0 6px; }
-.run-metrics .zone { display: grid; grid-template-columns: 28px 84px 1fr 64px 40px; gap: 10px; align-items: center; height: 24px; }
-.run-metrics .zone .z { font-weight: 600; }
+.run-metrics .zone { display: grid; grid-template-columns: 40px 84px 1fr 64px 40px; gap: 10px; align-items: center; height: 24px; }
+.run-metrics .zone .z { font-weight: 600; white-space: nowrap; }
 .run-metrics .zone .z::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: 1px; background: currentColor; }
 .run-metrics .zone .z.z1::before { background: var(--z1); }
 .run-metrics .zone .z.z2::before { background: var(--z2); }

@@ -34,6 +34,8 @@ async function load(section) {
 const pace = (s) => `${Math.floor(Math.round(s) / 60)}:${String(Math.round(s) % 60).padStart(2, "0")}`;
 
 function render(v) {
+  // A missing races.csv is normal until the first race: grey hint, not an error.
+  if (v.races_error?.kind === "missing") return [h("p", { class: "small muted" }, v.races_error.message)];
   if (v.races_error) return [h("p", { class: "warn small" }, v.races_error.message)];
   if (!v.races.length) return [h("p", { class: "small muted" }, "races.csv 里还没有比赛。")];
   return [
