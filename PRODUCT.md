@@ -24,7 +24,7 @@ Priority on open:
 2. Aerobic fitness trend over months and years (running pace at reference HR 145 bpm, weekly median plus 4-week rolling median, weekly mean temperature shown alongside, EF and decoupling as supporting metrics).
 3. Race prediction as a small card (VDOT primary, Riegel comparison, marathon with mileage adjustment, Garmin prediction as reference, "stale" state when there is no recent race).
 
-Beyond the overview: an activity list and a detail page per run (route shape without a map, per-second charts, HR zones, laps, EF and decoupling) topped by a fixed-rule report (training type, aerobic comparison, HR drift, pacing, load, temperature). Each report line states its conclusion first, then the rule and numbers.
+Beyond the overview: an activity list and a detail page per run (route on an OpenStreetMap map, per-second charts, HR zones, laps, EF and decoupling) topped by a fixed-rule report (training type, aerobic comparison, HR drift, pacing, load, temperature). Each report line states its conclusion first, then the rule and numbers.
 
 ## Positioning
 

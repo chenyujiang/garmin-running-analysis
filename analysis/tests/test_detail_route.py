@@ -1,19 +1,15 @@
 """Seam 3: the route shape of GET /api/activities/{activity_id}.
 
-The route is drawn from its GPS seconds as a normalised shape only: x, y in
-[0, 1] with the aspect ratio kept, at most 500 points, the start and finish
-indices and a scale in metres per unit. No absolute latitude, longitude or
-centre point leaves the server. A run without GPS has `route: null` and the
-reason.
+The route is drawn from its GPS seconds, simplified to at most 500 points,
+both as latitude and longitude for the map and as a normalised shape: x, y in
+[0, 1] with the aspect ratio kept, the start and finish indices and a scale in
+metres per unit. A run without GPS has `route: null` and the reason.
 
 The coordinates below are fictional (open ocean in the Southern Ocean), not
-anyone's running spot. They have four decimals so that other numbers in the
-response (heart rate, altitude, rounded to 0.1) cannot fall in the check
-window by chance.
+anyone's running spot.
 """
 
 import math
-from collections.abc import Iterator
 
 import pytest
 from synthetic import insert_activity
@@ -21,8 +17,6 @@ from synthetic_route import LatLon, add_route_run
 
 ORIGIN_LAT = -63.4371
 ORIGIN_LON = 171.2853
-# Half-width of the window around the raw fixes: about 500 m of latitude.
-WINDOW_DEG = 0.005
 EARTH_RADIUS_M = 6_371_008.8
 START_LOCAL = "2026-10-20T07:00:00"
 
@@ -44,31 +38,21 @@ def rectangle_loop(width_m: float, height_m: float, step_m: float = 3.0) -> list
     return [*track, at(0, 0)]
 
 
-def numbers(value) -> Iterator[float]:
-    """Every number anywhere in a JSON value."""
-    if isinstance(value, bool):
-        return
-    if isinstance(value, int | float):
-        yield float(value)
-    elif isinstance(value, dict):
-        for v in value.values():
-            yield from numbers(v)
-    elif isinstance(value, list):
-        for v in value:
-            yield from numbers(v)
-
-
-def assert_no_coordinates(body: dict, track: list[LatLon]) -> None:
-    """No number anywhere in the response is within WINDOW_DEG of a raw
-    latitude or longitude, sign ignored. That catches any raw fix and the
-    centre point, which lies inside the fixes' bounding box."""
+def assert_coordinates_are_kept_fixes(route: dict, track: list[LatLon]) -> None:
+    """`lat`/`lon` are the kept fixes, in time order, to 6 decimals (about
+    0.1 m): the first and last are the first and last fixes."""
     fixes = [fix for fix in track if fix is not None]
-    windows = []
-    for axis in (0, 1):
-        raw = [abs(fix[axis]) for fix in fixes]
-        windows.append((min(raw) - WINDOW_DEG, max(raw) + WINDOW_DEG))
-    for n in numbers(body):
-        assert not any(lo <= abs(n) <= hi for lo, hi in windows), n
+    pairs = list(zip(route["lat"], route["lon"], strict=True))
+    assert len(pairs) == len(route["x"])
+    i = 0
+    for lat, lon in pairs:
+        while i < len(fixes) and not (
+            abs(fixes[i][0] - lat) <= 1e-6 and abs(fixes[i][1] - lon) <= 1e-6
+        ):
+            i += 1
+        assert i < len(fixes), (lat, lon)
+    assert pairs[route["start_index"]] == pytest.approx(fixes[0], abs=1e-6)
+    assert pairs[route["finish_index"]] == pytest.approx(fixes[-1], abs=1e-6)
 
 
 def get_detail(client_factory, activity_id: int) -> dict:
@@ -77,7 +61,7 @@ def get_detail(client_factory, activity_id: int) -> dict:
     return r.json()
 
 
-def test_a_loop_is_a_normalised_shape_with_no_coordinates(analysis_db, client_factory):
+def test_a_loop_is_a_normalised_shape_with_its_coordinates(analysis_db, client_factory):
     # 2000 m east-west by 1000 m north-south: 6 km, 2000 GPS seconds.
     track = rectangle_loop(2000, 1000)
     assert len(track) > 1500
@@ -85,9 +69,18 @@ def test_a_loop_is_a_normalised_shape_with_no_coordinates(analysis_db, client_fa
 
     body = get_detail(client_factory, 5)
 
-    assert_no_coordinates(body, track)
     route = body["route"]
-    assert set(route) == {"x", "y", "start_index", "finish_index", "metres_per_unit", "method"}
+    assert_coordinates_are_kept_fixes(route, track)
+    assert set(route) == {
+        "x",
+        "y",
+        "lat",
+        "lon",
+        "start_index",
+        "finish_index",
+        "metres_per_unit",
+        "method",
+    }
     xs, ys = route["x"], route["y"]
     assert len(xs) == len(ys) <= 500
     assert all(0.0 <= v <= 1.0 for v in xs + ys)
@@ -122,8 +115,8 @@ def test_a_winding_route_is_simplified_to_500_points(analysis_db, client_factory
 
     body = get_detail(client_factory, 6)
 
-    assert_no_coordinates(body, track)
     route = body["route"]
+    assert_coordinates_are_kept_fixes(route, track)
     xs, ys = route["x"], route["y"]
     assert len(xs) == len(ys) == 500
     assert (min(xs), max(xs)) == pytest.approx((0.0, 1.0))
@@ -143,8 +136,8 @@ def test_seconds_without_a_fix_are_left_out(analysis_db, client_factory):
 
     body = get_detail(client_factory, 8)
 
-    assert_no_coordinates(body, track)
     route = body["route"]
+    assert_coordinates_are_kept_fixes(route, track)
     xs, ys = route["x"], route["y"]
     assert all(x == pytest.approx(0.0) for x in xs)
     assert (min(ys), max(ys)) == pytest.approx((0.0, 1.0))

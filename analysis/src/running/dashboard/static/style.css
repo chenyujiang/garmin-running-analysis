@@ -216,13 +216,23 @@ a.brand { text-decoration: none; color: var(--ink); }
 .a-lower td a { text-decoration: none; }
 .a-lower td a:hover { text-decoration: underline; }
 
-/* run-detail ticket 05: route shape (SVG only, no map tiles) */
-.route-box svg { display: block; max-width: 100%; height: auto; }
-.route-box text { font-size: 12px; fill: var(--ink-2); font-variant-numeric: tabular-nums; }
-.route-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.route-start { fill: var(--paper); stroke: var(--good); stroke-width: 2.5; }
-.route-finish { fill: var(--red); }
-.route-scale { fill: none; stroke: var(--ink-2); stroke-width: 1.5; }
+/* run-detail ticket 05: route map, OpenStreetMap tiles under an SVG line */
+.route-map { position: relative; height: 420px; overflow: hidden; background: var(--paper-2); border: 1px solid var(--rule); cursor: grab; touch-action: none; user-select: none; }
+.route-map.dragging { cursor: grabbing; }
+.route-tiles img { position: absolute; left: 0; top: 0; width: 256px; height: 256px; max-width: none; pointer-events: none; }
+.route-tiles img.missing { visibility: hidden; }
+.route-overlay { position: absolute; left: 0; top: 0; pointer-events: none; }
+.route-casing { fill: none; stroke: #fff; stroke-opacity: 0.85; stroke-width: 6; stroke-linejoin: round; stroke-linecap: round; }
+.route-line { fill: none; stroke: var(--red); stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+.route-start { fill: #fff; stroke: var(--good); stroke-width: 3; }
+.route-finish { fill: var(--ink); stroke: #fff; stroke-width: 2; }
+.route-controls { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; }
+.route-controls button { font: inherit; font-size: 13px; min-width: 30px; height: 28px; padding: 0 6px; border: 1px solid var(--rule-strong); background: var(--paper); color: var(--ink); border-radius: 3px; cursor: pointer; }
+.route-controls button:hover { background: var(--paper-2); }
+.route-scale { position: absolute; left: 10px; bottom: 8px; display: flex; align-items: flex-end; gap: 6px; font-size: 12px; color: var(--ink); }
+.route-scalebar { display: block; height: 6px; border: 2px solid var(--ink); border-top: 0; background: rgb(255 255 255 / 0.6); }
+.route-attrib { position: absolute; right: 0; bottom: 0; padding: 1px 6px; font-size: 11px; background: rgb(255 255 255 / 0.8); color: var(--ink-2); }
+.route-attrib a { color: inherit; }
 
 /* run-detail ticket 06: run metrics, HR zones as horizontal bars */
 .run-metrics .stat-line { gap: 28px; }

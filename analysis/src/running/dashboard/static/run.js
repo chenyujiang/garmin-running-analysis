@@ -5,6 +5,7 @@
 // order, with its code in its own block below.
 
 import { h, fmtDate, fmtDur, fmtPace, pad } from "./dom.js";
+import { routeMap } from "./routemap.js";
 import { typeName } from "./runs.js";
 import { frame, niceStep, svgEl, ticks, xAxis, yGrid } from "./svg.js";
 
@@ -346,20 +347,12 @@ function splitLapTable(rows) {
 }
 
 
-// --- route shape (ticket 05) -------------------------------------------------
-// The API gives only a normalised shape (x, y in [0, 1], y grows southwards)
-// and metres per unit; no coordinates and no map tiles, so nothing here can
-// place the run on a map.
-
-const ROUTE_PX = 420; // pixels per unit along the longer side
-const ROUTE_PAD = 18;
-
-function fmtMetres(m) {
-  return m >= 1000 ? `${m / 1000} km` : `${m} m`;
-}
+// --- route map (ticket 05) ---------------------------------------------------
+// The API gives the simplified track's lat/lon; routemap.js draws it on
+// OpenStreetMap tiles.
 
 function routeSection(v) {
-  const head = (tools) => h("div", { class: "sec-head" }, h("h2", {}, "路线形状"), tools);
+  const head = (tools) => h("div", { class: "sec-head" }, h("h2", {}, "路线"), tools);
   const r = v.route;
   if (!r) {
     return h("section", { class: "run-route" },
@@ -367,36 +360,10 @@ function routeSection(v) {
       h("p", { class: "small muted" }, v.route_unavailable || "没有路线"),
     );
   }
-  const w = Math.max(...r.x), hh = Math.max(...r.y);
-  const px = (x) => ROUTE_PAD + x * ROUTE_PX;
-  const py = (y) => ROUTE_PAD + y * ROUTE_PX;
-  // Scale bar: a round length near a quarter of the longer side.
-  const barM = niceStep(Math.max(w, hh) * r.metres_per_unit, 4);
-  const barPx = (barM / r.metres_per_unit) * ROUTE_PX;
-  const W = Math.max(w * ROUTE_PX, barPx + 60) + 2 * ROUTE_PAD; // room for the bar on a thin route
-  const barY = hh * ROUTE_PX + 2 * ROUTE_PAD + 6;
-  const H = barY + 24;
-
-  const svg = svgEl("svg", {
-    viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img",
-    "aria-label": "路线形状（不含地图）",
-  });
-  const points = r.x.map((x, i) => `${px(x).toFixed(1)},${py(r.y[i]).toFixed(1)}`).join(" ");
-  svg.append(svgEl("polyline", { points, class: "route-line" }));
-
-  const [sx, sy] = [px(r.x[r.start_index]), py(r.y[r.start_index])];
-  const [fx, fy] = [px(r.x[r.finish_index]), py(r.y[r.finish_index])];
-  svg.append(svgEl("circle", { cx: fx, cy: fy, r: 5, class: "route-finish" }));
-  svg.append(svgEl("circle", { cx: sx, cy: sy, r: 7, class: "route-start" }));
-
-  const x0 = ROUTE_PAD;
-  svg.append(svgEl("path", { d: `M${x0},${barY - 4}V${barY}H${x0 + barPx}V${barY - 4}`, class: "route-scale" }));
-  svg.append(svgEl("text", { x: x0 + barPx + 6, y: barY + 4 }, fmtMetres(barM)));
-
   return h("section", { class: "run-route" },
     head(h("div", { class: "tools" }, how(r.method))),
-    h("div", { class: "route-box" }, svg),
-    h("p", { class: "small muted" }, "空心圆为起点，实心圆为终点；上方为北。只画形状，不加载地图。"),
+    routeMap(r),
+    h("p", { class: "small muted" }, "空心圆为起点，实心圆为终点。拖动平移，双击或按 + 放大。"),
   );
 }
 

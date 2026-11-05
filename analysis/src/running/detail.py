@@ -516,9 +516,11 @@ def _splits_method(config: Config) -> Method:
     }
 
 
-# --- route shape (ticket 05) -------------------------------------------------
-# Privacy: only the normalised shape and a scale leave this block. No latitude,
-# longitude or centre point is returned, logged or put in `method`.
+# --- route map (ticket 05) ---------------------------------------------------
+# Privacy: the simplified track's latitude and longitude go to the local
+# browser, which draws them on OpenStreetMap tiles; the tile server sees which
+# tiles are fetched, so the approximate area leaves the machine. Coordinates are
+# never logged or put in `method`.
 
 ROUTE_MAX_POINTS = 500
 ROUTE_TOLERANCE_M = 0.5  # points this close to the chord add nothing visible
@@ -537,8 +539,10 @@ def _route_fixes(d: DetailInputs) -> list[tuple[float, float]]:
 
 
 def _route(d: DetailInputs) -> dict | None:
-    """The normalised route shape, or None (see `_route_unavailable` for why)."""
-    points = _project(_route_fixes(d))
+    """The simplified route, as coordinates for the map and as a normalised
+    shape, or None (see `_route_unavailable` for why)."""
+    fixes = _route_fixes(d)
+    points = _project(fixes)
     if points is None:
         return None
     kept = _simplify(points, ROUTE_MAX_POINTS, ROUTE_TOLERANCE_M)
@@ -549,6 +553,8 @@ def _route(d: DetailInputs) -> dict | None:
     return {
         "x": [(x - x0) / span for x in xs],
         "y": [(y_north - y) / span for y in ys],  # screen order: y grows southwards
+        "lat": [round(fixes[i][0], 6) for i in kept],
+        "lon": [round(fixes[i][1], 6) for i in kept],
         "start_index": 0,
         "finish_index": len(kept) - 1,
         "metres_per_unit": span,
@@ -622,14 +628,14 @@ def _chord_distance(p: tuple[float, float], a: tuple[float, float], b: tuple[flo
 
 def _route_method() -> Method:
     return {
-        "name": "路线形状",
+        "name": "路线地图",
         "description": (
             "只用有 GPS 定位的秒。按等距矩形投影换成以路线中心为原点的米制平面"
             "（东西方向乘以中心纬度的余弦），再整体缩放到 0–1，长边占满，长宽比不变；"
             f"用 Douglas–Peucker 简化到最多 {ROUTE_MAX_POINTS} 个点，"
             f"离弦不到 {ROUTE_TOLERANCE_M:g} 米的点不保留，起点和终点保留。"
-            "比例尺是 0–1 的 1 个单位对应的米数。接口不返回任何经纬度或中心点，"
-            "也不加载在线底图，路线位置不离开本机。"
+            "比例尺是 0–1 的 1 个单位对应的米数。简化后的经纬度只发给本机浏览器，"
+            "由浏览器叠在 OpenStreetMap 瓦片上；瓦片服务器能从请求的瓦片看出大致区域。"
         ),
         "params": {
             "max_points": ROUTE_MAX_POINTS,
