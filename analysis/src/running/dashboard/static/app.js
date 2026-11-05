@@ -109,19 +109,20 @@ function summary(s) {
 }
 
 function overview(s) {
-  return h("section", {},
-    h("h1", { class: "headline" }, `已有 ${s.activity_count} 个活动`),
-    h("div", { class: "stat-line" },
-      stat("活动", h("span", { class: "big" }, String(s.activity_count))),
-      stat("最近一次同步", h("span", { class: "num" }, s.last_sync_utc ? fmtDateTime(s.last_sync_utc) : "未知")),
-      stat("最近一次活动", h("span", { class: "num" }, s.latest_activity_local ? fmtDate(s.latest_activity_local) : "—")),
+  // Footer strip: data status is reference, not a headline; it sits apart from the sections above.
+  return h("footer", { class: "status-foot" },
+    h("h2", {}, "数据状态"),
+    h("dl", {},
+      stat("活动", `${s.activity_count} 个`),
+      stat("最近一次同步", s.last_sync_utc ? fmtDateTime(s.last_sync_utc) : "未知"),
+      stat("最近一次活动", s.latest_activity_local ? fmtDate(s.latest_activity_local) : "—"),
     ),
     dataDirNote(s),
   );
 }
 
 function stat(label, value) {
-  return h("div", {}, h("span", { class: "l" }, label), value);
+  return h("div", {}, h("dt", {}, label), h("dd", { class: "num" }, value));
 }
 
 function dataDirNote(s) {
