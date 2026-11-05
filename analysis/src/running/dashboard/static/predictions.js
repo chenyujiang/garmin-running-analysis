@@ -2,7 +2,8 @@
 // Prototype variant A: a small table, main prediction (VDOT; marathon = Vickers 2016)
 // with Riegel and Garmin as comparison columns, the basis race written underneath.
 // Stale (no all-out race in 6 months): the table fades, a red line gives the
-// last race date and asks for races.csv to be updated.
+// last race date and asks for races.csv to be updated. Without a recent race
+// the API falls back to parkruns; a missing races.csv is a grey hint, not an error.
 
 import { watch } from "./changes.js";
 import { h, fmtDate } from "./dom.js";
@@ -51,8 +52,16 @@ const MAIN_LABEL = { vdot: "VDOT", vickers_model1: "Vickers", vickers_model2: "V
 
 function render(v) {
   const out = [h("h2", {}, TITLE)];
-  if (v.races_error) out.push(h("p", { class: "warn small" }, v.races_error.message));
-  if (v.stale && !v.races_error) {
+  const missing = v.races_error?.kind === "missing";
+  if (v.races_error && !missing) out.push(h("p", { class: "warn small" }, v.races_error.message));
+  if (v.basis_source === "parkrun") {
+    out.push(h("p", { class: "small muted" },
+      `${missing ? "没有 races.csv" : `races.csv 里 ${v.method.params.window_months} 个月内没有全力比赛`}，`
+      + "按最近的 parkrun 预测。"));
+  } else if (missing) {
+    out.push(h("p", { class: "small muted" },
+      "没有 races.csv，最近也没有 parkrun，暂不预测。在数据目录建 races.csv 记录比赛即可。"));
+  } else if (v.stale && !v.races_error) {
     out.push(h("p", { class: "warn small" },
       v.last_race_date
         ? `最近一场全力比赛是 ${fmtDate(v.last_race_date)}，已超过 6 个月，不给预测。比赛后请更新 races.csv。`

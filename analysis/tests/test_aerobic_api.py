@@ -484,3 +484,27 @@ def test_without_a_database_every_week_is_empty(data_dir, client_factory):
     assert body["runs"] == []
     assert body["method"]["params"]["reference_hr"] == 145
     assert "Minetti" in body["method"]["description"]
+
+
+def test_each_run_is_computed_once_until_the_database_changes(
+    analysis_db, client_factory, monkeypatch
+):
+    from running import aerobic
+
+    computed: list[list[int]] = []
+    real = aerobic._per_run
+
+    def counting(db, config, activity_ids):
+        computed.append(sorted(activity_ids))
+        return real(db, config, activity_ids)
+
+    monkeypatch.setattr(aerobic, "_per_run", counting)
+    add_hr_run(analysis_db, 1, "2026-10-20T07:00:00", [steady(1800, speed=3.0)])
+
+    first = get_aerobic(client_factory)
+    assert get_aerobic(client_factory) == first
+    assert computed == [[1]]
+
+    add_hr_run(analysis_db, 2, "2026-10-22T07:00:00", [steady(1800, speed=3.2)])
+    assert ids(get_aerobic(client_factory)) == [1, 2]
+    assert computed == [[1], [1, 2]]

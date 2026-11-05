@@ -24,3 +24,14 @@ def test_starts_on_a_console_that_cannot_encode_chinese(monkeypatch):
     sys.stdout.flush()
     assert started == [{"host": app.HOST, "port": app.PORT}]
     assert f"http://{app.HOST}:{app.PORT}/".encode() in raw.getvalue()
+
+
+def test_static_files_are_revalidated_before_reuse(client_factory):
+    client = client_factory()
+    for path in ("/", "/style.css", "/app.js"):
+        r = client.get(path)
+        assert r.status_code == 200
+        assert r.headers["cache-control"] == "no-cache"
+        assert "etag" in r.headers
+    etag = client.get("/style.css").headers["etag"]
+    assert client.get("/style.css", headers={"If-None-Match": etag}).status_code == 304

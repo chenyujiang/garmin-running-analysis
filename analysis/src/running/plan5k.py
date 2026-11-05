@@ -30,8 +30,7 @@ from typing import Literal, TypedDict
 
 from running.db import open_analysis_db
 from running.predict import MARATHON_M, vdot, vdot_time
-from running.races import race_predictions
-from running.runwalk import running_summaries
+from running.races import parkruns, race_predictions
 from running.section import section_inputs
 
 FIVE_K = 5000.0
@@ -47,8 +46,6 @@ DEFAULT_PARKRUN_DAY = 6
 PARKRUN_WU_KM = 2.0
 PARKRUN_CD_KM = 1.5
 PARKRUN_WEEKS = 8  # how far back recent parkruns count for the current level
-PARKRUN_M = (4800.0, 5400.0)  # run-only distance of a parkrun activity
-PARKRUN_HOURS = (7, 9)  # local start hour, inclusive
 
 PaceKey = Literal["E", "M", "T", "I", "R"]
 
@@ -387,39 +384,25 @@ def _week(
 
 
 def _parkrun_best(today: date | None, root: Path | None, weekday: int) -> Current | None:
-    """Best recent parkrun-like run: on `weekday`, starting in the morning,
-    5 km of running. Run-only time, so standing in the start funnel and
-    walking afterwards do not count."""
+    """Best parkrun-like run (`races.parkruns`) of the last `PARKRUN_WEEKS`."""
     inputs = section_inputs(today, root)
     db = open_analysis_db(inputs.root)
-    if db is None:
-        return None
     try:
-        if "activities" not in db.tables():
-            return None
         start = inputs.today - timedelta(days=PARKRUN_WEEKS * 7 - 1)
-        runs = running_summaries(db, inputs.config.run_walk, since_local=start.isoformat())
+        runs = parkruns(db, inputs.config.run_walk, start, inputs.today, weekday)
     finally:
-        db.close()
+        if db is not None:
+            db.close()
     best: Current | None = None
-    for r in runs.iter_rows(named=True):
-        when, dist, secs = r["start_time_local"], r["run_distance_m"], r["run_duration_s"]
-        day = date.fromisoformat(when[:10])
-        if day > inputs.today or day.isoweekday() != weekday:
-            continue
-        if not PARKRUN_HOURS[0] <= int(when[11:13]) <= PARKRUN_HOURS[1]:
-            continue
-        if not dist or not secs or not PARKRUN_M[0] <= dist <= PARKRUN_M[1]:
-            continue
-        value = vdot(dist, secs)
-        if best is None or value > best["vdot"]:
+    for r in runs:
+        if best is None or r["vdot"] > best["vdot"]:
             best = {
                 "source": "parkrun",
-                "vdot": value,
-                "five_k_s": vdot_time(value, FIVE_K),
-                "basis_date": day.isoformat(),
-                "basis_distance_m": float(dist),
-                "basis_time_s": float(secs),
+                "vdot": r["vdot"],
+                "five_k_s": vdot_time(r["vdot"], FIVE_K),
+                "basis_date": r["date"],
+                "basis_distance_m": r["distance_m"],
+                "basis_time_s": r["time_s"],
             }
     return best
 
@@ -442,7 +425,8 @@ def plan_5k(
     pred = race_predictions(today=today, root=root)
     target_vdot = vdot(FIVE_K, target_s)
     warnings: list[str] = []
-    basis = pred["basis"]
+    # A parkrun basis is weighed below, on this plan's own parkrun day.
+    basis = pred["basis"] if pred["basis_source"] == "races" else None
     parkrun = None if parkrun_day is None else _parkrun_best(today, root, parkrun_day)
     if current_s is not None:
         current: Current = {

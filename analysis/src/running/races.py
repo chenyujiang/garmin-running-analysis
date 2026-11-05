@@ -24,6 +24,10 @@ Predictions (5K, 10K, half, marathon):
   last 8 weeks (56 days up to today) / 8, converted km -> miles.
 - Garmin column: the latest Race Predictor row in `garmin_metrics` up to today,
   shown even when our own predictions are stale.
+- Without a recent all-out race in `races.csv` (missing file included), recent
+  parkruns stand in as all-out races: Saturday runs starting 7-9 am local with
+  4.8-5.4 km of running, timed by running seconds only (`parkruns`).
+  `basis_source` says which one the predictions rest on.
 """
 
 import csv
@@ -34,7 +38,7 @@ from typing import Literal, TypedDict
 
 import polars as pl
 
-from running.config import Config, data_dir
+from running.config import Config, RunWalk, data_dir
 from running.db import AnalysisDb, open_analysis_db
 from running.predict import (
     MARATHON_M,
@@ -60,6 +64,9 @@ COLUMNS = ("date", "activity_id", "distance_m", "time_s", "all_out", "note")
 WINDOW_MONTHS = 6
 VOLUME_WEEKS = 8
 VICKERS_MIN_RATIO = 1.5
+PARKRUN_WEEKDAY = 6  # ISO weekday, Saturday
+PARKRUN_M = (4800.0, 5400.0)  # run-only distance of a parkrun activity
+PARKRUN_HOURS = (7, 9)  # local start hour, inclusive
 TRUE = {"yes", "y", "true", "t", "1", "是", "全力"}
 FALSE = {"no", "n", "false", "f", "0", "否", ""}
 DISTANCES = (
@@ -123,6 +130,7 @@ class Predictions(TypedDict):
     stale: bool
     races_error: RacesError | None
     basis: Basis | None
+    basis_source: Literal["races", "parkrun"] | None
     last_race_date: str | None
     window_start: str
     riegel_k: float | None
@@ -210,6 +218,44 @@ def read_races(root: Path | None = None) -> tuple[list[Race], RacesError | None]
     return races, None
 
 
+def parkruns(
+    db: AnalysisDb | None,
+    settings: RunWalk,
+    since: date,
+    today: date,
+    weekday: int = PARKRUN_WEEKDAY,
+) -> list[Race]:
+    """Parkrun-like runs from `since` to `today`: on `weekday`, starting in the
+    morning, 5 km of running. Run-only time, so standing in the start funnel
+    and walking afterwards do not count. Oldest first, as all-out races."""
+    if db is None or "activities" not in db.tables():
+        return []
+    runs = running_summaries(db, settings, since_local=since.isoformat())
+    out: list[Race] = []
+    for r in runs.sort("start_time_local").iter_rows(named=True):
+        when, dist, secs = r["start_time_local"], r["run_distance_m"], r["run_duration_s"]
+        day = date.fromisoformat(when[:10])
+        if day > today or day.isoweekday() != weekday:
+            continue
+        if not PARKRUN_HOURS[0] <= int(when[11:13]) <= PARKRUN_HOURS[1]:
+            continue
+        if not dist or not secs or not PARKRUN_M[0] <= dist <= PARKRUN_M[1]:
+            continue
+        out.append(
+            {
+                "date": day.isoformat(),
+                "activity_id": r["activity_id"],
+                "distance_m": float(dist),
+                "time_s": float(secs),
+                "all_out": True,
+                "note": "parkrun",
+                "pace_s_per_km": secs / dist * 1000.0,
+                "vdot": vdot(dist, secs),
+            }
+        )
+    return out
+
+
 def months_before(d: date, months: int) -> date:
     y, m = divmod(d.year * 12 + d.month - 1 - months, 12)
     m += 1
@@ -285,19 +331,29 @@ def race_predictions(today: date | None = None, root: Path | None = None) -> Pre
     window_start = months_before(today, WINDOW_MONTHS)
     all_out = [r for r in races if r["all_out"] and r["date"] <= today.isoformat()]
     recent = [r for r in all_out if r["date"] >= window_start.isoformat()]
-    last = max((r["date"] for r in all_out), default=None)
-    best = max(recent, key=lambda r: r["vdot"], default=None)
 
     db = open_analysis_db(root)
     try:
         weekly_km = _weekly_km(db, config, today)
         garmin = _garmin(db, today)
+        source: Literal["races", "parkrun"] | None = "races" if recent else None
+        if not recent:
+            recent = parkruns(db, config.run_walk, window_start, today)
+            if recent:
+                source, all_out = "parkrun", all_out + recent
     finally:
         if db is not None:
             db.close()
+    last = max((r["date"] for r in all_out), default=None)
+    best = max(recent, key=lambda r: r["vdot"], default=None)
     miles = km_to_miles(weekly_km)
 
-    k = riegel_exponent([(r["distance_m"], r["time_s"]) for r in recent])
+    # Parkruns are all 5 km; GPS noise in their distances must not fit a k.
+    k = (
+        None
+        if source == "parkrun"
+        else riegel_exponent([(r["distance_m"], r["time_s"]) for r in recent])
+    )
     k_source: Literal["personal", "default"] | None = None
     if best is not None:
         k_source = "default" if k is None else "personal"
@@ -356,6 +412,7 @@ def race_predictions(today: date | None = None, root: Path | None = None) -> Pre
         "stale": best is None,
         "races_error": error,
         "basis": _basis(best) if best else None,
+        "basis_source": source,
         "last_race_date": last,
         "window_start": window_start.isoformat(),
         "riegel_k": k if best is not None else None,
@@ -375,7 +432,10 @@ def _method(config: Config) -> Method:
         "name": "VDOT 为主，全马用 Vickers 2016，Riegel 和 Garmin 作对照",
         "description": (
             f"依据：最近 {WINDOW_MONTHS} 个月内 all_out 为 yes 的比赛里 VDOT 最高的一场；"
-            f"{WINDOW_MONTHS} 个月内没有就标为过期，不给预测值。"
+            f"races.csv 里 {WINDOW_MONTHS} 个月内没有全力比赛时（包括没有 races.csv），"
+            f"改用这段时间里的 parkrun：周六当地 {PARKRUN_HOURS[0]}–{PARKRUN_HOURS[1]} 点开始、"
+            f"跑的距离 {PARKRUN_M[0] / 1000:g}–{PARKRUN_M[1] / 1000:g} km 的跑步，"
+            "用时只算跑的秒，当作全力比赛；parkrun 也没有就标为过期，不给预测值。"
             "VDOT 用 Daniels & Gilbert（Oxygen Power，1979）的公式："
             "VO2 = −4.60 + 0.182258·v + 0.000104·v²（v 单位 m/min），"
             "%max = 0.8 + 0.1894393·e^(−0.012778·t) + 0.2989558·e^(−0.1932605·t)（t 单位 min），"
@@ -398,6 +458,9 @@ def _method(config: Config) -> Method:
         ),
         "params": {
             "window_months": WINDOW_MONTHS,
+            "parkrun_weekday": PARKRUN_WEEKDAY,
+            "parkrun_m": list(PARKRUN_M),
+            "parkrun_hours": list(PARKRUN_HOURS),
             "riegel_k_default": RIEGEL_K,
             "riegel_k_range": [RIEGEL_K_MIN, RIEGEL_K_MAX],
             "volume_weeks": VOLUME_WEEKS,

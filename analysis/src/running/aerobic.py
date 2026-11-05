@@ -373,7 +373,6 @@ def aerobic_runs(
     speed_mps (GAP speed at reference HR; null when not valid), temperature_c
     (air temperature at the midpoint, see `air_temperature`), valid (enough
     steady time and `gps_usable`)."""
-    aerobic = config.aerobic
     if "activities" not in db.tables():
         return pl.DataFrame(schema=_RUN_SCHEMA)
     types = sorted(AEROBIC_TYPES)
@@ -388,14 +387,51 @@ def aerobic_runs(
     acts = db.query(f"SELECT activity_id, start_time_local FROM a.activities WHERE {where}", params)
     if acts.is_empty():
         return pl.DataFrame(schema=_RUN_SCHEMA)
-    recs = load_records(db, acts["activity_id"].to_list())
+    per_run = _cached_per_run(db, config, acts["activity_id"].to_list())
+    out = acts.join(per_run, on="activity_id", how="left").with_columns(
+        pl.col("valid").fill_null(False), pl.col("steady_s").fill_null(0.0)
+    )
+    return out.select(_RUN_SCHEMA.keys()).cast(_RUN_SCHEMA).sort("start_time_local")
+
+
+_PER_RUN_SCHEMA = {k: v for k, v in _RUN_SCHEMA.items() if k != "start_time_local"}
+
+# Per-run results (`_per_run`) by activity: each run depends only on its own
+# records, so a run is computed once and reused until the database file or
+# its WAL changes, or the aerobic / run-walk settings do. Kept per database path.
+_RUN_CACHE: dict[Path, tuple[tuple, pl.DataFrame]] = {}
+
+
+def _cached_per_run(db: AnalysisDb, config: Config, activity_ids: list[int]) -> pl.DataFrame:
+    key = (db.file_version(), config.aerobic, config.run_walk)
+    path = db.path.resolve()
+    cached = _RUN_CACHE.get(path)
+    known = cached[1] if cached is not None and cached[0] == key else None
+    if known is None:
+        known = pl.DataFrame(schema=_PER_RUN_SCHEMA)
+    missing = sorted(set(activity_ids) - set(known["activity_id"].to_list()))
+    if missing:
+        fresh = _per_run(db, config, missing)
+        # Runs without records get a row too, so they are not computed again.
+        fresh = (
+            pl.DataFrame({"activity_id": missing}, schema={"activity_id": pl.Int64})
+            .join(fresh, on="activity_id", how="left")
+            .select(_PER_RUN_SCHEMA.keys())
+            .cast(_PER_RUN_SCHEMA)
+        )
+        known = pl.concat([known, fresh])
+        _RUN_CACHE[path] = (key, known)
+    return known.filter(pl.col("activity_id").is_in(activity_ids))
+
+
+def _per_run(db: AnalysisDb, config: Config, activity_ids: list[int]) -> pl.DataFrame:
+    """steady_s, mean_hr, speed_mps, temperature_c and valid for each run
+    with records (see `aerobic_runs`)."""
+    aerobic = config.aerobic
+    recs = load_records(db, activity_ids)
     if recs.is_empty():
         per_run = pl.DataFrame(
-            schema={
-                k: _RUN_SCHEMA[k]
-                for k in _RUN_SCHEMA
-                if k not in ("start_time_local", "temperature_c")
-            }
+            schema={k: v for k, v in _PER_RUN_SCHEMA.items() if k != "temperature_c"}
         )
     else:
         df = steady_state(recs, aerobic, config.run_walk)
@@ -413,7 +449,7 @@ def aerobic_runs(
             .then(pl.col("_cov") / pl.col("_var_hr"))
             .otherwise(0.0)
         )
-        usable = gps_usable(db, acts["activity_id"].to_list(), aerobic)
+        usable = gps_usable(db, activity_ids, aerobic)
         valid = (pl.col("steady_s") >= aerobic.min_steady_s) & pl.col("activity_id").is_in(
             sorted(usable)
         )
@@ -423,12 +459,15 @@ def aerobic_runs(
             .then(pl.col("_mean_gap") + slope * (aerobic.reference_hr - pl.col("mean_hr")))
             .otherwise(None)
             .alias("speed_mps"),
-        )
-    air = air_temperature(db, acts["activity_id"].to_list())
-    out = (
-        acts.join(per_run, on="activity_id", how="left").join(air, on="activity_id", how="left")
-    ).with_columns(pl.col("valid").fill_null(False), pl.col("steady_s").fill_null(0.0))
-    return out.select(_RUN_SCHEMA.keys()).cast(_RUN_SCHEMA).sort("start_time_local")
+        ).drop("_mean_gap", "_var_hr", "_cov")
+    air = air_temperature(db, activity_ids)
+    ids = pl.DataFrame({"activity_id": activity_ids}, schema={"activity_id": pl.Int64})
+    return (
+        ids.join(per_run, on="activity_id", how="left")
+        .join(air, on="activity_id", how="left")
+        .select(_PER_RUN_SCHEMA.keys())
+        .cast(_PER_RUN_SCHEMA)
+    )
 
 
 class AerobicWeek(TypedDict):

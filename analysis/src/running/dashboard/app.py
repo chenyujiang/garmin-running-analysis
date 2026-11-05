@@ -110,8 +110,18 @@ def create_app() -> FastAPI:
         except ValueError as err:
             raise HTTPException(status_code=422, detail=str(err)) from err
 
-    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+    app.mount("/", _RevalidatedStaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app
+
+
+class _RevalidatedStaticFiles(StaticFiles):
+    """Static files the browser must revalidate (ETag) before each use, so an
+    edited style.css or app.js shows on the next page load."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 def main() -> None:
