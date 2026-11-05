@@ -599,10 +599,7 @@ def _simplify(points: list[tuple[float, float]], max_points: int, tolerance_m: f
     def push(i: int, j: int) -> None:
         if j - i < 2:
             return
-        k, dist = max(
-            ((m, _chord_distance(points[m], points[i], points[j])) for m in range(i + 1, j)),
-            key=lambda t: t[1],
-        )
+        k, dist = _farthest(points, i, j)
         if dist > tolerance_m:
             heapq.heappush(heap, (-dist, k, i, j))
 
@@ -615,15 +612,26 @@ def _simplify(points: list[tuple[float, float]], max_points: int, tolerance_m: f
     return sorted(kept)
 
 
-def _chord_distance(p: tuple[float, float], a: tuple[float, float], b: tuple[float, float]):
-    """Distance from `p` to the segment `a`–`b` (to `a` when they coincide, as
-    at the ends of a loop)."""
-    dx, dy = b[0] - a[0], b[1] - a[1]
+def _farthest(points: list[tuple[float, float]], i: int, j: int) -> tuple[int, float]:
+    """The point strictly between `i` and `j` farthest from the segment
+    `points[i]`–`points[j]` (from `points[i]` when the ends coincide, as at the
+    ends of a loop), and its distance; the first one on a tie. One flat loop:
+    this runs over every point of the route several times per request."""
+    ax, ay = points[i]
+    dx, dy = points[j][0] - ax, points[j][1] - ay
     length2 = dx * dx + dy * dy
-    if length2 == 0:
-        return math.hypot(p[0] - a[0], p[1] - a[1])
-    t = max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length2))
-    return math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy)
+    best_k, best_d2 = i + 1, -1.0
+    for m in range(i + 1, j):
+        ux, uy = points[m][0] - ax, points[m][1] - ay
+        if length2:
+            t = (ux * dx + uy * dy) / length2
+            t = 0.0 if t < 0.0 else 1.0 if t > 1.0 else t
+            ux -= t * dx
+            uy -= t * dy
+        d2 = ux * ux + uy * uy
+        if d2 > best_d2:
+            best_k, best_d2 = m, d2
+    return best_k, math.sqrt(best_d2)
 
 
 def _route_method() -> Method:

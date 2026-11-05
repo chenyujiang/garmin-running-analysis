@@ -165,10 +165,7 @@ def _nearest_grid(db: AnalysisDb, activity_ids: list[int]) -> pl.DataFrame:
     """activity_id, g_lat, g_lon: each run's nearest grid point within reach,
     in tenths of a degree. Runs without a position or grid point in reach
     are left out."""
-    grids = db.query(
-        f"SELECT DISTINCT {_tenths('grid_lat')} AS g_lat,"
-        f" {_tenths('grid_lon')} AS g_lon FROM a.hourly_weather"
-    )
+    grids = _weather(db)[0]
     if grids.is_empty():
         return pl.DataFrame(schema=_NEAR_SCHEMA)
     runs = db.query_records(
@@ -219,7 +216,26 @@ def _midpoints(db: AnalysisDb, near: pl.DataFrame, activity_ids: list[int]) -> p
 
 def _hourly(db: AnalysisDb) -> pl.DataFrame:
     """g_lat, g_lon, t, c: every hour with a temperature, sorted by time."""
-    return (
+    return _weather(db)[1]
+
+
+# The grid points and hourly temperatures of `hourly_weather`, read once and
+# reused until the database file or its WAL changes. Kept per database path.
+_WEATHER_CACHE: dict[Path, tuple[tuple, tuple[pl.DataFrame, pl.DataFrame]]] = {}
+
+
+def _weather(db: AnalysisDb) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """(grids, hourly): g_lat, g_lon of every grid point, and `_hourly`."""
+    key = db.file_version()
+    path = db.path.resolve()
+    cached = _WEATHER_CACHE.get(path)
+    if cached is not None and cached[0] == key:
+        return cached[1]
+    grids = db.query(
+        f"SELECT DISTINCT {_tenths('grid_lat')} AS g_lat,"
+        f" {_tenths('grid_lon')} AS g_lon FROM a.hourly_weather"
+    )
+    hourly = (
         db.query(
             f"SELECT {_tenths('grid_lat')} AS g_lat,"
             f" {_tenths('grid_lon')} AS g_lon,"
@@ -230,6 +246,8 @@ def _hourly(db: AnalysisDb) -> pl.DataFrame:
         .with_columns(pl.col("t").cast(pl.Datetime("us")))
         .sort("t")
     )
+    _WEATHER_CACHE[path] = (key, (grids, hourly))
+    return grids, hourly
 
 
 def _interpolate(mid: pl.DataFrame, hourly: pl.DataFrame) -> pl.DataFrame:
