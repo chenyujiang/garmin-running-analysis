@@ -47,6 +47,7 @@ class Aerobic:
     min_hr_spm_gap: float = 5.0  # |HR - spm| below this looks like cadence lock
     min_steady_s: int = 600  # runs with less steady time are left out
     grade_window_s: int = 30  # grade = rise / distance over this many seconds
+    grade_start_s: int = 120  # moving time at the start with no grade (altimeter settling)
     max_grade: float = 0.15  # grade is clipped to +- this before Cr(i)
     min_runs_per_week: int = 2  # weeks with fewer valid runs stay empty
     rolling_weeks: int = 4  # rolling median over this many weeks

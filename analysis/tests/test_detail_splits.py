@@ -37,6 +37,8 @@ def test_a_3300_m_run_has_three_full_kilometres_and_a_300_m_last_split(analysis_
         assert k["gap_pace_s_per_km"] == pytest.approx(333.3, abs=0.5)
         assert k["avg_hr_bpm"] == pytest.approx(145.0)
         assert k["avg_cadence_spm"] == pytest.approx(170.0)
+        # 3.0 m/s at 170 spm: 1.059 m per step.
+        assert k["avg_stride_m"] == pytest.approx(1.059, abs=0.001)
 
 
 def test_a_kilometre_with_a_walk_has_its_running_pace_without_the_walk(analysis_db, client_factory):
@@ -115,6 +117,8 @@ def test_the_watch_laps_come_with_cadence_doubled_to_spm(analysis_db, client_fac
     laps = s["laps"]
     assert [lap["lap"] for lap in laps] == [1, 2]
     assert [lap["avg_cadence_spm"] for lap in laps] == pytest.approx([176.0, 169.0])
+    # Stride = speed x 60 / spm: 3.333 m/s at 176 spm, 2.667 m/s at 169 spm.
+    assert [lap["avg_stride_m"] for lap in laps] == pytest.approx([1.136, 0.947], abs=0.001)
     first = laps[0]
     assert first["distance_m"] == pytest.approx(1000.0)
     # Timer time, not elapsed: the 30 s stood still at a light are left out.
@@ -175,3 +179,17 @@ def test_a_run_without_records_has_no_kilometre_splits_with_the_reason(analysis_
 
     assert s["kilometres"] is None
     assert s["unavailable"] == {"laps": "手表没有记录圈", "kilometres": "没有逐秒距离记录"}
+
+
+def test_the_altitude_drop_while_the_altimeter_settles_is_left_out(analysis_db, client_factory):
+    # A flat run whose altimeter reads 36 m too high at the start and settles
+    # within 40 s (as after a car ride): without the settling rule km 1 shows
+    # 36 m lost and a GAP pace well off the running pace.
+    add_hr_run(analysis_db, 7, START_LOCAL, [steady(40, grade=-0.3), steady(1000)])
+
+    km = get_splits(client_factory, 7)["kilometres"]
+
+    first = km[0]
+    assert first["gap_pace_s_per_km"] == pytest.approx(first["running_pace_s_per_km"], abs=0.5)
+    assert first["elevation_loss_m"] == pytest.approx(0.0)
+    assert first["elevation_gain_m"] == pytest.approx(0.0)

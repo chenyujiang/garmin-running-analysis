@@ -95,6 +95,7 @@ function summarySection(v) {
       item("平均心率", "avg_hr_bpm", (b) => `${Math.round(b)} bpm`, undefined, "hr"),
       item("最大心率", "max_hr_bpm", (b) => `${Math.round(b)} bpm`, undefined, "hr"),
       item("平均步频", "avg_cadence_spm", (c) => `${Math.round(c)} spm`, "只算跑的秒", "cad"),
+      item("平均步幅", "avg_stride_m", (m) => `${m.toFixed(2)} m`, "跑的秒：距离 / 步数", "cad"),
       item("累计爬升", "elevation_gain_m", (m) => `${Math.round(m)} m`, undefined, "alt"),
       item("气温", "air_temperature_c", (c) => `${c.toFixed(1)} °C`, "Open-Meteo，活动中点时刻"),
     ),
@@ -155,6 +156,7 @@ function seriesSection(v) {
     { key: "pace_s_per_km", label: "配速", unit: "/km", fmt: fmtPace, invert: true, extra: "gap_pace_s_per_km", color: "var(--pace)" },
     { key: "altitude_m", label: "海拔", unit: "m", fmt: (x) => `${Math.round(x)}`, color: "var(--alt)" },
     { key: "cadence_spm", label: "步频", unit: "spm", fmt: (x) => `${Math.round(x)}`, color: "var(--cad)" },
+    { key: "stride_m", label: "步幅", unit: "m", fmt: (x) => x.toFixed(2), color: "var(--cad)" },
   ];
   const shown = panels.filter((p) => Array.isArray(s[p.key]) && s[p.key].length);
   const missing = panels.filter((p) => !shown.includes(p));
@@ -267,6 +269,7 @@ function serCrosshair(stack, readout, s, shown, sx) {
       cell("GAP", s.gap_pace_s_per_km, (x) => `${fmtPace(x)} /km`),
       cell("海拔", s.altitude_m, (x) => `${Math.round(x)} m`),
       cell("步频", s.cadence_spm, (x) => `${Math.round(x)} spm`),
+      cell("步幅", s.stride_m, (x) => `${x.toFixed(2)} m`),
     ].filter(Boolean));
   });
   stack.addEventListener("mouseleave", hide);
@@ -298,6 +301,7 @@ const splitKm = (m) => `${(m / 1000).toFixed(2)} km`;
 const splitPace = (p) => `${fmtPace(p)} /km`;
 const splitBpm = (b) => `${Math.round(b)}`;
 const splitSpm = (c) => `${Math.round(c)}`;
+const splitStride = (m) => m.toFixed(2);
 const splitMetres = (m) => `${Math.round(m)}`;
 const splitNum = { style: "font-variant-numeric: tabular-nums" };
 
@@ -320,6 +324,7 @@ function splitKmTable(rows) {
     { label: "GAP 配速", title: "按坡度换算成平路的配速", get: (k) => k.gap_pace_s_per_km, fmt: splitPace },
     { label: "心率", get: (k) => k.avg_hr_bpm, fmt: splitBpm },
     { label: "步频", title: "只算跑的秒", get: (k) => k.avg_cadence_spm, fmt: splitSpm },
+    { label: "步幅 m", title: "跑的秒：距离 / 步数", get: (k) => k.avg_stride_m, fmt: splitStride },
     { label: "升 m", get: (k) => k.elevation_gain_m, fmt: splitMetres },
     { label: "降 m", get: (k) => k.elevation_loss_m, fmt: splitMetres },
   ], rows);
@@ -334,6 +339,7 @@ function splitLapTable(rows) {
     { label: "心率", get: (l) => l.avg_hr_bpm, fmt: splitBpm },
     { label: "最大心率", get: (l) => l.max_hr_bpm, fmt: splitBpm },
     { label: "步频", get: (l) => l.avg_cadence_spm, fmt: splitSpm },
+    { label: "步幅 m", get: (l) => l.avg_stride_m, fmt: splitStride },
     { label: "升 m", get: (l) => l.elevation_gain_m, fmt: splitMetres },
     { label: "降 m", get: (l) => l.elevation_loss_m, fmt: splitMetres },
   ], rows);

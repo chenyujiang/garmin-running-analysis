@@ -28,7 +28,14 @@ def test_a_two_hour_run_is_downsampled_to_at_most_1500_points(analysis_db, clien
 
     n = len(s["t_s"])
     assert 1000 < n <= 1500
-    for key in ("hr_bpm", "pace_s_per_km", "gap_pace_s_per_km", "altitude_m", "cadence_spm"):
+    for key in (
+        "hr_bpm",
+        "pace_s_per_km",
+        "gap_pace_s_per_km",
+        "altitude_m",
+        "cadence_spm",
+        "stride_m",
+    ):
         assert len(s[key]) == n, key
     assert s["t_s"] == sorted(s["t_s"])
     assert s["t_s"][0] >= 0 and s["t_s"][-1] <= 7200
@@ -38,6 +45,8 @@ def test_a_two_hour_run_is_downsampled_to_at_most_1500_points(analysis_db, clien
     # Flat: GAP pace equals pace once the 30 s smoothing has filled.
     assert s["gap_pace_s_per_km"][-1] == pytest.approx(333.3, abs=0.1)
     assert all(v == pytest.approx(170.0) for v in s["cadence_spm"])
+    # Stride = speed x 60 / spm.
+    assert s["stride_m"][-1] == pytest.approx(1.06, abs=0.01)
     assert all(v == pytest.approx(100.0) for v in s["altitude_m"])
     assert s["unavailable"] == {}
     assert s["method"]["params"]["max_points"] == 1500
@@ -122,7 +131,7 @@ def test_a_non_running_activity_has_hr_and_altitude_only(analysis_db, client_fac
 
     assert len(s["hr_bpm"]) == len(s["altitude_m"]) == len(s["t_s"]) > 0
     assert set(s["hr_bpm"]) == {130.0}
-    for key in ("pace_s_per_km", "gap_pace_s_per_km", "cadence_spm"):
+    for key in ("pace_s_per_km", "gap_pace_s_per_km", "cadence_spm", "stride_m"):
         assert s[key] is None
         assert s["unavailable"][key] == "仅跑步类活动"
     assert s["intervals"]["walking"] is None
