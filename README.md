@@ -62,6 +62,7 @@ max_speed_change = 0.05         # (max - min) / mean of smoothed speed in that w
 min_hr_spm_gap = 5              # |HR - spm| below this looks like cadence lock
 min_steady_s = 600              # runs with less steady time are left out
 grade_window_s = 30
+grade_start_s = 120             # no grade (GAP = pace, no altitude change) while the altimeter settles
 max_grade = 0.15
 min_runs_per_week = 2
 rolling_weeks = 4

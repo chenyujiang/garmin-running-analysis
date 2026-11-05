@@ -10,7 +10,9 @@ Per run (spec, "有氧能力"):
 3. HR, speed and barometric altitude get a trailing `smoothing_s` mean.
 4. Grade = rise of the smoothed altitude / distance over the last
    `grade_window_s` seconds, clipped to +-`max_grade`; GAP speed =
-   smoothed speed x Cr(grade) / Cr(0) (Minetti 2002).
+   smoothed speed x Cr(grade) / Cr(0) (Minetti 2002). The barometric
+   altimeter settles over the first minutes: the grade is 0 until both ends
+   of the window lie past the first `grade_start_s` of moving time.
 5. Steady seconds: past the first `warmup_s` of moving time, running, not the
    first sample after a pause, smoothed HR within `reference_hr` +- `hr_band_bpm`,
    smoothed speed varying by at most `max_speed_change` over `speed_window_s`,
@@ -261,8 +263,10 @@ def steady_state(
     records: pl.DataFrame, aerobic: Aerobic, run_walk: RunWalk, hr_band: bool = True
 ) -> pl.DataFrame:
     """Classify each second and add `hr_smooth`, `speed_smooth`, `grade`,
-    `gap_mps` and `steady` (bool), plus `classify_records`' `spm`, `dt_s`,
-    `dd_m`, `running`. `records` as returned by `load_records`.
+    `gap_mps`, `settled` and `steady` (bool), plus `classify_records`' `spm`,
+    `dt_s`, `dd_m`, `running`. `records` as returned by `load_records`.
+    `settled`: the sample's interval starts past the first `grade_start_s` of
+    moving time, when the altimeter has settled.
 
     `hr_band=False` drops the `reference_hr` +- `hr_band_bpm` condition (EF and
     decoupling); every other steady-state condition stays."""
@@ -299,6 +303,7 @@ def steady_state(
             pl.col("ts").alias("_ts_b"),
             pl.col("_alt").alias("_alt_b"),
             pl.col("distance").alias("_dist_b"),
+            pl.col("_moving_s").alias("_moving_b"),
         )
         .drop_nulls("_ts_b")
         .sort("_ts_b")
@@ -319,7 +324,12 @@ def steady_state(
     rise = pl.col("_alt") - pl.col("_alt_b")
     run_m = pl.col("distance") - pl.col("_dist_b")
     df = df.with_columns(
-        pl.when(run_m >= 1.0)
+        (pl.col("_moving_s") - pl.col("dt_s") >= aerobic.grade_start_s)
+        .fill_null(False)
+        .alias("settled")
+    )
+    df = df.with_columns(
+        pl.when((run_m >= 1.0) & (pl.col("_moving_b") >= aerobic.grade_start_s))
         .then(rise / run_m)
         .otherwise(0.0)
         .fill_null(0.0)
@@ -345,7 +355,16 @@ def steady_state(
         steady &= (pl.col("hr_smooth") - aerobic.reference_hr).abs() <= aerobic.hr_band_bpm
     df = df.with_columns(steady.fill_null(False).alias("steady"))
     return df.drop(
-        "_alt", "_moving_s", "_vmax", "_vmin", "_vmean", "_ts_q", "_ts_b", "_alt_b", "_dist_b"
+        "_alt",
+        "_moving_s",
+        "_vmax",
+        "_vmin",
+        "_vmean",
+        "_ts_q",
+        "_ts_b",
+        "_alt_b",
+        "_dist_b",
+        "_moving_b",
     )
 
 

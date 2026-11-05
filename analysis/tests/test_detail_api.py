@@ -90,6 +90,7 @@ def test_a_non_running_activity_has_the_running_fields_null_with_the_reason(
         "running_pace_s_per_km": "仅跑步类活动",
         "garmin_pace_s_per_km": "仅跑步类活动",
         "avg_cadence_spm": "仅跑步类活动",
+        "avg_stride_m": "仅跑步类活动",
     }
     # The rest of the summary is there as for a run.
     assert s["distance_m"] == pytest.approx(12600.0)
@@ -128,3 +129,13 @@ def test_without_an_analysis_database_every_id_is_a_404(data_dir, client_factory
 
     assert r.status_code == 404
     assert r.json()["detail"] == "没有编号为 1 的活动。"
+
+
+def test_the_average_stride_is_running_distance_over_steps(analysis_db, client_factory):
+    # 3.0 m/s at 170 spm: 3.0 x 60 / 170 = 1.059 m per step. The walk at the
+    # end (1.0 m/s, 110 spm) is left out.
+    add_hr_run(analysis_db, 4, START_LOCAL, [steady(1200), steady(300, speed=1.0, cadence=55.0)])
+
+    s = get_detail(client_factory, 4)["summary"]
+
+    assert s["avg_stride_m"] == pytest.approx(1.059, abs=0.01)

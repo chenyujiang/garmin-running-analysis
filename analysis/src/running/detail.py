@@ -128,6 +128,14 @@ def _weighted_mean(df: pl.DataFrame, col: str) -> float | None:
     return float((v[col] * v["dt_s"]).sum() / weight)
 
 
+def _stride(run: pl.DataFrame) -> float | None:
+    """Metres per step over running samples: distance / steps, steps from spm
+    (both feet) x time. None without cadence."""
+    v = run.filter(pl.col("spm").is_not_null() & (pl.col("spm") > 0) & (pl.col("dt_s") > 0))
+    steps = float((v["spm"] * v["dt_s"]).sum()) / 60.0 if not v.is_empty() else 0.0
+    return float(v["dd_m"].sum()) / steps if steps > 0 else None
+
+
 def _summary(d: DetailInputs) -> dict:
     a, recs = d.activity, d.records
     unavailable: dict[str, str] = {}
@@ -136,15 +144,22 @@ def _summary(d: DetailInputs) -> dict:
     avg_hr = _weighted_mean(recs, "heart_rate") if not hr.is_empty() else a["avg_hr_bpm"]
     max_hr = float(hr["heart_rate"].max()) if not hr.is_empty() else a["max_hr_bpm"]
 
-    run_pace = garmin_pace = cadence = None
+    run_pace = garmin_pace = cadence = stride = None
     if d.is_running:
         summary = running_summaries(d.db, d.config.run_walk, activity_ids=[d.activity_id])
         if not summary.is_empty():
             run_pace = summary["run_pace_s_per_km"][0]
             garmin_pace = summary["garmin_pace_s_per_km"][0]
-        cadence = _weighted_mean(recs.filter(pl.col("running")), "spm")
+        running = recs.filter(pl.col("running"))
+        cadence = _weighted_mean(running, "spm")
+        stride = _stride(running)
     else:
-        for key in ("running_pace_s_per_km", "garmin_pace_s_per_km", "avg_cadence_spm"):
+        for key in (
+            "running_pace_s_per_km",
+            "garmin_pace_s_per_km",
+            "avg_cadence_spm",
+            "avg_stride_m",
+        ):
             unavailable[key] = RUNNING_ONLY
 
     temps = air_temperature(d.db, [d.activity_id])
@@ -156,6 +171,7 @@ def _summary(d: DetailInputs) -> dict:
         "avg_hr_bpm": avg_hr,
         "max_hr_bpm": max_hr,
         "avg_cadence_spm": cadence,
+        "avg_stride_m": stride,
         "elevation_gain_m": a["elevation_gain_m"],
         "air_temperature_c": temps["temperature_c"][0] if not temps.is_empty() else None,
         "unavailable": unavailable,
@@ -173,9 +189,11 @@ def _summary_method(config: Config) -> Method:
             f"短于 {rw.min_walk_s} 秒的走路仍算跑，采样间隔超过 {rw.pause_gap_s} 秒算暂停；"
             "没有步频数据时用 Garmin 的总距离和总时长。Garmin 平均配速包含走路，只作参照。"
             "平均心率按逐秒记录的时间加权（暂停不计），没有逐秒心率时取 Garmin 的值；"
-            "最大心率取逐秒记录的最大值。平均步频只算跑的秒。累计爬升取 Garmin 的值。"
+            "最大心率取逐秒记录的最大值。平均步频只算跑的秒；"
+            "平均步幅 = 跑的秒的距离 / 步数（步数 = 步频 × 时间，双脚各算一步）。"
+            "累计爬升取 Garmin 的值。"
             "气温取 Open-Meteo 在活动中点时刻、离路线最近的网格点的逐时气温，前后两个整点线性插值。"
-            "非跑步类活动不给跑步配速、Garmin 平均配速和步频。"
+            "非跑步类活动不给跑步配速、Garmin 平均配速、步频和步幅。"
         ),
         "params": {
             "running_types": sorted(RUNNING_TYPES),
@@ -206,8 +224,9 @@ _SERIES_COLUMNS = {
     "gap_pace_s_per_km": ("gap_mps", "没有速度记录"),
     "altitude_m": ("altitude", "没有海拔记录"),
     "cadence_spm": ("spm", "没有步频记录"),
+    "stride_m": ("stride", "没有步频记录"),
 }
-_RUNNING_SERIES = ("pace_s_per_km", "gap_pace_s_per_km", "cadence_spm")
+_RUNNING_SERIES = ("pace_s_per_km", "gap_pace_s_per_km", "cadence_spm", "stride_m")
 
 
 def _bucket_width(spans: list[float], max_points: int) -> int:
@@ -249,6 +268,16 @@ def _series(d: DetailInputs) -> dict:
         unavailable.update({key: NO_RECORDS for key in (*_SERIES_COLUMNS, "walking", "steady")})
     else:
         df = steady_state(recs, d.config.aerobic, rw)
+        # Metres per step, running seconds only: speed x 60 / spm. Too slow to
+        # have a pace is too slow to have a stride (GPS lag at a start).
+        df = df.with_columns(
+            pl.when(
+                pl.col("running") & (pl.col("spm") > 0) & (pl.col("speed") >= MIN_PACE_SPEED_MPS)
+            )
+            .then(pl.col("speed") * 60.0 / pl.col("spm"))
+            .otherwise(None)
+            .alias("stride")
+        )
         t0 = df["ts"].min()
         df = df.with_columns(((pl.col("ts") - t0).dt.total_seconds(fractional=True)).alias("t"))
         df = df.with_columns((pl.col("t").diff().fill_null(0.0) > rw.pause_gap_s).alias("_pause"))
@@ -264,7 +293,7 @@ def _series(d: DetailInputs) -> dict:
         buckets = (
             df.with_columns((pl.col("_in_seg") // w).alias("_bucket"))
             .group_by("_seg", "_bucket")
-            .agg(pl.col("t", "heart_rate", "speed", "gap_mps", "altitude", "spm").mean())
+            .agg(pl.col("t", "heart_rate", "speed", "gap_mps", "altitude", "spm", "stride").mean())
             .sort("t")
             .with_columns(
                 _pace(pl.col("speed")).alias("speed"), _pace(pl.col("gap_mps")).alias("gap_mps")
@@ -277,7 +306,7 @@ def _series(d: DetailInputs) -> dict:
             if df[col].is_null().all():
                 unavailable[key] = reason
             else:
-                out[key] = buckets[col].round(1).to_list()
+                out[key] = buckets[col].round(2 if key == "stride_m" else 1).to_list()
 
         paused = df.with_columns(pl.col("t").shift(1).alias("_prev")).filter(pl.col("_pause"))
         intervals["pause"] = [[a, b] for a, b in paused.select("_prev", "t").iter_rows()]
@@ -321,7 +350,11 @@ def _series_method(config: Config) -> Method:
             f"{MIN_PACE_SPEED_MPS:g} m/s 的桶不画配速。"
             f"GAP 配速用 Minetti 2002 的坡度能耗把 {a.smoothing_s} 秒平滑速度换成平地等效速度，"
             f"坡度取最近 {a.grade_window_s} 秒的海拔差 / 距离，限幅 ±{a.max_grade:g}；"
+            f"开头 {a.grade_start_s} 秒（移动时间）气压高度计还没稳定，"
+            "坡度窗口的两端都过了这段才算坡度，之前按 0；"
             "没有海拔时坡度按 0，和长距离表一致。"
+            "步幅 = 速度 × 60 / 步频（双脚），只画跑的秒，速度低于 "
+            f"{MIN_PACE_SPEED_MPS:g} m/s 的秒不画。"
             "走路段是跑走分类判为走的秒；稳态段和有氧能力的稳态口径相同："
             f"去掉开头 {a.warmup_s // 60} 分钟，"
             f"平滑心率在 {a.reference_hr} ± {a.hr_band_bpm:g} bpm 内，"
@@ -334,6 +367,7 @@ def _series_method(config: Config) -> Method:
             "pause_gap_s": rw.pause_gap_s,
             "smoothing_s": a.smoothing_s,
             "grade_window_s": a.grade_window_s,
+            "grade_start_s": a.grade_start_s,
             "max_grade": a.max_grade,
             "warmup_s": a.warmup_s,
             "reference_hr": a.reference_hr,
@@ -394,6 +428,9 @@ def _laps(d: DetailInputs) -> list[dict]:
                 "avg_hr_bpm": r["avg_hr_bpm"],
                 "max_hr_bpm": r["max_hr_bpm"],
                 "avg_cadence_spm": 2 * cadence if d.is_running and cadence is not None else None,
+                "avg_stride_m": speed * 60.0 / (2 * cadence)
+                if d.is_running and speed and cadence
+                else None,
                 "elevation_gain_m": r["elevation_gain_m"],
                 "elevation_loss_m": r["elevation_loss_m"],
             }
@@ -414,7 +451,8 @@ def _kilometres(d: DetailInputs) -> list[dict] | None:
         ((pl.col("distance") - pl.col("dd_m")).clip(lower_bound=0.0) // SPLIT_M)
         .cast(pl.Int64)
         .alias("_km"),
-        pl.col("altitude").diff().alias("_dalt"),
+        # Altitude change while the altimeter settles is not counted.
+        pl.when(pl.col("settled")).then(pl.col("altitude").diff()).otherwise(None).alias("_dalt"),
     )
     full = int(total // SPLIT_M)
     last = total - full * SPLIT_M
@@ -438,6 +476,7 @@ def _kilometres(d: DetailInputs) -> list[dict] | None:
                 "gap_pace_s_per_km": 1000.0 * run_s / gap_m if gap_m > 0 else None,
                 "avg_hr_bpm": _weighted_mean(part, "heart_rate"),
                 "avg_cadence_spm": _weighted_mean(run, "spm"),
+                "avg_stride_m": _stride(run),
                 "elevation_gain_m": float(dalt.clip(lower_bound=0).sum())
                 if not dalt.is_empty()
                 else None,
@@ -455,19 +494,23 @@ def _splits_method(config: Config) -> Method:
         "name": "分段",
         "description": (
             "圈取手表记录的圈：时长用计时时长（不含暂停），配速取圈的平均速度，"
-            "步频为圈的平均单脚步频 ×2（spm）；非跑步类活动的圈不给配速和步频。"
+            "步频为圈的平均单脚步频 ×2（spm），步幅 = 平均速度 × 60 / 步频；"
+            "非跑步类活动的圈不给配速、步频和步幅。"
             f"每公里分段按逐秒记录的累计距离切，每满 {SPLIT_M:g} m 一段，"
             f"最后不足 1 km 的部分单独列出并标明距离（短于 {MIN_LAST_SPLIT_M:g} m 的不列）。"
             f"跑步配速只算跑的秒（步频平滑后 ≥ {rw.cadence_spm:g} spm）；"
             f"GAP 配速用 {ae.grade_window_s} 秒坡度和 Minetti 能耗曲线把跑的秒换算成平路速度。"
-            "平均心率按时间加权（暂停不计），平均步频只算跑的秒；"
-            "海拔升降是逐秒海拔变化的正负分别求和。非跑步类活动没有每公里分段。"
+            "平均心率按时间加权（暂停不计），平均步频和步幅只算跑的秒"
+            "（步幅 = 距离 / 步数）；海拔升降是逐秒海拔变化的正负分别求和，"
+            f"开头 {ae.grade_start_s} 秒（移动时间）高度计还没稳定，不计升降、坡度按 0。"
+            "非跑步类活动没有每公里分段。"
         ),
         "params": {
             "split_m": SPLIT_M,
             "min_last_split_m": MIN_LAST_SPLIT_M,
             "cadence_spm": rw.cadence_spm,
             "grade_window_s": ae.grade_window_s,
+            "grade_start_s": ae.grade_start_s,
             "max_grade": ae.max_grade,
         },
     }
