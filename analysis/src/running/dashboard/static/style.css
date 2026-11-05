@@ -56,6 +56,15 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 .stat-line { display: flex; gap: 32px; margin: 18px 0 10px; flex-wrap: wrap; }
 .stat-line div { display: flex; flex-direction: column; gap: 6px; }
 .stat-line span.l { font-size: 12.5px; color: var(--ink-3); }
+/* home footer: data status, set apart from the sections above */
+.status-foot { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--rule-strong); display: grid; grid-template-columns: auto 1fr; column-gap: 40px; row-gap: 10px; align-items: baseline; }
+.status-foot h2 { font-size: 15px; }
+.status-foot dl { display: flex; flex-wrap: wrap; gap: 12px 40px; margin: 0; }
+.status-foot dl div { display: flex; align-items: baseline; gap: 10px; }
+.status-foot dt { font-size: 12.5px; color: var(--ink-3); }
+.status-foot dd { margin: 0; font-variant-numeric: tabular-nums; }
+.status-foot p { grid-column: 2; margin: 0; }
+@media (max-width: 720px) { .status-foot { grid-template-columns: 1fr; } .status-foot p { grid-column: 1; } }
 
 /* warnings */
 .warn { color: var(--red); margin: 0 0 18px; max-width: 70ch; }

@@ -174,7 +174,7 @@ function seriesSection(v) {
     ...SER_BANDS.filter(([k]) => s.intervals[k]?.length).map(([, label, fill, op]) =>
       h("span", {}, h("i", { class: "bar", style: `background:${fill};opacity:${Math.min(1, op * 3)}` }), label)),
     s.gap_pace_s_per_km?.length
-      ? h("span", {}, h("i", { style: "border-color:var(--ink-3);border-top-style:dashed" }), "GAP 配速（坡度折算）")
+      ? h("span", {}, h("i", { style: "border-color:var(--ink-3);border-top-style:dashed;opacity:0.55" }), "GAP 配速（坡度折算，2 分钟平滑）")
       : null,
   ));
   return sec;
@@ -189,7 +189,8 @@ function serPanel(s, p, sx, dur, last) {
       svg.append(svgEl("rect", { x: sx(a), y: y1, width: Math.max(1, sx(b) - sx(a)), height: y2 - y1, fill, "fill-opacity": op }));
     }
   }
-  const values = p.extra && s[p.extra] ? [...s[p.key], ...s[p.extra]] : s[p.key];
+  const extra = p.extra && s[p.extra]?.length ? serSmooth(s.t_s, s[p.extra], GAP_SMOOTH_S) : null;
+  const values = extra ? [...s[p.key], ...extra] : s[p.key];
   const r = serRange(values, p.invert);
   const sy = (x) => {
     const c = Math.max(r.lo, Math.min(r.hi, x));
@@ -199,14 +200,29 @@ function serPanel(s, p, sx, dur, last) {
   p.sy = sy;
   yGrid(svg, ticks(r.lo, r.hi, niceStep(r.hi - r.lo, 3)), sy, SER_M.l, SER_W - SER_M.r, p.fmt);
   svg.append(svgEl("text", { x: SER_M.l + 4, y: y1 + 12, class: "ser-label", fill: p.color }, `${p.label}（${p.unit}）`));
-  if (p.extra && s[p.extra]?.length) {
-    svg.append(svgEl("path", { d: serPath(s, s[p.extra], sx, sy), fill: "none", stroke: "var(--ink-3)", "stroke-width": 1.2, "stroke-dasharray": "3 2" }));
+  if (extra) {
+    // GAP is a reference line: smoothed, thin and faint so it never competes with the pace.
+    svg.append(svgEl("path", { d: serPath(s, extra, sx, sy), fill: "none", stroke: "var(--ink-3)", "stroke-width": 1, "stroke-opacity": 0.55, "stroke-dasharray": "4 3" }));
   }
   svg.append(svgEl("path", { d: serPath(s, s[p.key], sx, sy), fill: "none", stroke: p.color, "stroke-width": 1.5, "stroke-linejoin": "round" }));
   if (last) xAxis(svg, serTimeTicks(dur).map((t) => ({ x: t, label: serTimeLabel(t) })), sx, y2);
   svg.append(svgEl("line", { class: "xhair", x1: 0, x2: 0, y1, y2 }));
   svg.append(svgEl("circle", { class: "xhair-dot", r: 3.5, cx: 0, cy: 0 }));
   return wrap;
+}
+
+const GAP_SMOOTH_S = 60;
+
+/** Centred moving mean over +-half seconds; a null stays null so gaps survive. */
+function serSmooth(t, values, half) {
+  const out = new Array(values.length).fill(null);
+  let lo = 0, hi = 0, sum = 0, n = 0;
+  values.forEach((v, i) => {
+    while (hi < values.length && t[hi] <= t[i] + half) { if (values[hi] != null) { sum += values[hi]; n++; } hi++; }
+    while (t[lo] < t[i] - half) { if (values[lo] != null) { sum -= values[lo]; n--; } lo++; }
+    if (v != null && n) out[i] = sum / n;
+  });
+  return out;
 }
 
 /** Lift the pen at a null value and across a pause, never interpolate. */
@@ -285,56 +301,42 @@ const splitSpm = (c) => `${Math.round(c)}`;
 const splitMetres = (m) => `${Math.round(m)}`;
 const splitNum = { style: "font-variant-numeric: tabular-nums" };
 
-function splitKmTable(rows) {
-  return h("table", { class: "km-table", ...splitNum },
-    h("thead", {}, h("tr", {},
-      h("th", {}, "公里"),
-      h("th", { class: "r" }, "时长"),
-      h("th", { class: "r", title: "只算跑的秒，走路不计" }, "跑步配速"),
-      h("th", { class: "r", title: "按坡度换算成平路的配速" }, "GAP 配速"),
-      h("th", { class: "r" }, "心率"),
-      h("th", { class: "r", title: "只算跑的秒" }, "步频"),
-      h("th", { class: "r" }, "升 m"),
-      h("th", { class: "r" }, "降 m"),
-    )),
-    h("tbody", {}, ...rows.map((k) => h("tr", {},
-      h("td", {}, k.partial ? `${k.km}（${splitKm(k.distance_m)}）` : `${k.km}`),
-      splitCell(k.duration_s, fmtDur),
-      splitCell(k.running_pace_s_per_km, splitPace),
-      splitCell(k.gap_pace_s_per_km, splitPace),
-      splitCell(k.avg_hr_bpm, splitBpm),
-      splitCell(k.avg_cadence_spm, splitSpm),
-      splitCell(k.elevation_gain_m, splitMetres),
-      splitCell(k.elevation_loss_m, splitMetres),
-    ))),
+/** A column whose value is null in every row says nothing: leave it out. */
+function splitTable(cls, cols, rows) {
+  const shown = cols.filter((c) => !c.get || rows.some((r) => c.get(r) != null));
+  return h("table", { class: cls, ...splitNum },
+    h("thead", {}, h("tr", {}, ...shown.map((c) =>
+      h("th", { ...(c.get ? { class: "r" } : {}), ...(c.title ? { title: c.title } : {}) }, c.label)))),
+    h("tbody", {}, ...rows.map((r) => h("tr", {}, ...shown.map((c) =>
+      c.get ? splitCell(c.get(r), c.fmt) : h("td", {}, c.cell(r)))))),
   );
 }
 
+function splitKmTable(rows) {
+  return splitTable("km-table", [
+    { label: "公里", cell: (k) => (k.partial ? `${k.km}（${splitKm(k.distance_m)}）` : `${k.km}`) },
+    { label: "时长", get: (k) => k.duration_s, fmt: fmtDur },
+    { label: "跑步配速", title: "只算跑的秒，走路不计", get: (k) => k.running_pace_s_per_km, fmt: splitPace },
+    { label: "GAP 配速", title: "按坡度换算成平路的配速", get: (k) => k.gap_pace_s_per_km, fmt: splitPace },
+    { label: "心率", get: (k) => k.avg_hr_bpm, fmt: splitBpm },
+    { label: "步频", title: "只算跑的秒", get: (k) => k.avg_cadence_spm, fmt: splitSpm },
+    { label: "升 m", get: (k) => k.elevation_gain_m, fmt: splitMetres },
+    { label: "降 m", get: (k) => k.elevation_loss_m, fmt: splitMetres },
+  ], rows);
+}
+
 function splitLapTable(rows) {
-  return h("table", { class: "lap-table", ...splitNum },
-    h("thead", {}, h("tr", {},
-      h("th", {}, "圈"),
-      h("th", { class: "r" }, "距离"),
-      h("th", { class: "r", title: "计时时长，不含暂停" }, "时长"),
-      h("th", { class: "r", title: "手表记录的圈平均配速" }, "配速"),
-      h("th", { class: "r" }, "心率"),
-      h("th", { class: "r" }, "最大心率"),
-      h("th", { class: "r" }, "步频"),
-      h("th", { class: "r" }, "升 m"),
-      h("th", { class: "r" }, "降 m"),
-    )),
-    h("tbody", {}, ...rows.map((l) => h("tr", {},
-      h("td", {}, `${l.lap}`),
-      splitCell(l.distance_m, splitKm),
-      splitCell(l.duration_s, fmtDur),
-      splitCell(l.pace_s_per_km, splitPace),
-      splitCell(l.avg_hr_bpm, splitBpm),
-      splitCell(l.max_hr_bpm, splitBpm),
-      splitCell(l.avg_cadence_spm, splitSpm),
-      splitCell(l.elevation_gain_m, splitMetres),
-      splitCell(l.elevation_loss_m, splitMetres),
-    ))),
-  );
+  return splitTable("lap-table", [
+    { label: "圈", cell: (l) => `${l.lap}` },
+    { label: "距离", get: (l) => l.distance_m, fmt: splitKm },
+    { label: "时长", title: "计时时长，不含暂停", get: (l) => l.duration_s, fmt: fmtDur },
+    { label: "配速", title: "手表记录的圈平均配速", get: (l) => l.pace_s_per_km, fmt: splitPace },
+    { label: "心率", get: (l) => l.avg_hr_bpm, fmt: splitBpm },
+    { label: "最大心率", get: (l) => l.max_hr_bpm, fmt: splitBpm },
+    { label: "步频", get: (l) => l.avg_cadence_spm, fmt: splitSpm },
+    { label: "升 m", get: (l) => l.elevation_gain_m, fmt: splitMetres },
+    { label: "降 m", get: (l) => l.elevation_loss_m, fmt: splitMetres },
+  ], rows);
 }
 
 
