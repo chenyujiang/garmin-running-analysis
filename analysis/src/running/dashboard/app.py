@@ -21,12 +21,14 @@ from running.activities import (
 )
 from running.aerobic import AerobicTrend, Range, aerobic_trend
 from running.config import data_dir
-from running.db import disable_shared_connections, enable_shared_connections
+from running.db import disable_shared_connections, enable_shared_connections, open_analysis_db
 from running.detail import ActivityDetail, activity_detail
 from running.load import TrainingLoad, training_load
 from running.longruns import LongRuns, long_runs
 from running.plan5k import Plan5k, plan_5k
 from running.races import Predictions, RaceList, race_list, race_predictions
+from running.runwalk import running_summaries
+from running.section import section_inputs
 from running.status import DataStatus, data_status
 from running.volume import Volume, weekly_volume
 
@@ -173,13 +175,31 @@ def main() -> None:
 
 def _warm_caches(root: Path, stop: threading.Event) -> None:
     """Fill the per-process caches (heart-rate seconds, aerobic per-run
-    results, run-walk record totals) once at startup, so the first page load
-    does not pay for the full scans of `records`. A failure here only means a
-    cold first request; the endpoint reports the error itself."""
-    for warm in (training_load, aerobic_trend, race_predictions, weekly_volume):
+    results, long-run EF, run-walk record totals) once at startup, so the
+    first page load does not pay for the full scans of `records`. A failure
+    here only means a cold first request; the endpoint reports the error itself."""
+    for warm in (
+        training_load,
+        aerobic_trend,
+        race_predictions,
+        weekly_volume,
+        long_runs,
+        _warm_run_summaries,
+    ):
         if stop.is_set():
             return
         try:
             warm(root=root)
         except Exception:  # noqa: BLE001, S112
             continue
+
+
+def _warm_run_summaries(root: Path) -> None:
+    """Record totals of every run, so filtering the activity list (distance,
+    dates, older pages) does not read records on first use."""
+    inputs = section_inputs(None, root)
+    db = open_analysis_db(inputs.root)
+    if db is None:
+        return
+    with db:
+        running_summaries(db, inputs.config.run_walk)

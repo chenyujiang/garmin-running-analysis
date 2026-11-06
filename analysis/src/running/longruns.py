@@ -101,6 +101,51 @@ def per_run_ef(records: pl.DataFrame, config: Config) -> pl.DataFrame:
     )
 
 
+_EF_SCHEMA = {
+    "activity_id": pl.Int64,
+    "steady_s": pl.Float64,
+    "ef": pl.Float64,
+    "ef_first": pl.Float64,
+    "ef_second": pl.Float64,
+}
+
+# EF results (`_road_ef`) by activity: each run depends only on its own
+# records, so a run is computed once and reused until the database file or
+# its WAL changes, or the aerobic / run-walk settings do. Kept per database path.
+_EF_CACHE: dict[Path, tuple[tuple, pl.DataFrame]] = {}
+
+
+def _cached_ef(db: AnalysisDb, config: Config, activity_ids: list[int]) -> pl.DataFrame:
+    key = (db.file_version(), config.aerobic, config.run_walk)
+    path = db.path.resolve()
+    cached = _EF_CACHE.get(path)
+    known = cached[1] if cached is not None and cached[0] == key else None
+    if known is None:
+        known = pl.DataFrame(schema=_EF_SCHEMA)
+    missing = sorted(set(activity_ids) - set(known["activity_id"].to_list()))
+    if missing:
+        # Runs without usable GPS or records get a row of nulls, so they are
+        # not read again.
+        fresh = (
+            pl.DataFrame({"activity_id": missing}, schema={"activity_id": pl.Int64})
+            .join(_road_ef(db, config, missing), on="activity_id", how="left")
+            .select(_EF_SCHEMA.keys())
+            .cast(_EF_SCHEMA)
+        )
+        known = pl.concat([known, fresh])
+        _EF_CACHE[path] = (key, known)
+    return known.filter(pl.col("activity_id").is_in(activity_ids))
+
+
+def _road_ef(db: AnalysisDb, config: Config, activity_ids: list[int]) -> pl.DataFrame:
+    """`per_run_ef` for the road runs among `activity_ids` that pass `gps_usable`."""
+    usable = gps_usable(db, activity_ids, config.aerobic)
+    recs = load_records(db, sorted(usable))
+    if recs.is_empty():
+        return pl.DataFrame(schema=_EF_SCHEMA)
+    return per_run_ef(recs, config)
+
+
 def long_runs(
     today: date | None = None, limit: int = DEFAULT_LIMIT, root: Path | None = None
 ) -> LongRuns:
@@ -116,11 +161,8 @@ def long_runs(
             if "activities" in db.tables():
                 acts = _long_run_rows(db, until, limit)
                 road = acts.filter(pl.col("activity_type").is_in(sorted(AEROBIC_TYPES)))
-                usable = gps_usable(db, road["activity_id"].to_list(), config.aerobic)
-                recs = load_records(db, sorted(usable))
-                efs = {}
-                if not recs.is_empty():
-                    efs = {r["activity_id"]: r for r in per_run_ef(recs, config).to_dicts()}
+                road_ids = road["activity_id"].to_list()
+                efs = {r["activity_id"]: r for r in _cached_ef(db, config, road_ids).to_dicts()}
                 for a in acts.iter_rows(named=True):
                     e = efs.get(a["activity_id"], {})
                     steady_s = float(e.get("steady_s") or 0.0)
