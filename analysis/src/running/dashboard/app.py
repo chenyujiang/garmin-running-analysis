@@ -3,6 +3,9 @@ and the static frontend in `static/`. No accounts, no writes."""
 
 import io
 import sys
+import threading
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
 
@@ -17,6 +20,8 @@ from running.activities import (
     activity_list,
 )
 from running.aerobic import AerobicTrend, Range, aerobic_trend
+from running.config import data_dir
+from running.db import disable_shared_connections, enable_shared_connections
 from running.detail import ActivityDetail, activity_detail
 from running.load import TrainingLoad, training_load
 from running.longruns import LongRuns, long_runs
@@ -30,8 +35,39 @@ PORT = 8765
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
-def create_app() -> FastAPI:
-    app = FastAPI(title="running dashboard", docs_url=None, redoc_url=None, openapi_url=None)
+# Seconds a shared DuckDB instance stays open without requests before it is
+# closed to free memory (see `running.db.enable_shared_connections`).
+SHARED_IDLE_S = 600.0
+
+
+@asynccontextmanager
+async def _serve_lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """For the served dashboard only: share DuckDB connections between
+    requests and fill the caches in the background."""
+    enable_shared_connections(SHARED_IDLE_S)
+    stop = threading.Event()
+    warm = threading.Thread(
+        target=_warm_caches, args=(data_dir(), stop), name="warm-caches", daemon=True
+    )
+    warm.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        warm.join(timeout=30)
+        disable_shared_connections()
+
+
+def create_app(*, serve: bool = False) -> FastAPI:
+    """The dashboard app. `serve=True` (the `running-dashboard` server) also
+    shares DuckDB connections and warms the caches at startup."""
+    app = FastAPI(
+        title="running dashboard",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+        lifespan=_serve_lifespan if serve else None,
+    )
 
     @app.get("/api/activities")
     def activities(
@@ -132,4 +168,18 @@ def main() -> None:
     if isinstance(sys.stdout, io.TextIOWrapper):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     print(f"仪表盘：http://{HOST}:{PORT}/")
-    uvicorn.run(create_app(), host=HOST, port=PORT)
+    uvicorn.run(create_app(serve=True), host=HOST, port=PORT)
+
+
+def _warm_caches(root: Path, stop: threading.Event) -> None:
+    """Fill the per-process caches (heart-rate seconds, aerobic per-run
+    results, run-walk record totals) once at startup, so the first page load
+    does not pay for the full scans of `records`. A failure here only means a
+    cold first request; the endpoint reports the error itself."""
+    for warm in (training_load, aerobic_trend, race_predictions, weekly_volume):
+        if stop.is_set():
+            return
+        try:
+            warm(root=root)
+        except Exception:  # noqa: BLE001, S112
+            continue

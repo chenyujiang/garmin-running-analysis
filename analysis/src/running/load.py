@@ -186,24 +186,12 @@ def daily_trimp(
 ) -> tuple[dict[date, float], list[LoadActivity], list[LoadActivity]]:
     """Daily TRIMP up to `today`, activities with missing TRIMP, and
     activities whose TRIMP comes from the summary's average HR."""
-    activities = db.query(
-        "SELECT activity_id, activity_type, activity_name AS name, avg_hr_bpm, duration_s,"
-        " CAST(substr(start_time_local, 1, 10) AS DATE) AS day FROM a.activities"
-        " WHERE CAST(substr(start_time_local, 1, 10) AS DATE) <= ? ORDER BY start_time_local",
-        [today],
-    )
-    hr = _hr_seconds(db, config.load.max_sample_gap_s)
-    per_activity: dict[int, list[tuple[float, float]]] = {}
-    for row in hr.iter_rows(named=True):
-        per_activity.setdefault(row["activity_id"], []).append((row["hr"], row["seconds"]))
-
     daily: dict[date, float] = {}
     missing: list[LoadActivity] = []
     from_summary: list[LoadActivity] = []
-    for act in activities.iter_rows(named=True):
-        day: date = act["day"]
-        samples = per_activity.get(act["activity_id"])
-        trimp = _trimp_of(act, day, samples, config)
+    for act, day, trimp in _activity_trimps(db, config):
+        if day > today:
+            break
         entry: LoadActivity = {
             "activity_id": act["activity_id"],
             "date": day.isoformat(),
@@ -219,6 +207,36 @@ def daily_trimp(
         if trimp.source == "summary_hr":
             from_summary.append(entry)
     return daily, missing, from_summary
+
+
+# Every activity's TRIMP, in start order: each depends only on its own row and
+# HR samples and on the load and physiology settings, so the list is computed
+# once and reused until the database file or its WAL changes, or those
+# settings do. Kept per database path.
+_TRIMP_CACHE: dict[Path, tuple[tuple, list[tuple[dict, date, ActivityTrimp]]]] = {}
+
+
+def _activity_trimps(db: AnalysisDb, config: Config) -> list[tuple[dict, date, ActivityTrimp]]:
+    key = (db.file_version(), config.load, config.physiology)
+    path = db.path.resolve()
+    cached = _TRIMP_CACHE.get(path)
+    if cached is not None and cached[0] == key:
+        return cached[1]
+    activities = db.query(
+        "SELECT activity_id, activity_type, activity_name AS name, avg_hr_bpm, duration_s,"
+        " CAST(substr(start_time_local, 1, 10) AS DATE) AS day FROM a.activities"
+        " WHERE start_time_local IS NOT NULL ORDER BY start_time_local"
+    )
+    hr = _hr_seconds(db, config.load.max_sample_gap_s)
+    per_activity: dict[int, list[tuple[float, float]]] = {}
+    for row in hr.iter_rows(named=True):
+        per_activity.setdefault(row["activity_id"], []).append((row["hr"], row["seconds"]))
+    trimps = []
+    for act in activities.iter_rows(named=True):
+        day: date = act["day"]
+        trimps.append((act, day, _trimp_of(act, day, per_activity.get(act["activity_id"]), config)))
+    _TRIMP_CACHE[path] = (key, trimps)
+    return trimps
 
 
 class ActivityTrimp(NamedTuple):

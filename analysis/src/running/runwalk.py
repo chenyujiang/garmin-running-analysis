@@ -20,6 +20,8 @@ Activities without any cadence samples (no FIT, or no cadence sensor) fall
 back to the activity totals from Garmin, marked `source = "activity"`.
 """
 
+from pathlib import Path
+
 import polars as pl
 
 from running.config import RunWalk
@@ -134,19 +136,7 @@ def running_summaries(
 
     per_activity = _empty_record_totals()
     if "records" in tables:
-        ids = acts["activity_id"].to_list()
-        recs = db.query_records(
-            "SELECT activity_id, strptime(timestamp, ?) AS ts, cadence, speed, distance FROM recs",
-            ids,
-            [_TS_FORMAT],
-        )
-        if not recs.is_empty():
-            classified = classify_records(recs, settings)
-            per_activity = classified.group_by("activity_id").agg(
-                pl.col("cadence").is_not_null().any().alias("has_cadence"),
-                pl.col("dd_m").filter(pl.col("running")).sum().alias("rec_distance_m"),
-                pl.col("dt_s").filter(pl.col("running")).sum().alias("rec_duration_s"),
-            )
+        per_activity = _cached_record_totals(db, settings, acts["activity_id"].to_list())
 
     out = acts.join(per_activity, on="activity_id", how="left").with_columns(
         pl.col("has_cadence").fill_null(False)
@@ -199,12 +189,62 @@ def empty_run_summaries() -> pl.DataFrame:
     return pl.DataFrame(schema=_SUMMARY_SCHEMA)
 
 
+_RECORD_TOTALS_SCHEMA = {
+    "activity_id": pl.Int64,
+    "has_cadence": pl.Boolean,
+    "rec_distance_m": pl.Float64,
+    "rec_duration_s": pl.Float64,
+}
+
+
 def _empty_record_totals() -> pl.DataFrame:
-    return pl.DataFrame(
-        schema={
-            "activity_id": pl.Int64,
-            "has_cadence": pl.Boolean,
-            "rec_distance_m": pl.Float64,
-            "rec_duration_s": pl.Float64,
-        }
+    return pl.DataFrame(schema=_RECORD_TOTALS_SCHEMA)
+
+
+# Record totals (`_record_totals`) by activity: each activity's totals depend
+# only on its own records, so they are computed once and reused until the
+# database file or its WAL changes, or the run-walk settings do. Kept per
+# database path.
+_TOTALS_CACHE: dict[Path, tuple[tuple, pl.DataFrame]] = {}
+
+
+def _cached_record_totals(
+    db: AnalysisDb, settings: RunWalk, activity_ids: list[int]
+) -> pl.DataFrame:
+    key = (db.file_version(), settings)
+    path = db.path.resolve()
+    cached = _TOTALS_CACHE.get(path)
+    known = cached[1] if cached is not None and cached[0] == key else _empty_record_totals()
+    missing = sorted(set(activity_ids) - set(known["activity_id"].to_list()))
+    if missing:
+        fresh = _record_totals(db, settings, missing)
+        # Activities without records get a row too (has_cadence false), so
+        # they are not read again.
+        fresh = (
+            pl.DataFrame({"activity_id": missing}, schema={"activity_id": pl.Int64})
+            .join(fresh, on="activity_id", how="left")
+            .with_columns(pl.col("has_cadence").fill_null(False))
+            .select(_RECORD_TOTALS_SCHEMA.keys())
+            .cast(_RECORD_TOTALS_SCHEMA)
+        )
+        known = pl.concat([known, fresh])
+        _TOTALS_CACHE[path] = (key, known)
+    return known.filter(pl.col("activity_id").is_in(activity_ids))
+
+
+def _record_totals(db: AnalysisDb, settings: RunWalk, activity_ids: list[int]) -> pl.DataFrame:
+    """has_cadence, rec_distance_m and rec_duration_s (running samples only)
+    for each activity with records."""
+    recs = db.query_records(
+        "SELECT activity_id, strptime(timestamp, ?) AS ts, cadence, speed, distance FROM recs",
+        activity_ids,
+        [_TS_FORMAT],
+    )
+    if recs.is_empty():
+        return _empty_record_totals()
+    classified = classify_records(recs, settings)
+    return classified.group_by("activity_id").agg(
+        pl.col("cadence").is_not_null().any().alias("has_cadence"),
+        pl.col("dd_m").filter(pl.col("running")).sum().alias("rec_distance_m"),
+        pl.col("dt_s").filter(pl.col("running")).sum().alias("rec_duration_s"),
     )
