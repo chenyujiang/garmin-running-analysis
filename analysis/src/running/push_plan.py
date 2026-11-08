@@ -1,0 +1,259 @@
+"""`running-push-plan`: put the 8-week 5K plan on the Garmin Connect calendar.
+
+Without `--apply` it only prints the workouts it would create (a dry run, no
+network). With `--apply` it hands them to the importer's garminconnect script
+(`garmin_metrics.py push`), which uploads each one and schedules it on its
+date; the watch picks them up at its next sync with Garmin Connect.
+
+The ids Garmin returns are kept in `state/plan5k_push.json` in the data
+directory, written after every finished item, so a second `--apply` refuses
+to create duplicates and `--apply --replace` first deletes exactly the
+workouts an earlier push created (nothing else in the Garmin account).
+"""
+
+import argparse
+import io
+import json
+import os
+import subprocess
+import sys
+from collections.abc import Callable
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+from running.config import ConfigError, data_dir
+from running.garmin_plan import PlannedWorkout, plan_workouts
+from running.plan5k import DEFAULT_DAYS, DEFAULT_PARKRUN_DAY, DEFAULT_TARGET_S, plan_5k
+
+STATE_FILE = "plan5k_push.json"
+EXIT_AUTH = 3
+EXIT_RATE_LIMITED = 4
+
+# Runs the push with a request and calls back once per JSON result line;
+# returns the process exit code.
+Runner = Callable[[dict[str, Any], Callable[[dict[str, Any]], None]], int]
+
+
+def script_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "importer" / "garminconnect" / "garmin_metrics.py"
+
+
+def next_monday(today: date) -> date:
+    return today + timedelta(days=7 - today.weekday())
+
+
+def parse_time(text: str) -> float:
+    """ "20:00" -> 1200.0, "1:05:00" -> 3900.0."""
+    parts = [float(p) for p in text.strip().split(":")]
+    if not 2 <= len(parts) <= 3 or any(p < 0 for p in parts):
+        raise argparse.ArgumentTypeError(f"时间格式应为 mm:ss：{text!r}")
+    seconds = 0.0
+    for p in parts:
+        seconds = seconds * 60 + p
+    return seconds
+
+
+def _mmss(s: float) -> str:
+    s = round(s)
+    return f"{s // 60}:{s % 60:02d}"
+
+
+def _pace(step: dict[str, Any]) -> str:
+    if step["targetType"]["workoutTargetTypeKey"] != "pace.zone":
+        return ""
+    slow, fast = 1000 / step["targetValueOne"], 1000 / step["targetValueTwo"]
+    return f" @{_mmss(fast)}–{_mmss(slow)}"
+
+
+def _end(step: dict[str, Any]) -> str:
+    key, value = step["endCondition"]["conditionTypeKey"], step.get("endConditionValue")
+    if key == "distance":
+        return f"{value / 1000:g} km" if value >= 1000 else f"{value:g} m"
+    if key == "time":
+        return f"{value / 60:g} 分钟"
+    return "按圈结束"
+
+
+_LABEL = {"warmup": "热身", "cooldown": "放松", "interval": "", "recovery": "恢复"}
+
+
+def describe(workout: dict[str, Any]) -> str:
+    """One line per workout: "热身 3 km @… → 5×(1 km @… / 3 分钟) → 放松 2 km @…"."""
+
+    def one(step: dict[str, Any]) -> str:
+        if step["type"] == "RepeatGroupDTO":
+            inner = " / ".join(one(s) for s in step["workoutSteps"])
+            return f"{step['numberOfIterations']}×({inner})"
+        label = _LABEL[step["stepType"]["stepTypeKey"]]
+        text = f"{_end(step)}{_pace(step)}"
+        return f"{label} {text}" if label else text
+
+    return " → ".join(one(s) for s in workout["workoutSegments"][0]["workoutSteps"])
+
+
+def load_state(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def save_state(path: Path, state: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    part = path.with_suffix(".json.part")
+    part.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(part, path)
+
+
+def script_runner(token_dir: Path, interval: float) -> Runner:
+    def run(request: dict[str, Any], on_result: Callable[[dict[str, Any]], None]) -> int:
+        cmd = ["uv", "run", "--quiet", "--script", str(script_path())]
+        cmd += ["push", "--token-dir", str(token_dir), "--interval", str(interval)]
+        proc = subprocess.Popen(
+            cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, encoding="utf-8"
+        )
+        assert proc.stdin is not None and proc.stdout is not None
+        proc.stdin.write(json.dumps(request, ensure_ascii=False))
+        proc.stdin.close()
+        for line in proc.stdout:
+            if line.strip():
+                on_result(json.loads(line))
+        return proc.wait()
+
+    return run
+
+
+def apply(
+    workouts: list[PlannedWorkout],
+    start: date,
+    state_path: Path,
+    runner: Runner,
+    replace: bool,
+) -> tuple[int, str]:
+    """Push and keep the state file current. Returns (exit code, message)."""
+    state = load_state(state_path) or {"workouts": []}
+    old = [w for w in state["workouts"] if w.get("workout_id")]
+    if old and not replace:
+        return 1, (
+            f"之前已推送 {len(old)} 个训练（{state.get('start')} 开始）。"
+            "要换成新计划，用 --apply --replace：先删掉那些训练再推送。"
+        )
+    by_date = {w["date"]: w for w in workouts}
+    state = {
+        "start": start.isoformat(),
+        "pushed_at_utc": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "workouts": old,
+    }
+    counts = {"deleted": 0, "created": 0}
+
+    def on_result(result: dict[str, Any]) -> None:
+        if "deleted" in result:
+            state["workouts"] = [
+                w for w in state["workouts"] if w["workout_id"] != result["deleted"]
+            ]
+            counts["deleted"] += 1
+        else:
+            planned = by_date[result["date"]]
+            state["workouts"].append(
+                {
+                    "date": result["date"],
+                    "name": planned["name"],
+                    "workout_id": result["workout_id"],
+                    "schedule_id": result["schedule_id"],
+                }
+            )
+            counts["created"] += 1
+        save_state(state_path, state)
+
+    save_state(state_path, state)
+    request = {
+        "delete": [w["workout_id"] for w in old],
+        "workouts": [{"date": w["date"], "workout": w["workout"]} for w in workouts],
+    }
+    code = runner(request, on_result)
+    done = (
+        f"删除旧训练 {counts['deleted']} 个，新建并排进日历 {counts['created']}/{len(workouts)} 个"
+    )
+    if code == 0:
+        return 0, f"{done}。手表下次与 Garmin Connect 同步后会出现这些训练。"
+    reason = {
+        EXIT_AUTH: "garminconnect token 缺失或失效，先运行 `runsync login`",
+        EXIT_RATE_LIMITED: "Garmin 限流（HTTP 429 或需要 CAPTCHA），过一阵再试",
+    }.get(code, "garminconnect 脚本出错，见上方信息")
+    return (
+        code,
+        f"推送中断：{reason}。已完成：{done}。用 --apply --replace 重新推送会先删掉已建的。",
+    )
+
+
+def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
+    # A console or pipe that is not UTF-8 (e.g. cp1252) cannot encode the
+    # Chinese lines, `--help` included; write UTF-8 and replace anything
+    # unencodable.
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+    parser = argparse.ArgumentParser(
+        prog="running-push-plan",
+        description="把 8 周 5K 计划推送到 Garmin Connect 日历（默认只预览）。",
+    )
+    parser.add_argument("--start", type=date.fromisoformat, help="第 1 周的周一，默认下周一")
+    parser.add_argument("--target", type=parse_time, default=float(DEFAULT_TARGET_S))
+    parser.add_argument("--current", type=parse_time, help="当前 5K 成绩，留空按比赛/parkrun")
+    parser.add_argument("--days", default=",".join(map(str, DEFAULT_DAYS)), help="跑步日，1 = 周一")
+    parser.add_argument("--parkrun", type=int, default=DEFAULT_PARKRUN_DAY, help="0 = 没有")
+    parser.add_argument("--today", type=date.fromisoformat, help=argparse.SUPPRESS)
+    parser.add_argument("--apply", action="store_true", help="真正上传并排进日历")
+    parser.add_argument("--replace", action="store_true", help="先删掉上次推送的训练")
+    parser.add_argument("--interval", type=float, default=2.0, help="请求间隔（秒）")
+    args = parser.parse_args(argv)
+
+    today = args.today or date.today()
+    start = args.start or next_monday(today)
+    if start < today:
+        print(f"开始日期 {start} 已经过去", file=sys.stderr)
+        return 2
+    try:
+        days = [int(d) for d in args.days.split(",") if d.strip()]
+        plan = plan_5k(
+            today=today,
+            target_s=args.target,
+            current_s=args.current,
+            days=days,
+            parkrun_day=args.parkrun or None,
+        )
+        workouts = plan_workouts(plan, start)
+        root = data_dir()
+    except (ValueError, ConfigError) as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 2
+
+    c = plan["current"]
+    print(
+        f"目标 5K {_mmss(plan['target_s'])}（VDOT {plan['target_vdot']}），"
+        f"当前 VDOT {c['vdot']:.1f}（{c['source']}），基础周量 {plan['base_km']:g} km"
+    )
+    for warning in plan["warnings"]:
+        print(f"注意：{warning}")
+    for w in workouts:
+        print(f"{w['date']}  {w['km']:>4g} km  {w['name']}")
+        print(f"            {describe(w['workout'])}")
+    end = start + timedelta(days=7 * 8 - 1)
+    print(f"共 {len(workouts)} 个训练，{start} .. {end}")
+    if not args.apply:
+        print("这是预览，没有上传。确认后加 --apply 推送到 Garmin Connect。")
+        return 0
+
+    token_dir = root / "secrets" / "garminconnect"
+    if runner is None:
+        if not token_dir.is_dir():
+            print("没有 garminconnect token：先运行 `runsync login`", file=sys.stderr)
+            return EXIT_AUTH
+        runner = script_runner(token_dir, args.interval)
+    code, message = apply(workouts, start, root / "state" / STATE_FILE, runner, args.replace)
+    print(message, file=sys.stderr if code else sys.stdout)
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

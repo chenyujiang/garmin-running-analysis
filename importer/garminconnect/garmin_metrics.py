@@ -18,6 +18,14 @@ Subcommands:
   one line of JSON on stdout. Requests are sent one at a time with at
   least S seconds between them. stdout carries only JSON; messages go to
   stderr.
+- ``push --token-dir DIR --interval S``: load the token the same way, read
+  one JSON object ``{"delete": [workout ids], "workouts": [{"date":
+  "YYYY-MM-DD", "workout": {...}}]}`` from stdin, delete the listed workouts
+  (ones an earlier push created), then upload each workout and schedule it
+  on its date in the Garmin Connect calendar. Each result is one JSON line on
+  stdout as soon as it is done: ``{"deleted": id}`` or ``{"date": ...,
+  "workout_id": ..., "schedule_id": ...}``. Finally asks Garmin to send the
+  scheduled workouts to the devices (best effort).
 
 Exit codes: 0 ok, 1 other error, 3 token missing/expired or rejected,
 4 rate limited (HTTP 429) or CAPTCHA required. The first error ends the
@@ -48,10 +56,15 @@ def main() -> int:
     serve = sub.add_parser("serve")
     serve.add_argument("--token-dir", required=True, type=Path)
     serve.add_argument("--interval", type=float, default=5.0)
+    push_cmd = sub.add_parser("push")
+    push_cmd.add_argument("--token-dir", required=True, type=Path)
+    push_cmd.add_argument("--interval", type=float, default=2.0)
     args = parser.parse_args()
     try:
         if args.command == "login":
             return do_login(args.token_dir)
+        if args.command == "push":
+            return do_push(args.token_dir, args.interval)
         return do_serve(args.token_dir, args.interval)
     except Exception as err:  # noqa: BLE001 - mapped to an exit code
         return report_error(err)
@@ -74,7 +87,8 @@ def do_login(token_dir: Path) -> int:
     return EXIT_OK
 
 
-def do_serve(token_dir: Path, interval: float) -> int:
+def load_token(token_dir: Path):
+    """A logged-in client from the stored token, or None when there is none."""
     from garminconnect import Garmin
 
     if not token_dir.is_dir() or not any(token_dir.iterdir()):
@@ -82,10 +96,25 @@ def do_serve(token_dir: Path, interval: float) -> int:
             f"no garminconnect token in {token_dir}; run `runsync login`",
             file=sys.stderr,
         )
-        return EXIT_AUTH
+        return None
     # No credentials: this only loads the token and fails if it is unusable.
     garmin = Garmin()
     garmin.login(str(token_dir))
+    return garmin
+
+
+def save_token(garmin, token_dir: Path) -> None:
+    """Keep a refreshed token for the next run."""
+    try:
+        garmin.client.dump(str(token_dir))
+    except Exception as err:  # noqa: BLE001 - best effort
+        print(f"could not save the refreshed token: {err}", file=sys.stderr)
+
+
+def do_serve(token_dir: Path, interval: float) -> int:
+    garmin = load_token(token_dir)
+    if garmin is None:
+        return EXIT_AUTH
 
     queries = {
         "training_status": lambda d: garmin.get_training_status(d),
@@ -110,12 +139,78 @@ def do_serve(token_dir: Path, interval: float) -> int:
             sys.stdout.write(json.dumps(response, ensure_ascii=False) + "\n")
             sys.stdout.flush()
     finally:
-        # Keep a refreshed token for the next run.
-        try:
-            garmin.client.dump(str(token_dir))
-        except Exception as err:  # noqa: BLE001 - best effort
-            print(f"could not save the refreshed token: {err}", file=sys.stderr)
+        save_token(garmin, token_dir)
     return EXIT_OK
+
+
+def do_push(token_dir: Path, interval: float) -> int:
+    request = json.loads(sys.stdin.read())
+    garmin = load_token(token_dir)
+    if garmin is None:
+        return EXIT_AUTH
+    try:
+        push(garmin, request, emit, Pacer(interval))
+    finally:
+        save_token(garmin, token_dir)
+    return EXIT_OK
+
+
+def emit(result: dict) -> None:
+    sys.stdout.write(json.dumps(result, ensure_ascii=False) + "\n")
+    sys.stdout.flush()
+
+
+class Pacer:
+    """Call before each request: waits until `interval` s since the last one."""
+
+    def __init__(self, interval: float, clock=time.monotonic, sleep=time.sleep):
+        self.interval, self.clock, self.sleep = interval, clock, sleep
+        self.last = None
+
+    def __call__(self) -> None:
+        if self.last is not None:
+            wait = self.last + self.interval - self.clock()
+            if wait > 0:
+                self.sleep(wait)
+        self.last = self.clock()
+
+
+def push(garmin, request: dict, emit, pace) -> None:
+    """Delete, then upload and schedule; one `emit` per finished item. The
+    first error propagates, so everything emitted so far really happened."""
+    for workout_id in request.get("delete", []):
+        pace()
+        try:
+            garmin.delete_workout(workout_id)
+        except Exception as err:
+            if "404" not in str(err):
+                raise
+            # Already deleted in the Garmin Connect app.
+        emit({"deleted": workout_id})
+    for item in request.get("workouts", []):
+        day = date.fromisoformat(item["date"]).isoformat()
+        pace()
+        uploaded = garmin.upload_workout(item["workout"])
+        workout_id = uploaded["workoutId"]
+        pace()
+        try:
+            scheduled = garmin.schedule_workout(workout_id, day)
+        except Exception:
+            emit({"date": day, "workout_id": workout_id, "schedule_id": None})
+            raise
+        emit(
+            {
+                "date": day,
+                "workout_id": workout_id,
+                "schedule_id": (scheduled or {}).get("workoutScheduleId"),
+            }
+        )
+    if request.get("workouts"):
+        pace()
+        try:
+            garmin.send_scheduled_workouts_to_devices()
+        except Exception as err:  # noqa: BLE001 - the watch also syncs the calendar itself
+            print(f"could not ask Garmin to send the workouts to the watch: {err}", file=sys.stderr)
 
 
 def report_error(err: Exception) -> int:
