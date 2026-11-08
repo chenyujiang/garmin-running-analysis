@@ -34,8 +34,8 @@ def flat(step_list):
 
 
 def pace_of(step):
-    """(fast, slow) in s/km from a pace.zone step."""
-    return 1000 / step["targetValueTwo"], 1000 / step["targetValueOne"]
+    """(slow, fast) in s/km from a pace.zone step, the order Garmin stores them."""
+    return 1000 / step["targetValueOne"], 1000 / step["targetValueTwo"]
 
 
 def test_every_run_day_of_the_8_weeks_becomes_one_dated_workout(plan):
@@ -66,7 +66,7 @@ def test_an_easy_run_is_its_distance_at_the_weeks_e_pace(plan):
 
     assert step["endCondition"]["conditionTypeKey"] == "distance"
     assert step["endConditionValue"] == w["km"] * 1000
-    fast, slow = pace_of(step)
+    slow, fast = pace_of(step)
     assert fast == pytest.approx(week["paces"]["e_fast"], abs=0.1)
     assert slow == pytest.approx(week["paces"]["e_slow"], abs=0.1)
 
@@ -90,7 +90,7 @@ def test_a_quality_day_has_warmup_repeats_with_recoveries_and_cooldown(plan):
     assert t_group["skipLastRestStep"] is True
     work, rest = t_group["workoutSteps"]
     assert work["endConditionValue"] == 1600
-    fast, slow = pace_of(work)
+    slow, fast = pace_of(work)
     assert fast == pytest.approx(paces["t"] - PACE_BAND_S, abs=0.1)
     assert slow == pytest.approx(paces["t"] + PACE_BAND_S, abs=0.1)
     assert (rest["endCondition"]["conditionTypeKey"], rest["endConditionValue"]) == ("time", 60)
@@ -99,7 +99,7 @@ def test_a_quality_day_has_warmup_repeats_with_recoveries_and_cooldown(plan):
     r_work, r_rest = r_group["workoutSteps"]
     assert r_group["numberOfIterations"] == r_part["reps"] >= 2
     assert r_work["endConditionValue"] == 200
-    assert pace_of(r_work)[0] == pytest.approx(paces["r"] - PACE_BAND_S, abs=0.1)
+    assert pace_of(r_work)[1] == pytest.approx(paces["r"] - PACE_BAND_S, abs=0.1)
     assert (r_rest["endCondition"]["conditionTypeKey"], r_rest["endConditionValue"]) == (
         "distance",
         200,
@@ -117,6 +117,6 @@ def test_the_goal_parkrun_is_5_km_at_goal_pace_between_warmup_and_cooldown(plan)
         5000,
         1500,
     )
-    fast, slow = pace_of(race)
+    slow, fast = pace_of(race)
     assert (fast + slow) / 2 == pytest.approx(240, abs=0.1)  # sub-20: 4:00/km
     assert "均匀配速" in w["workout"]["description"]

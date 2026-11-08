@@ -56,9 +56,9 @@ def main() -> int:
     serve = sub.add_parser("serve")
     serve.add_argument("--token-dir", required=True, type=Path)
     serve.add_argument("--interval", type=float, default=5.0)
-    push_cmd = sub.add_parser("push")
-    push_cmd.add_argument("--token-dir", required=True, type=Path)
-    push_cmd.add_argument("--interval", type=float, default=2.0)
+    push_parser = sub.add_parser("push")
+    push_parser.add_argument("--token-dir", required=True, type=Path)
+    push_parser.add_argument("--interval", type=float, default=2.0)
     args = parser.parse_args()
     try:
         if args.command == "login":
@@ -144,7 +144,9 @@ def do_serve(token_dir: Path, interval: float) -> int:
 
 
 def do_push(token_dir: Path, interval: float) -> int:
-    request = json.loads(sys.stdin.read())
+    # Bytes, not sys.stdin: its encoding is the console code page (cp1252 on
+    # a Windows pipe), which would garble the Chinese workout names.
+    request = json.loads(sys.stdin.buffer.read().decode("utf-8"))
     garmin = load_token(token_dir)
     if garmin is None:
         return EXIT_AUTH
@@ -156,23 +158,29 @@ def do_push(token_dir: Path, interval: float) -> int:
 
 
 def emit(result: dict) -> None:
-    sys.stdout.write(json.dumps(result, ensure_ascii=False) + "\n")
+    # ASCII JSON, so stdout's encoding does not matter.
+    sys.stdout.write(json.dumps(result) + "\n")
     sys.stdout.flush()
 
 
 class Pacer:
     """Call before each request: waits until `interval` s since the last one."""
 
-    def __init__(self, interval: float, clock=time.monotonic, sleep=time.sleep):
-        self.interval, self.clock, self.sleep = interval, clock, sleep
+    def __init__(self, interval: float):
+        self.interval = interval
         self.last = None
 
     def __call__(self) -> None:
         if self.last is not None:
-            wait = self.last + self.interval - self.clock()
+            wait = self.last + self.interval - time.monotonic()
             if wait > 0:
-                self.sleep(wait)
-        self.last = self.clock()
+                time.sleep(wait)
+        self.last = time.monotonic()
+
+
+def is_not_found(err: Exception) -> bool:
+    """garminconnect attaches the HTTP response to its errors."""
+    return getattr(getattr(err, "response", None), "status_code", None) == 404
 
 
 def push(garmin, request: dict, emit, pace) -> None:
@@ -183,7 +191,7 @@ def push(garmin, request: dict, emit, pace) -> None:
         try:
             garmin.delete_workout(workout_id)
         except Exception as err:
-            if "404" not in str(err):
+            if not is_not_found(err):
                 raise
             # Already deleted in the Garmin Connect app.
         emit({"deleted": workout_id})

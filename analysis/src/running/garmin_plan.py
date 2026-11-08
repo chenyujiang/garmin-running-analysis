@@ -6,8 +6,8 @@ shape `garminconnect.workout` builds):
 
 - E and long runs: one distance step at the week's E pace range.
 - Quality days: warm-up (`WARMUP_KM`) at E, then each part either as a
-  repeat group (work at the part's pace, recovery as the plan says: a time
-  for "3 分钟慢跑", a distance for "200 m 慢跑", the last recovery skipped)
+  repeat group (work at the part's pace, recovery ending on the part's
+  `rest_end`/`rest_value`: a time or a distance, the last recovery skipped)
   or as one step, a lap-button jog between parts, cool-down (`COOLDOWN_KM`).
 - parkrun and race days: warm-up, 5 km at the session's target time, cool-down.
 
@@ -15,10 +15,11 @@ Paces are ranges: E from the slow to the fast end of the week's E pace, the
 others the plan's pace plus or minus `PACE_BAND_S` seconds per km. Garmin
 stores a pace range as speeds in m/s, the slower one first.
 
+`describe` renders a workout as one line for the preview.
+
 Pure: nothing here reads the database or talks to Garmin.
 """
 
-import re
 from datetime import date, timedelta
 from typing import Any, TypedDict
 
@@ -32,6 +33,7 @@ from running.plan5k import (
     Part,
     Plan5k,
     Session,
+    mmss,
 )
 
 PACE_BAND_S = 5.0  # s/km either side of a single pace
@@ -75,22 +77,12 @@ def _range(paces: Paces, key: str) -> PaceRange:
     if key == "E":
         return paces["e_slow"], paces["e_fast"]
     centre = {"M": paces["m"], "T": paces["t"], "I": paces["i"], "R": paces["r"]}[key]
-    return centre + PACE_BAND_S, centre - PACE_BAND_S
+    return _band(centre)
 
 
-def _around(pace: float) -> PaceRange:
+def _band(pace: float) -> PaceRange:
+    """A single pace as a range of `PACE_BAND_S` either side."""
     return pace + PACE_BAND_S, pace - PACE_BAND_S
-
-
-def _parse_rest(rest: str) -> tuple[str, float]:
-    """ "3 分钟慢跑" -> ("time", 180), "200 m 慢跑" -> ("distance", 200)."""
-    m = re.match(r"\s*([\d.]+)\s*分钟", rest)
-    if m:
-        return "time", float(m.group(1)) * 60
-    m = re.match(r"\s*([\d.]+)\s*m\b", rest)
-    if m:
-        return "distance", float(m.group(1))
-    raise ValueError(f"无法识别的恢复方式：{rest!r}")
 
 
 class _Builder:
@@ -156,15 +148,22 @@ class _Builder:
         work = self.step(
             "interval", "distance", part["dist_m"], pace, child=self.child, times=part["reps"]
         )
-        end, value = _parse_rest(part["rest"])
         rest = self.step(
-            "recovery", end, value, None, part["rest"], child=self.child, times=part["reps"] - 1
+            "recovery",
+            part["rest_end"] or "lap.button",
+            part["rest_value"],
+            None,
+            part["rest"],
+            child=self.child,
+            times=part["reps"] - 1,
         )
         group["workoutSteps"] = [work, rest]
         return group
 
 
-def _steps(session: Session, paces: Paces) -> tuple[list[dict[str, Any]], float]:
+def _steps(
+    session: Session, paces: Paces, parkrun_day: int | None
+) -> tuple[list[dict[str, Any]], float]:
     b = _Builder(paces["e_slow"] * _JOG_FACTOR)
     easy = _range(paces, "E")
     steps: list[dict[str, Any]] = []
@@ -183,11 +182,12 @@ def _steps(session: Session, paces: Paces) -> tuple[list[dict[str, Any]], float]
                 steps.append(b.step("interval", "distance", part["dist_m"], pace))
         steps.append(b.step("cooldown", "distance", COOLDOWN_KM * 1000, easy))
     elif kind in ("parkrun", "race"):
-        parkrun = kind == "parkrun" or session["title"].startswith("目标 parkrun")
+        # The goal race is a parkrun when the plan has a parkrun day.
+        parkrun = kind == "parkrun" or session["day"] == parkrun_day
         warm, cool = (PARKRUN_WU_KM, PARKRUN_CD_KM) if parkrun else (WARMUP_KM, COOLDOWN_KM)
         target = session["target_s"] or paces["five_k_s"]
         steps.append(b.step("warmup", "distance", warm * 1000, easy))
-        steps.append(b.step("interval", "distance", FIVE_K, _around(target / 5), session["title"]))
+        steps.append(b.step("interval", "distance", FIVE_K, _band(target / 5), session["title"]))
         steps.append(b.step("cooldown", "distance", cool * 1000, easy))
     else:
         raise ValueError(f"不能转换的课程类型：{kind}")
@@ -204,7 +204,7 @@ def plan_workouts(plan: Plan5k, start: date) -> list[PlannedWorkout]:
             if session["kind"] == "rest":
                 continue
             day = start + timedelta(days=(week["n"] - 1) * 7 + session["day"] - 1)
-            steps, seconds = _steps(session, week["paces"])
+            steps, seconds = _steps(session, week["paces"], plan["parkrun_day"])
             name = f"{NAME_PREFIX} W{week['n']} {DAY_NAMES[session['day']]} {session['title']}"
             workout: dict[str, Any] = {
                 "workoutName": name,
@@ -227,3 +227,36 @@ def plan_workouts(plan: Plan5k, start: date) -> list[PlannedWorkout]:
                 }
             )
     return out
+
+
+def _pace_text(step: dict[str, Any]) -> str:
+    if step["targetType"]["workoutTargetTypeKey"] != "pace.zone":
+        return ""
+    slow, fast = 1000 / step["targetValueOne"], 1000 / step["targetValueTwo"]
+    return f" @{mmss(fast)}–{mmss(slow)}"
+
+
+def _end_text(step: dict[str, Any]) -> str:
+    key, value = step["endCondition"]["conditionTypeKey"], step.get("endConditionValue")
+    if key == "distance":
+        return f"{value / 1000:g} km" if value >= 1000 else f"{value:g} m"
+    if key == "time":
+        return f"{value / 60:g} 分钟"
+    return "按圈结束"
+
+
+_LABEL = {"warmup": "热身", "cooldown": "放松", "interval": "", "recovery": "恢复"}
+
+
+def describe(workout: dict[str, Any]) -> str:
+    """One line per workout: "热身 3 km @… → 5×(1 km @… / 3 分钟) → 放松 2 km @…"."""
+
+    def one(step: dict[str, Any]) -> str:
+        if step["type"] == "RepeatGroupDTO":
+            inner = " / ".join(one(s) for s in step["workoutSteps"])
+            return f"{step['numberOfIterations']}×({inner})"
+        label = _LABEL[step["stepType"]["stepTypeKey"]]
+        text = f"{_end_text(step)}{_pace_text(step)}"
+        return f"{label} {text}" if label else text
+
+    return " → ".join(one(s) for s in workout["workoutSegments"][0]["workoutSteps"])

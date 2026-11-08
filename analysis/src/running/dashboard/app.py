@@ -1,8 +1,6 @@
 """The local dashboard: FastAPI on 127.0.0.1 serving JSON from `running`
 and the static frontend in `static/`. No accounts, no writes."""
 
-import io
-import sys
 import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -21,6 +19,7 @@ from running.activities import (
 )
 from running.aerobic import AerobicTrend, Range, aerobic_trend
 from running.config import data_dir
+from running.console import utf8_stdio
 from running.db import disable_shared_connections, enable_shared_connections, open_analysis_db
 from running.detail import ActivityDetail, activity_detail
 from running.load import TrainingLoad, training_load
@@ -165,10 +164,7 @@ class _RevalidatedStaticFiles(StaticFiles):
 def main() -> None:
     import uvicorn
 
-    # A console or pipe that is not UTF-8 (e.g. cp1252) cannot encode the
-    # Chinese startup line; write UTF-8 and replace anything unencodable.
-    if isinstance(sys.stdout, io.TextIOWrapper):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    utf8_stdio()
     print(f"仪表盘：http://{HOST}:{PORT}/")
     uvicorn.run(create_app(serve=True), host=HOST, port=PORT)
 

@@ -20,7 +20,7 @@ Status: open
 两个独立的程序，只通过数据目录交换数据：
 
 - **导入 CLI `runsync`**（Rust）：把 Garmin 的全部历史和之后的新数据同步到本机。原始文件原样存进原始档案，同时解析写入 SQLite 分析库。三个命令：`sync`、`login`、`rebuild`，全部手动运行。
-- **分析包 `running`**（Python）：只读分析库，计算有氧能力、训练负荷、周跑量和成绩预测。同一套计算给 Jupyter 用于深入探索，也给本机仪表盘用。仪表盘是只在 `127.0.0.1` 上运行的 FastAPI 服务加静态网页，用户每周打开一两次，几分钟看完"这周该怎么练"。
+- **分析包 `running`**（Python）：只读分析库（推送 5K 计划时写 `state/`，见 `deviations.md`），计算有氧能力、训练负荷、周跑量和成绩预测。同一套计算给 Jupyter 用于深入探索，也给本机仪表盘用。仪表盘是只在 `127.0.0.1` 上运行的 FastAPI 服务加静态网页，用户每周打开一两次，几分钟看完"这周该怎么练"。
 
 用户每次想看新数据，就运行一次 `runsync sync`，然后打开仪表盘。
 
@@ -109,8 +109,8 @@ Status: open
 **整体结构**
 
 - 仓库根目录下两个独立项目：Rust crate（二进制 `runsync`）和 uv 管理的 Python 项目（包 `running`），不用 Cargo workspace，也不用 uv workspace。仪表盘是 Python 项目的一部分。
-- 两边只通过数据目录交换数据。分析库的 schema 由 Rust 拥有，Python 一律只读打开。
-- 数据目录由 `RUNNING_DATA_DIR` 指定，默认 `%USERPROFILE%\running-data`。结构：`config.toml`、`races.csv`、`secrets/`（Personal API key、garminconnect token）、`raw/`（原始档案）、`state/`（冷却标记）、`running.sqlite`（分析库）、可选的 `analysis.sqlite`（Python 的派生值缓存）。
+- 两边只通过数据目录交换数据，唯一的例外是 `running-push-plan --apply` 调用导入端的 garminconnect 脚本推送 5K 计划（见 `deviations.md`）。分析库的 schema 由 Rust 拥有，Python 一律只读打开。
+- 数据目录由 `RUNNING_DATA_DIR` 指定，默认 `%USERPROFILE%\running-data`。结构：`config.toml`、`races.csv`、`secrets/`（Personal API key、garminconnect token）、`raw/`（原始档案）、`state/`（冷却标记；以及 `plan5k_push.json`，记录推送到 Garmin 的计划课 id）、`running.sqlite`（分析库）、可选的 `analysis.sqlite`（Python 的派生值缓存）。
 - `config.toml` 两边共用，Rust 用 `toml` crate 读，Python 用 `tomllib` 读。形状如下（来自 ticket「项目骨架与依赖」）：
 
 ```toml
