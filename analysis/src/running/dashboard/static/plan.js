@@ -3,6 +3,8 @@
 // current VDOT (races.csv basis, a recent parkrun, or the 5K time typed into
 // the form). Form state lives in the hash:
 // #/plan?current=21:30&target=20:00&days=2,3,4,6&parkrun=6 (parkrun=0: none).
+// `p.push` lists the sessions the last `running-push-plan --apply` put on the
+// Garmin calendar; those rows get their date and an "已推送" tag.
 
 import { h, fmtDur, fmtPace } from "./dom.js";
 
@@ -69,7 +71,8 @@ function render(p, query) {
     paceTable(p),
     h("h2", { class: "plan-h" }, "8 周课表"),
     h("p", { class: "small muted" }, layoutText(p)),
-    ...p.weeks.map(weekBlock),
+    pushText(p.push),
+    ...p.weeks.map((w) => weekBlock(w, p.push)),
     rules(),
   ];
 }
@@ -83,6 +86,23 @@ function layoutText(p) {
       `离它最远的一天做 T + R 质量课，其余是 E 跑。第 8 周的 parkrun 就是目标赛。${qc}${caps}`;
   }
   return `跑步日：${days}。两次质量课互相隔开，最后一个跑步日是长距离，第 8 周那天比赛。${qc}${caps}`;
+}
+
+/** "2026-11-10" -> "11-10". */
+const monthDay = (iso) => iso.slice(5);
+
+function pushText(push) {
+  if (!push) return null;
+  const n = push.sessions.length;
+  const at = push.pushed_at_utc ? `（推送于 ${new Date(push.pushed_at_utc).toLocaleString("zh-CN")}）` : "";
+  const text = [`Garmin 日历上有上次推送的 ${push.total} 节计划课，第 1 周从 ${push.start} 开始${at}。`];
+  if (n === push.total) {
+    text.push("下面每节都已推送。");
+  } else {
+    text.push(`其中 ${n} 节与这页的计划一致，已在下面标出；其余是按别的设置推送的。`,
+      "要换成这页的计划，用 running-push-plan --apply --replace。");
+  }
+  return h("p", { class: "small push-note" }, ...text);
 }
 
 function head(p) {
@@ -191,7 +211,7 @@ function partText(part, paces) {
   return [chip(part.pace), ` ${n}，每组 ${fmtDur(per)}${rest}`];
 }
 
-function sessionRow(s, paces) {
+function sessionRow(s, paces, pushedOn) {
   let content;
   if (s.kind === "Q") {
     content = [h("div", {}, ...s.parts.flatMap((part, i) => [i ? h("br") : null, ...partText(part, paces)]))];
@@ -207,18 +227,21 @@ function sessionRow(s, paces) {
     content = [h("span", { class: "muted" }, s.title)];
   }
   if (s.note) content.push(h("div", { class: "small muted" }, s.note));
-  return h("tr", { class: `k-${s.kind}` },
-    h("td", { class: "day" }, DAYS[s.day]),
-    h("td", { class: "kind" }, KIND[s.kind]),
+  return h("tr", { class: `k-${s.kind}${pushedOn ? " pushed" : ""}` },
+    h("td", { class: "day" }, DAYS[s.day],
+      pushedOn ? h("div", { class: "small muted num" }, monthDay(pushedOn)) : null),
+    h("td", { class: "kind" }, KIND[s.kind],
+      pushedOn ? h("div", {}, h("span", { class: "pushed-tag", title: `已在 Garmin 日历 ${pushedOn}` }, "已推送")) : null),
     h("td", {}, ...content),
     h("td", { class: "r num" }, s.km ? `${s.km} km` : ""));
 }
 
-function weekBlock(w) {
+function weekBlock(w, push) {
+  const on = new Map((push?.sessions ?? []).filter((x) => x.week === w.n).map((x) => [x.day, x.date]));
   return h("section", { class: "plan-week" },
     h("h3", {}, `第 ${w.n} 周`,
       h("span", { class: "muted" }, ` · ${w.phase} · 约 ${w.km} km · 训练 VDOT ${w.vdot.toFixed(1)}`)),
-    h("table", {}, h("tbody", {}, ...w.sessions.map((s) => sessionRow(s, w.paces)))));
+    h("table", {}, h("tbody", {}, ...w.sessions.map((s) => sessionRow(s, w.paces, on.get(s.day))))));
 }
 
 function rules() {
