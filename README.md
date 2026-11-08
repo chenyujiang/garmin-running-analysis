@@ -41,7 +41,7 @@ Most documents are written in Chinese.
 
 ## Data directory
 
-Both projects find their data through `RUNNING_DATA_DIR`, defaulting to `%USERPROFILE%\running-data`. It holds `config.toml`, the hand-kept `races.csv`, the raw archive (`raw/`), credentials (`secrets/`), cooldown markers (`state/`) and the analysis database `running.sqlite`.
+Both projects find their data through `RUNNING_DATA_DIR`, defaulting to `%USERPROFILE%\running-data`. It holds `config.toml`, the hand-kept `races.csv`, the raw archive (`raw/`), credentials (`secrets/`), cooldown markers and the record of pushed plan workouts (`state/`) and the analysis database `running.sqlite`.
 
 `config.toml` (only `[[physiology]]` is required; every other key shows its default):
 
@@ -146,6 +146,16 @@ A rule that cannot judge (no HR, no GPS, treadmill, not a run) says why instead 
 
 API (JSON, all on `127.0.0.1:8765`): `GET /api/activities?type=running|all&min_km=&page=&page_size=` (page size up to 200) for the list, `GET /api/activities/{activity_id}` for the detail plus report (404 with a Chinese message when the id is unknown). The route is sent as the simplified track (at most 500 points) in latitude and longitude, plus a normalised shape. The browser draws it on tiles from `tile.openstreetmap.org`, so the tile server sees the approximate area of each run you open.
 
+## Pushing the 5K plan to Garmin Connect
+
+`uv run running-push-plan` (in `analysis/`) turns the 8-week 5K plan into Garmin structured running workouts and, with `--apply`, puts them on the Garmin Connect calendar; the watch gets them at its next sync with Garmin Connect. Without `--apply` it is a dry run: it prints each workout (date, steps, pace ranges) and sends nothing.
+
+- Options are the dashboard's: `--target 20:00`, `--days 2,3,4,6` (1 = Monday), `--parkrun 6` (`0`: none), `--current mm:ss`. The settings are checked against the dashboard's bounds (5K times 10:00 to 1:00:00). Week 1 starts on `--start` (a Monday), default today when today is a Monday, else the coming Monday; the preview prints the start and end dates.
+- Each run day is one workout named `5K W<week> <day> <title>`. Easy and long runs are one distance step at the week's E pace range; quality days are a 3 km warm-up, the reps as repeat groups (recovery by time or distance as the plan says, last recovery skipped), a lap-button jog between parts and a 2 km cool-down; parkruns and the race are warm-up, 5 km at the session's target time and cool-down. Single paces get a range of plus or minus 5 s/km.
+- The push runs `importer/garminconnect/garmin_metrics.py push` with the `runsync login` token (it writes to your Garmin account, so run it yourself). It uploads and schedules one workout at a time, 2 s apart (`--interval`), then asks Garmin to send scheduled workouts to the devices.
+- A rate limit (HTTP 429 or CAPTCHA) writes the same 24-hour marker `runsync sync` uses (`state/garminconnect.cooldown.json`); while it is active, pushes are refused and `runsync sync` skips garminconnect. Delete it to retry sooner.
+- The ids it creates are recorded in `state/plan5k_push.json` after every step. A second `--apply` refuses to create duplicates; `--apply --replace` first deletes exactly the workouts listed there (and with them their calendar entries), then pushes the current plan. After an interrupted push, `--apply --replace` cleans up and starts again.
+
 ## Common commands
 
 Importer (run in `importer/`):
@@ -167,6 +177,7 @@ Analysis and dashboard (run in `analysis/`):
 uv sync
 uv run python scripts/fetch_fonts.py   # once: download the self-hosted fonts (not committed)
 uv run running-dashboard               # http://127.0.0.1:8765
+uv run running-push-plan               # preview the 5K plan as Garmin workouts; --apply to push (writes to Garmin)
 uv run pytest
 uv run ruff format
 uv run ruff check

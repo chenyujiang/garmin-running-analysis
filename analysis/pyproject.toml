@@ -13,6 +13,7 @@ dependencies = [
 
 [project.scripts]
 running-dashboard = "running.dashboard.app:main"
+running-push-plan = "running.push_plan:main"
 
 [dependency-groups]
 dev = [

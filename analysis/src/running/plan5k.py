@@ -65,7 +65,9 @@ class Part(TypedDict):
     reps: int
     dist_m: float
     pace: PaceKey
-    rest: str  # recovery between reps, "" for a single rep
+    rest: str  # recovery between reps as shown, "" for a single rep
+    rest_end: Literal["time", "distance"] | None  # how the recovery ends
+    rest_value: float | None  # seconds or metres
 
 
 class Session(TypedDict):
@@ -142,30 +144,44 @@ def _r1(x: float) -> float:
     return round(x * 2) / 2  # nearest 0.5 km
 
 
+Rest = tuple[Literal["time", "distance"], float, str]  # (end, seconds or metres, text)
+
+
+def _jog_min(minutes: float) -> Rest:
+    return "time", minutes * 60, f"{minutes:g} 分钟慢跑"
+
+
+def _jog_m(metres: float) -> Rest:
+    return "distance", metres, f"{metres:g} m 慢跑"
+
+
+_T_REST: Rest = ("time", 60, "1 分钟")
+_NO_REST: Rest = ("time", 0, "")
+
 # Planned quality per week: (Q1, Q2), each a list of (reps, dist_m, pace, rest).
 _Q = {
-    1: ([(5, 1000, "I", "3 分钟慢跑")], [(4, 1600, "T", "1 分钟")]),
-    2: ([(4, 1200, "I", "3 分钟慢跑")], [(1, 5000, "T", "")]),
-    3: ([(6, 1000, "I", "3 分钟慢跑")], [(3, 1600, "T", "1 分钟"), (4, 200, "R", "200 m 慢跑")]),
-    4: ([(8, 400, "R", "400 m 慢跑")], [(3, 1600, "T", "1 分钟")]),
-    5: ([(5, 1200, "I", "3 分钟慢跑")], [(4, 1600, "T", "1 分钟")]),
-    6: ([(6, 1000, "I", "2.5 分钟慢跑")], [(3, 1600, "T", "1 分钟"), (4, 400, "R", "400 m 慢跑")]),
-    7: ([(5, 1000, "I", "2 分钟慢跑")], [(2, 1600, "T", "1 分钟"), (6, 200, "R", "200 m 慢跑")]),
-    8: ([(3, 1000, "I", "3 分钟慢跑")], [(4, 200, "R", "200 m 慢跑")]),
+    1: ([(5, 1000, "I", _jog_min(3))], [(4, 1600, "T", _T_REST)]),
+    2: ([(4, 1200, "I", _jog_min(3))], [(1, 5000, "T", _NO_REST)]),
+    3: ([(6, 1000, "I", _jog_min(3))], [(3, 1600, "T", _T_REST), (4, 200, "R", _jog_m(200))]),
+    4: ([(8, 400, "R", _jog_m(400))], [(3, 1600, "T", _T_REST)]),
+    5: ([(5, 1200, "I", _jog_min(3))], [(4, 1600, "T", _T_REST)]),
+    6: ([(6, 1000, "I", _jog_min(2.5))], [(3, 1600, "T", _T_REST), (4, 400, "R", _jog_m(400))]),
+    7: ([(5, 1000, "I", _jog_min(2))], [(2, 1600, "T", _T_REST), (6, 200, "R", _jog_m(200))]),
+    8: ([(3, 1000, "I", _jog_min(3))], [(4, 200, "R", _jog_m(200))]),
 }
 _PHASE = {1: "I 期：最大摄氧间歇", 4: "调整周", 5: "专项期：I + T + R", 8: "比赛周"}
 
 # With a weekly parkrun the 5K itself is the VO2max stimulus, so the one
 # midweek quality day is T-led with some R for leg speed.
 _Q_PARKRUN = {
-    1: [(4, 1600, "T", "1 分钟")],
-    2: [(3, 1600, "T", "1 分钟"), (4, 200, "R", "200 m 慢跑")],
-    3: [(1, 5000, "T", "")],
-    4: [(6, 200, "R", "200 m 慢跑")],
-    5: [(4, 1600, "T", "1 分钟"), (4, 200, "R", "200 m 慢跑")],
-    6: [(3, 1600, "T", "1 分钟"), (6, 200, "R", "200 m 慢跑")],
-    7: [(2, 1600, "T", "1 分钟"), (6, 200, "R", "200 m 慢跑")],
-    8: [(2, 1000, "T", "1 分钟"), (4, 200, "R", "200 m 慢跑")],
+    1: [(4, 1600, "T", _T_REST)],
+    2: [(3, 1600, "T", _T_REST), (4, 200, "R", _jog_m(200))],
+    3: [(1, 5000, "T", _NO_REST)],
+    4: [(6, 200, "R", _jog_m(200))],
+    5: [(4, 1600, "T", _T_REST), (4, 200, "R", _jog_m(200))],
+    6: [(3, 1600, "T", _T_REST), (6, 200, "R", _jog_m(200))],
+    7: [(2, 1600, "T", _T_REST), (6, 200, "R", _jog_m(200))],
+    8: [(2, 1000, "T", _T_REST), (4, 200, "R", _jog_m(200))],
 }
 _PHASE_PARKRUN = {
     1: "基础：parkrun 全力 + T",
@@ -190,8 +206,17 @@ def _capped(parts: list[tuple], week_km: float) -> tuple[list[Part], list[str]]:
             new = max(2000.0, math.floor(limit_km) * 1000.0)
             notes.append(f"连续 T 按周跑量上限从 {dist / 1000:g} km 减到 {new / 1000:g} km")
             dist = new
+        end, value, text = rest
+        multi = reps > 1
         out.append(
-            {"reps": reps, "dist_m": float(dist), "pace": pace, "rest": rest if reps > 1 else ""}
+            {
+                "reps": reps,
+                "dist_m": float(dist),
+                "pace": pace,
+                "rest": text if multi else "",
+                "rest_end": end if multi else None,
+                "rest_value": float(value) if multi else None,
+            }
         )
     return out, notes
 
@@ -238,7 +263,7 @@ def _parkrun(n: int, day: int, paces: Paces, goal_s: float) -> Session:
             "km": km,
             "title": "目标 parkrun",
             "parts": [],
-            "note": f"均匀配速 {_mmss(goal_s / 5)}/km：前 1 km 不快于它，最后 1 km 再加速",
+            "note": f"均匀配速 {mmss(goal_s / 5)}/km：前 1 km 不快于它，最后 1 km 再加速",
             "target_s": goal_s,
         }
     if n == 4:
@@ -258,14 +283,15 @@ def _parkrun(n: int, day: int, paces: Paces, goal_s: float) -> Session:
         "title": "parkrun 全力",
         "parts": [],
         "note": (
-            f"按训练水平均匀跑，每公里 {_mmss(paces['five_k_s'] / 5)}；前 1 km 不要更快，"
+            f"按训练水平均匀跑，每公里 {mmss(paces['five_k_s'] / 5)}；前 1 km 不要更快，"
             "最后 1 km 有余力再加速。连续两次明显快于这个时间，说明可以提前升一档"
         ),
         "target_s": paces["five_k_s"],
     }
 
 
-def _mmss(s: float) -> str:
+def mmss(s: float) -> str:
+    """1200 -> "20:00"."""
     s = round(s)
     return f"{s // 60}:{s % 60:02d}"
 
@@ -298,7 +324,7 @@ def _week(
                     "km": _r1(FIVE_K / 1000 + WARMUP_KM + COOLDOWN_KM),
                     "title": "5K 比赛",
                     "parts": [],
-                    "note": f"均匀配速 {_mmss(goal_s / 5)}/km：前 1 km 不快于它",
+                    "note": f"均匀配速 {mmss(goal_s / 5)}/km：前 1 km 不快于它",
                     "target_s": goal_s,
                 }
             )
