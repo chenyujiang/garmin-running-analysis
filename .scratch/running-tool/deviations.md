@@ -10,13 +10,10 @@
 4. **`MetricsSource` 是一个单独的 trait**：Garmin 三项参照指标的同步，用的是自己的 trait，而不是和活动同步共用一个 source 抽象。
 5. **冷却期内退出码为 0**：Garmin 限流后进入 24 小时冷却期，这期间运行 `runsync sync` 会跳过 Garmin 指标，打印提示，退出码仍然是 0，不当作失败。
 
-## 待确认的偏离
+下面两项来自推送 5K 计划到 Garmin Connect（PR #10，`running-push-plan`），code review 时提出。用户 2026-11-09 确认保留，spec 已按此更新。
 
-推送 5K 计划到 Garmin Connect（PR #10，`running-push-plan`）偏离了 spec 的两条约束，code review 时提出，等用户确认。spec 已按此先改。
-
-1. **Python 调用导入端的 garminconnect 脚本**：spec 原本写两边只通过数据目录交换数据。推送需要 garminconnect 的 token 和客户端，这些只在 `importer/garminconnect/garmin_metrics.py` 里，所以 `running-push-plan --apply` 用 `uv run --script` 启动它的 `push` 子命令，经 stdin/stdout 交换 JSON。分析库仍然只读。
-2. **Python 写 `state/`**：spec 原本写分析包只读、`state/` 只放冷却标记。推送把 Garmin 返回的 id 写进 `state/plan5k_push.json`（防重复、`--replace` 只删自己建的），限流时写和 `runsync sync` 相同格式的 `state/garminconnect.cooldown.json`，冷却期内拒绝推送。
-3. **新的测试接缝**：`push_plan.main` 接受 `runner` 参数，测试用它把导入端脚本的 `push()` 接到假 Garmin 客户端上；另有一个测试用存根 `garminconnect` 包真实运行脚本的 `push` 子命令，检查中文名称在任何控制台代码页下都不乱码。
+6. **Python 调用导入端的 garminconnect 脚本**：spec 原本写两边只通过数据目录交换数据。推送需要 garminconnect 的 token 和客户端，这些只在 `importer/garminconnect/garmin_metrics.py` 里，所以 `running-push-plan --apply` 用 `uv run --script` 启动它的 `push` 子命令，经 stdin/stdout 交换 JSON。分析库仍然只读。测试时 `push_plan.main` 接受 `runner` 参数，把导入端脚本的 `push()` 接到假 Garmin 客户端上；另有一个测试用存根 `garminconnect` 包真实运行脚本的 `push` 子命令，检查中文名称在任何控制台代码页下都不乱码。
+7. **Python 写 `state/`**：spec 原本写分析包只读、`state/` 只放冷却标记。推送把 Garmin 返回的 id 写进 `state/plan5k_push.json`（防重复、`--replace` 只删自己建的），限流时写和 `runsync sync` 相同格式的 `state/garminconnect.cooldown.json`，冷却期内拒绝推送。
 
 ## 其他已确认的决定
 
