@@ -343,20 +343,21 @@ def _end_text(step: dict[str, Any]) -> str:
     if key == "distance":
         return f"{value / 1000:g} km" if value >= 1000 else f"{value:g} m"
     if key == "time":
-        return f"{value / 60:g} 分钟"
-    return "按圈结束"
+        return f"{value / 60:g} min"
+    return "until lap"
 
 
-_LABEL = {"warmup": "热身", "cooldown": "放松", "interval": "", "recovery": "恢复"}
+_LABEL = {"warmup": "Warmup", "cooldown": "Cooldown", "interval": "", "recovery": "Recovery"}
 
 
 def describe(workout: dict[str, Any]) -> str:
-    """One line per workout: "热身 3 km @… → 5×(1 km @… / 3 分钟) → 放松 2 km @…"."""
+    """One line per workout, in the watch's English:
+    "Warmup 3 km @… → 5x(1 km @… / Recovery 3 min) → Cooldown 2 km @…"."""
 
     def one(step: dict[str, Any]) -> str:
         if step["type"] == "RepeatGroupDTO":
             inner = " / ".join(one(s) for s in step["workoutSteps"])
-            return f"{step['numberOfIterations']}×({inner})"
+            return f"{step['numberOfIterations']}x({inner})"
         label = _LABEL[step["stepType"]["stepTypeKey"]]
         text = f"{_end_text(step)}{_pace_text(step)}"
         return f"{label} {text}" if label else text
