@@ -14,6 +14,9 @@ workouts an earlier push created (nothing else in the Garmin account).
 A rate limit writes the same cooldown marker `runsync sync` writes
 (`state/garminconnect.cooldown.json`, 24 hours), and a push is refused while
 one is active, so neither program keeps hitting Garmin.
+
+`push_status` tells the dashboard which sessions of a plan the last push put
+on the calendar (read-only).
 """
 
 import argparse
@@ -24,7 +27,7 @@ import sys
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from running.config import ConfigError, data_dir
 from running.console import utf8_stdio
@@ -34,6 +37,7 @@ from running.plan5k import (
     DEFAULT_PARKRUN_DAY,
     DEFAULT_TARGET_S,
     WEEKS,
+    Plan5k,
     mmss,
     plan_5k,
 )
@@ -96,6 +100,40 @@ def load_state(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+class PushedSession(TypedDict):
+    week: int
+    day: int  # 1 = Monday
+    date: str  # YYYY-MM-DD on the Garmin calendar
+
+
+class PushStatus(TypedDict):
+    start: str  # Monday of week 1 in the last push
+    pushed_at_utc: str | None
+    total: int  # plan sessions on the Garmin calendar
+    sessions: list[PushedSession]  # those that are also sessions of `plan`
+
+
+def push_status(plan: Plan5k, state: dict[str, Any] | None) -> PushStatus | None:
+    """Which sessions of `plan` the last push scheduled: same date and name.
+    A push made with other settings matches fewer (or none) of them."""
+    scheduled = [w for w in (state or {}).get("workouts", []) if w.get("schedule_id")]
+    if state is None or not scheduled:
+        return None
+    start = date.fromisoformat(state["start"])
+    on_calendar = {(w["date"], w["name"]) for w in scheduled}
+    sessions: list[PushedSession] = [
+        {"week": w["week"], "day": w["day"], "date": w["date"]}
+        for w in plan_workouts(plan, start)
+        if (w["date"], w["name"]) in on_calendar
+    ]
+    return {
+        "start": start.isoformat(),
+        "pushed_at_utc": state.get("pushed_at_utc"),
+        "total": len(on_calendar),
+        "sessions": sessions,
+    }
 
 
 def save_state(path: Path, state: dict[str, Any]) -> None:

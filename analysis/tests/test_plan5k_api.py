@@ -4,11 +4,13 @@ Pace expectations are the published VDOT 50 table values (Daniels' Running
 Formula): M 4:31/km, T 4:15/km, I 3:55/km, R 88 s per 400 m.
 """
 
+import json
 from datetime import date, timedelta
 
 import pytest
 from synthetic import insert_activity
 
+from running.garmin_plan import workout_name
 from running.plan5k import CAP, training_paces
 
 TODAY = "2026-10-28"
@@ -162,3 +164,65 @@ def test_unusable_run_days_are_refused(client_factory, days, parkrun_day):
         "/api/plan5k", params={"today": TODAY, "days": days, "parkrun_day": parkrun_day}
     )
     assert r.status_code == 422
+
+
+START = date(2026, 11, 2)  # the Monday after TODAY
+
+
+def pushed(week: dict, session: dict) -> dict:
+    day = START + timedelta(days=(week["n"] - 1) * 7 + session["day"] - 1)
+    name = workout_name(week["n"], session, parkrun_day=6)
+    return {"date": day.isoformat(), "name": name, "workout_id": 1, "schedule_id": 2}
+
+
+def write_push(data_dir, workouts) -> None:
+    state = {"start": START.isoformat(), "pushed_at_utc": "2026-10-28T20:00:00Z"}
+    (data_dir / "state").mkdir(exist_ok=True)
+    (data_dir / "state" / "plan5k_push.json").write_text(
+        json.dumps(state | {"workouts": workouts}, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def test_without_a_push_nothing_is_marked(data_dir, client_factory):
+    assert plan(client_factory, current_s=1245)["push"] is None
+
+
+def test_the_sessions_the_last_push_scheduled_are_marked(data_dir, client_factory):
+    body = plan(client_factory, current_s=1245)
+    week = body["weeks"][0]
+    runs = [s for s in week["sessions"] if s["kind"] != "rest"]
+    workouts = [pushed(week, s) for s in runs]
+    stale = pushed(week, runs[0]) | {"name": "5K W1 Tue Some other session"}
+    unscheduled = pushed(body["weeks"][1], body["weeks"][1]["sessions"][1]) | {"schedule_id": None}
+    write_push(data_dir, [*workouts, stale, unscheduled])
+
+    push = plan(client_factory, current_s=1245)["push"]
+
+    assert push["start"] == "2026-11-02"
+    assert push["pushed_at_utc"] == "2026-10-28T20:00:00Z"
+    # The stale name counts as pushed but matches no session of this plan;
+    # a workout that never got a calendar date is not pushed.
+    assert push["total"] == len(runs) + 1
+    assert push["sessions"] == [
+        {"week": 1, "day": s["day"], "date": w["date"]} for s, w in zip(runs, workouts, strict=True)
+    ]
+
+
+def test_a_push_with_other_run_days_matches_nothing(data_dir, client_factory):
+    week = plan(client_factory, current_s=1245)["weeks"][0]
+    write_push(data_dir, [pushed(week, s) for s in week["sessions"] if s["kind"] != "rest"])
+
+    push = plan(client_factory, current_s=1245, days="1,3,5,7", parkrun_day=0)["push"]
+
+    assert push["total"] > 0
+    assert push["sessions"] == []
+
+
+def test_an_unreadable_push_record_is_a_warning(data_dir, client_factory):
+    (data_dir / "state").mkdir()
+    (data_dir / "state" / "plan5k_push.json").write_text("{not json", encoding="utf-8")
+
+    body = plan(client_factory, current_s=1245)
+
+    assert body["push"] is None
+    assert any("plan5k_push.json" in w for w in body["warnings"])

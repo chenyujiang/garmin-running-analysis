@@ -15,11 +15,15 @@ Paces are ranges: E from the slow to the fast end of the week's E pace, the
 others the plan's pace plus or minus `PACE_BAND_S` seconds per km. Garmin
 stores a pace range as speeds in m/s, the slower one first.
 
+Everything that reaches the watch is English (`workout_name`, `watch_note`):
+Garmin watches show Chinese as garbage.
+
 `describe` renders a workout as one line for the preview.
 
 Pure: nothing here reads the database or talks to Garmin.
 """
 
+import re
 from datetime import date, timedelta
 from typing import Any, TypedDict
 
@@ -37,7 +41,7 @@ from running.plan5k import (
 )
 
 PACE_BAND_S = 5.0  # s/km either side of a single pace
-DAY_NAMES = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+DAY_NAMES = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 NAME_PREFIX = "5K"
 
 _RUNNING = {"sportTypeId": 1, "sportTypeKey": "running", "displayOrder": 1}
@@ -59,6 +63,98 @@ _PACE_TARGET = {"workoutTargetTypeId": 6, "workoutTargetTypeKey": "pace.zone", "
 
 # Recovery jog pace for the duration estimate only (no target on the watch).
 _JOG_FACTOR = 1.1  # times the slow end of E
+
+
+# What the watch shows (workout names, descriptions, step notes) is ASCII
+# English: Garmin watches show Chinese as garbage. The plan's Chinese titles
+# and notes stay on the dashboard.
+
+# Each Chinese note segment (the plan joins them with "；") and its English.
+_NOTES: list[tuple[str, str]] = [
+    (r"可加 4–6 次 20 秒快步（strides）", r"Add 4-6 x 20 s strides"),
+    (r"恢复跑，宁慢勿快", r"Recovery run: slower is better"),
+    (r"全程 E 配速，不超过 150 分钟", r"All at E pace, at most 150 min"),
+    (r"比赛周：量减少，跑完应觉得还有余力", r"Race week: less volume, finish feeling fresh"),
+    (r"调整周：按 M 配速跑完，不冲刺", r"Recovery week: run it at M pace, no sprint"),
+    (
+        r"均匀配速 (\d+:\d\d)/km：前 1 km 不快于它，最后 1 km 再加速",
+        r"Even pace \g<1>/km: first km no faster, speed up in the last km",
+    ),
+    (r"均匀配速 (\d+:\d\d)/km：前 1 km 不快于它", r"Even pace \g<1>/km: first km no faster"),
+    (
+        r"按训练水平均匀跑，每公里 (\d+:\d\d)；前 1 km 不要更快，"
+        r"最后 1 km 有余力再加速。连续两次明显快于这个时间，说明可以提前升一档",
+        r"Even pace \g<1>/km: first km no faster, speed up in the last km if you can. "
+        r"Clearly faster twice in a row: move up a level early",
+    ),
+    (
+        r"([EMTIR]) 量按周跑量上限从 (\d+) 组减到 (\d+) 组",
+        r"\g<1> cut from \g<2> to \g<3> reps by the weekly volume cap",
+    ),
+    (
+        r"连续 T 按周跑量上限从 ([\d.]+) km 减到 ([\d.]+) km",
+        r"Continuous T cut from \g<1> km to \g<2> km by the weekly volume cap",
+    ),
+]
+
+
+def watch_note(text: str) -> str:
+    """The English of a plan note. A note this table does not know is an
+    error, so no new Chinese note reaches the watch unnoticed."""
+    out = []
+    # The parkrun note has a "；" of its own: match whole notes first.
+    for part in [text] if _english(text) else filter(None, text.split("；")):
+        english = _english(part)
+        if english is None:
+            raise ValueError(f"没有英文的计划说明：{part}")
+        out.append(english)
+    return "; ".join(out)
+
+
+def _english(part: str) -> str | None:
+    for pattern, english in _NOTES:
+        if re.fullmatch(pattern, part):
+            return re.sub(pattern, english, part)
+    return None
+
+
+def _dist(m: float) -> str:
+    return f"{m / 1000:g}km" if m >= 1000 else f"{m:g}m"
+
+
+def watch_title(session: Session, parkrun_day: int | None) -> str:
+    """The session title in English: "Easy", "5x1km @I + 4x200m @R", …"""
+    kind = session["kind"]
+    if kind == "Q":
+        return " + ".join(
+            f"{_dist(p['dist_m'])} @{p['pace']}"
+            if p["reps"] == 1
+            else f"{p['reps']}x{_dist(p['dist_m'])} @{p['pace']}"
+            for p in session["parts"]
+        )
+    if kind == "E":
+        return "Easy (longer)" if "稍长" in session["title"] else "Easy"
+    if kind == "L":
+        return "Long run"
+    if kind == "parkrun":
+        return "parkrun steady" if session["note"].startswith("调整周") else "parkrun all-out"
+    if kind == "race":
+        return "Goal parkrun" if session["day"] == parkrun_day else "5K race"
+    raise ValueError(f"不能转换的课程类型：{kind}")
+
+
+def workout_name(week: int, session: Session, parkrun_day: int | None) -> str:
+    """The Garmin calendar name: "5K W1 Tue Easy"."""
+    return f"{NAME_PREFIX} W{week} {DAY_NAMES[session['day']]} {watch_title(session, parkrun_day)}"
+
+
+def _rest(part: Part) -> str:
+    """Recovery between reps: "3 min jog", "200 m jog", "1 min"."""
+    value = part["rest_value"] or 0
+    if part["rest_end"] == "distance":
+        return f"{value:g} m jog"
+    jog = " jog" if "慢跑" in part["rest"] else ""
+    return f"{value / 60:g} min{jog}"
 
 
 class PlannedWorkout(TypedDict):
@@ -153,7 +249,7 @@ class _Builder:
             part["rest_end"] or "lap.button",
             part["rest_value"],
             None,
-            part["rest"],
+            _rest(part),
             child=self.child,
             times=part["reps"] - 1,
         )
@@ -174,7 +270,9 @@ def _steps(
         steps.append(b.step("warmup", "distance", WARMUP_KM * 1000, easy))
         for i, part in enumerate(session["parts"]):
             if i > 0:
-                steps.append(b.step("recovery", "lap.button", None, None, "慢跑恢复，准备好按圈"))
+                steps.append(
+                    b.step("recovery", "lap.button", None, None, "Easy jog, press lap when ready")
+                )
             pace = _range(paces, part["pace"])
             if part["reps"] > 1:
                 steps.append(b.repeat(part, pace))
@@ -187,7 +285,11 @@ def _steps(
         warm, cool = (PARKRUN_WU_KM, PARKRUN_CD_KM) if parkrun else (WARMUP_KM, COOLDOWN_KM)
         target = session["target_s"] or paces["five_k_s"]
         steps.append(b.step("warmup", "distance", warm * 1000, easy))
-        steps.append(b.step("interval", "distance", FIVE_K, _band(target / 5), session["title"]))
+        steps.append(
+            b.step(
+                "interval", "distance", FIVE_K, _band(target / 5), watch_title(session, parkrun_day)
+            )
+        )
         steps.append(b.step("cooldown", "distance", cool * 1000, easy))
     else:
         raise ValueError(f"不能转换的课程类型：{kind}")
@@ -205,7 +307,7 @@ def plan_workouts(plan: Plan5k, start: date) -> list[PlannedWorkout]:
                 continue
             day = start + timedelta(days=(week["n"] - 1) * 7 + session["day"] - 1)
             steps, seconds = _steps(session, week["paces"], plan["parkrun_day"])
-            name = f"{NAME_PREFIX} W{week['n']} {DAY_NAMES[session['day']]} {session['title']}"
+            name = workout_name(week["n"], session, plan["parkrun_day"])
             workout: dict[str, Any] = {
                 "workoutName": name,
                 "sportType": _RUNNING,
@@ -215,7 +317,7 @@ def plan_workouts(plan: Plan5k, start: date) -> list[PlannedWorkout]:
                 ],
             }
             if session["note"]:
-                workout["description"] = session["note"]
+                workout["description"] = watch_note(session["note"])
             out.append(
                 {
                     "date": day.isoformat(),

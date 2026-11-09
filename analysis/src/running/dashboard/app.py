@@ -1,5 +1,6 @@
 """The local dashboard: FastAPI on 127.0.0.1 serving JSON from `running`
-and the static frontend in `static/`. No accounts, no writes."""
+and the static frontend in `static/`. No accounts, no writes (it only reads
+what `running-push-plan` recorded in `state/`)."""
 
 import threading
 from collections.abc import AsyncIterator
@@ -25,11 +26,17 @@ from running.detail import ActivityDetail, activity_detail
 from running.load import TrainingLoad, training_load
 from running.longruns import LongRuns, long_runs
 from running.plan5k import Plan5k, plan_5k
+from running.push_plan import STATE_FILE, PushStatus, load_state, push_status
 from running.races import Predictions, RaceList, race_list, race_predictions
 from running.runwalk import running_summaries
 from running.section import section_inputs
 from running.status import DataStatus, data_status
 from running.volume import Volume, weekly_volume
+
+
+class Plan5kView(Plan5k):
+    push: PushStatus | None  # the last `running-push-plan --apply`, if any
+
 
 HOST = "127.0.0.1"
 PORT = 8765
@@ -135,9 +142,9 @@ def create_app(*, serve: bool = False) -> FastAPI:
         current_s: float | None = Query(None, ge=600, le=3600),
         days: str = Query("2,3,4,6", pattern=r"^[1-7](,[1-7])*$"),
         parkrun_day: int = Query(6, ge=0, le=7),  # 0: no parkrun
-    ) -> Plan5k:
+    ) -> Plan5kView:
         try:
-            return plan_5k(
+            plan = plan_5k(
                 today=today,
                 target_s=target_s,
                 current_s=current_s,
@@ -146,6 +153,12 @@ def create_app(*, serve: bool = False) -> FastAPI:
             )
         except ValueError as err:
             raise HTTPException(status_code=422, detail=str(err)) from err
+        try:
+            push = push_status(plan, load_state(data_dir() / "state" / STATE_FILE))
+        except (OSError, ValueError, KeyError, TypeError) as err:
+            push = None
+            plan["warnings"].append(f"读不了 state/{STATE_FILE}，没标出已推送的计划课：{err}")
+        return {**plan, "push": push}
 
     app.mount("/", _RevalidatedStaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app

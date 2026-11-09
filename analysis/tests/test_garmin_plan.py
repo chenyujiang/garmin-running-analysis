@@ -5,7 +5,7 @@ from datetime import date, timedelta
 import pytest
 from synthetic import insert_activity
 
-from running.garmin_plan import PACE_BAND_S, plan_workouts
+from running.garmin_plan import PACE_BAND_S, plan_workouts, watch_note
 from running.plan5k import plan_5k
 
 TODAY = date(2026, 11, 8)  # a Sunday
@@ -60,7 +60,7 @@ def test_the_start_must_be_a_monday(plan):
 
 
 def test_an_easy_run_is_its_distance_at_the_weeks_e_pace(plan):
-    w = next(w for w in plan_workouts(plan, START) if w["name"].endswith("轻松跑"))
+    w = next(w for w in plan_workouts(plan, START) if w["name"].endswith(" Easy"))
     week = plan["weeks"][w["week"] - 1]
     (step,) = steps(w)
 
@@ -72,7 +72,7 @@ def test_an_easy_run_is_its_distance_at_the_weeks_e_pace(plan):
 
 
 def test_a_quality_day_has_warmup_repeats_with_recoveries_and_cooldown(plan):
-    # Week 2 with a parkrun: n×1600 m @T (1 分钟) + n×200 m @R (200 m 慢跑).
+    # Week 2 with a parkrun: nx1600 m @T (1 min) + nx200 m @R (200 m jog).
     w = next(w for w in plan_workouts(plan, START) if w["week"] == 2 and "@T" in w["name"])
     paces = plan["weeks"][1]["paces"]
     session = next(s for s in plan["weeks"][1]["sessions"] if s["kind"] == "Q")
@@ -111,7 +111,7 @@ def test_the_goal_parkrun_is_5_km_at_goal_pace_between_warmup_and_cooldown(plan)
     w = plan_workouts(plan, START)[-1]
     warm, race, cool = steps(w)
 
-    assert w["name"] == "5K W8 周六 目标 parkrun"
+    assert w["name"] == "5K W8 Sat Goal parkrun"
     assert (warm["endConditionValue"], race["endConditionValue"], cool["endConditionValue"]) == (
         2000,
         5000,
@@ -119,4 +119,39 @@ def test_the_goal_parkrun_is_5_km_at_goal_pace_between_warmup_and_cooldown(plan)
     )
     slow, fast = pace_of(race)
     assert (fast + slow) / 2 == pytest.approx(240, abs=0.1)  # sub-20: 4:00/km
-    assert "均匀配速" in w["workout"]["description"]
+    assert w["workout"]["description"].startswith("Even pace 4:00/km")
+
+
+def watch_text(w):
+    yield w["name"]
+    yield w["workout"]["workoutName"]
+    yield w["workout"].get("description", "")
+    for step in flat(steps(w)):
+        yield step.get("description", "")
+
+
+@pytest.mark.parametrize(
+    ("days", "parkrun_day"), [([2, 3, 4, 6], 6), ([2, 4, 6, 7], None), ([1, 3, 5, 6, 7], None)]
+)
+def test_everything_the_watch_shows_is_ascii(data_dir, analysis_db, days, parkrun_day):
+    # Garmin watches show Chinese as garbage.
+    (data_dir / "races.csv").write_text(HEADER + "2026-10-04,,5000,1245,yes,\n", encoding="utf-8")
+    plan = plan_5k(today=TODAY, days=days, parkrun_day=parkrun_day)
+
+    texts = [t for w in plan_workouts(plan, START) for t in watch_text(w)]
+
+    assert all(t.isascii() for t in texts), [t for t in texts if not t.isascii()]
+
+
+def test_volume_cap_notes_are_translated():
+    note = "I 量按周跑量上限从 6 组减到 4 组；连续 T 按周跑量上限从 5 km 减到 3 km"
+
+    assert watch_note(note) == (
+        "I cut from 6 to 4 reps by the weekly volume cap; "
+        "Continuous T cut from 5 km to 3 km by the weekly volume cap"
+    )
+
+
+def test_an_unknown_note_is_refused_rather_than_sent_in_chinese():
+    with pytest.raises(ValueError, match="英文"):
+        watch_note("新的说明")
