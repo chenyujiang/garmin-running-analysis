@@ -10,6 +10,7 @@ from datetime import date, timedelta
 import pytest
 from synthetic import insert_activity
 
+from running.garmin_plan import workout_name
 from running.plan5k import CAP, training_paces
 
 TODAY = "2026-10-28"
@@ -165,14 +166,12 @@ def test_unusable_run_days_are_refused(client_factory, days, parkrun_day):
     assert r.status_code == 422
 
 
-# The Garmin calendar names `running-push-plan` gives the plan sessions.
-DAY_NAMES = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 START = date(2026, 11, 2)  # the Monday after TODAY
 
 
 def pushed(week: dict, session: dict) -> dict:
     day = START + timedelta(days=(week["n"] - 1) * 7 + session["day"] - 1)
-    name = f"5K W{week['n']} {DAY_NAMES[session['day']]} {session['title']}"
+    name = workout_name(week["n"], session, parkrun_day=6)
     return {"date": day.isoformat(), "name": name, "workout_id": 1, "schedule_id": 2}
 
 
@@ -193,7 +192,7 @@ def test_the_sessions_the_last_push_scheduled_are_marked(data_dir, client_factor
     week = body["weeks"][0]
     runs = [s for s in week["sessions"] if s["kind"] != "rest"]
     workouts = [pushed(week, s) for s in runs]
-    stale = pushed(week, runs[0]) | {"name": "5K W1 周二 别的计划课"}
+    stale = pushed(week, runs[0]) | {"name": "5K W1 Tue Some other session"}
     unscheduled = pushed(body["weeks"][1], body["weeks"][1]["sessions"][1]) | {"schedule_id": None}
     write_push(data_dir, [*workouts, stale, unscheduled])
 
