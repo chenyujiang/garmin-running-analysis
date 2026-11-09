@@ -116,7 +116,7 @@ def test_a_dry_run_prints_the_workouts_and_sends_nothing(data, capsys):
     assert "2026-11-10" in out and "2027-01-02" in out
     assert "第 1 周从 2026-11-09（周一）开始" in out
     assert "共 32 节计划课，2026-11-09 .. 2027-01-03" in out
-    assert "热身 3 km @" in out and "×(" in out
+    assert "Warmup 3 km @" in out and "x(" in out and "Cooldown 2 km @" in out
     assert "--apply" in out
     assert not (data / "state").exists()
 
