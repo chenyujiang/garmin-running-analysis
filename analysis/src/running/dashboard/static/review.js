@@ -43,6 +43,8 @@ export function dayLabel(iso) {
 
 const km = (m) => `${(m / 1000).toFixed(1)} km`;
 const range = (p) => `${fmtPace(p.fast)}–${fmtPace(p.slow)}`;
+const spm = (x) => (x ? `${Math.round(x)}` : "");
+const stride = (x) => (x ? x.toFixed(2) : "");
 
 function render(r) {
   const past = r.sessions.filter((s) => s.status !== "upcoming").reverse();
@@ -99,6 +101,8 @@ function overview(a) {
   const bits = [km(a.dist_m), fmtDur(a.time_s)];
   if (a.pace) bits.push(`${fmtPace(a.pace)}/km`);
   if (a.hr_avg) bits.push(`平均心率 ${Math.round(a.hr_avg)}`);
+  if (a.cadence_spm) bits.push(`步频 ${Math.round(a.cadence_spm)} spm`);
+  if (a.stride_m) bits.push(`步幅 ${a.stride_m.toFixed(2)} m`);
   const others = a.others ? `当天另有 ${a.others} 次跑步，按最长这次算。` : "";
   return h("p", { class: "rv-line" }, h("span", { class: "num" }, bits.join(" · ")),
     others ? h("span", { class: "small muted" }, ` ${others}`) : null);
@@ -116,7 +120,7 @@ function warmRow(label, plan, actualM) {
     h("td", {}, label),
     h("td", {}, `${km(plan.dist_m)} @ ${range(plan)}`),
     h("td", { class: "r" }, actualM == null ? "—" : km(actualM)),
-    h("td", {}), h("td", {}), h("td", {}), h("td", {}),
+    h("td", {}), h("td", {}), h("td", {}), h("td", {}), h("td", {}), h("td", {}),
     h("td", { class: "small" }, "可缩短"));
 }
 
@@ -133,6 +137,8 @@ function qualityTable(p, a) {
         h("td", { class: "r" }, r ? fmtDur(r.time_s) : ""),
         h("td", { class: "r num" }, r ? fmtPace(r.pace) : ""),
         h("td", { class: "r" }, r?.hr_avg ? `${Math.round(r.hr_avg)} / ${Math.round(r.hr_max)}` : ""),
+        h("td", { class: "r num" }, spm(r?.cadence_spm)),
+        h("td", { class: "r num" }, stride(r?.stride_m)),
         h("td", { class: "r" }, r?.rest_s != null ? fmtDur(r.rest_s) : ""),
         h("td", {}, r ? repVerdict(r) : "没找到")));
     }
@@ -144,6 +150,8 @@ function qualityTable(p, a) {
       h("td", { class: "r" }, fmtDur(r.time_s)),
       h("td", { class: "r num" }, fmtPace(r.pace)),
       h("td", { class: "r" }, r.hr_avg ? `${Math.round(r.hr_avg)} / ${Math.round(r.hr_max)}` : ""),
+      h("td", { class: "r num" }, spm(r.cadence_spm)),
+      h("td", { class: "r num" }, stride(r.stride_m)),
       h("td", { class: "r" }, r.rest_s != null ? fmtDur(r.rest_s) : ""),
       h("td", {}, REP.extra)));
   }
@@ -151,7 +159,8 @@ function qualityTable(p, a) {
   return h("table", { class: "rv-table" },
     h("thead", {}, h("tr", {},
       h("th", {}, ""), h("th", {}, "计划"), h("th", { class: "r" }, "距离"), h("th", { class: "r" }, "用时"),
-      h("th", { class: "r" }, "配速"), h("th", { class: "r" }, "心率 均/高"), h("th", { class: "r" }, "组间"),
+      h("th", { class: "r" }, "配速"), h("th", { class: "r" }, "心率 均/高"),
+      h("th", { class: "r" }, "步频"), h("th", { class: "r" }, "步幅 m"), h("th", { class: "r" }, "组间"),
       h("th", {}, ""))),
     h("tbody", {}, ...rows.filter(Boolean)));
 }
@@ -168,16 +177,21 @@ function raceTable(p, e) {
       h("td", {}, `第 ${sp.km} km`),
       h("td", { class: "r num" }, fmtDur(sp.time_s)),
       h("td", { class: "r" }, target ? signed(sp.time_s - target) : ""),
-      h("td", { class: "r" }, sp.hr_avg ? Math.round(sp.hr_avg) : "")));
+      h("td", { class: "r" }, sp.hr_avg ? Math.round(sp.hr_avg) : ""),
+      h("td", { class: "r num" }, spm(sp.cadence_spm)),
+      h("td", { class: "r num" }, stride(sp.stride_m))));
   rows.push(h("tr", { class: "total" },
     h("td", {}, e.full ? "最快 5 km" : `全程 ${km(e.dist_m)}`),
     h("td", { class: "r num" }, `${fmtDur(e.time_s)}（${fmtPace(e.pace)}/km）`),
     h("td", { class: "r" }, p.target_s && e.full ? `计划 ${fmtDur(p.target_s)}` : ""),
-    h("td", { class: "r" }, e.hr_avg ? Math.round(e.hr_avg) : "")));
+    h("td", { class: "r" }, e.hr_avg ? Math.round(e.hr_avg) : ""),
+    h("td", { class: "r num" }, spm(e.cadence_spm)),
+    h("td", { class: "r num" }, stride(e.stride_m))));
   return h("table", { class: "rv-table" },
     h("thead", {}, h("tr", {},
       h("th", {}, ""), h("th", { class: "r" }, "用时"),
-      h("th", { class: "r" }, target ? `比计划 ${fmtPace(target)}/km` : ""), h("th", { class: "r" }, "心率"))),
+      h("th", { class: "r" }, target ? `比计划 ${fmtPace(target)}/km` : ""), h("th", { class: "r" }, "心率"),
+      h("th", { class: "r" }, "步频"), h("th", { class: "r" }, "步幅 m"))),
     h("tbody", {}, ...rows));
 }
 

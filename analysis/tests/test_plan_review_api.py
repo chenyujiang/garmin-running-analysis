@@ -87,15 +87,16 @@ def write_state(data_dir, sessions=SESSIONS, with_steps=True):
 
 
 def add_records(conn, activity_id: int, start_utc: str, segments) -> float:
-    """1 Hz records from (seconds, m/s, heart rate) segments; returns metres."""
+    """1 Hz records from (seconds, m/s, heart rate[, single-foot cadence])
+    segments; cadence defaults to 85 (170 spm). Returns metres."""
     t = datetime.strptime(start_utc, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
     dist, rows = 0.0, []
-    for seconds, speed, hr in segments:
+    for seconds, speed, hr, *cad in segments:
         for _ in range(int(seconds)):
             t += timedelta(seconds=1)
             dist += speed
             ts = t.strftime("%Y-%m-%dT%H:%M:%SZ")
-            rows.append((activity_id, ts, hr, speed, 85.0, dist))
+            rows.append((activity_id, ts, hr, speed, cad[0] if cad else 85.0, dist))
     conn.executemany(
         "INSERT INTO records (activity_id, timestamp, heart_rate, speed, cadence, distance)"
         " VALUES (?, ?, ?, ?, ?, ?)",
@@ -105,8 +106,8 @@ def add_records(conn, activity_id: int, start_utc: str, segments) -> float:
 
 
 def add_run(conn, activity_id: int, day: str, segments) -> None:
-    secs = sum(s for s, _, _ in segments)
-    metres = sum(s * v for s, v, _ in segments)
+    secs = sum(seg[0] for seg in segments)
+    metres = sum(seg[0] * seg[1] for seg in segments)
     start = insert_activity(
         conn, activity_id, f"{day}T07:00:00", distance_m=metres, duration_s=secs, avg_hr_bpm=150
     )
@@ -123,8 +124,8 @@ def runs(data_dir, analysis_db):
         analysis_db,
         1,
         "2026-11-10",
-        [(300, 3.0, 135), (REP_S, 1000 / 266, 160), (60, 2.0, 140), (REP_S, 1000 / 266, 165)]
-        + [(100, 3.0, 145)],
+        [(300, 3.0, 135, 82), (REP_S, 1000 / 266, 160, 90), (60, 2.0, 140, 80)]
+        + [(REP_S, 1000 / 266, 165, 92), (100, 3.0, 145, 82)],
     )
     # Easy at 6:10/km; 11-12 missed.
     insert_activity(
@@ -178,6 +179,27 @@ def test_quality_reps_are_found_and_judged_against_their_range(runs, client_fact
     assert reps[1]["rest_s"] == pytest.approx(60, abs=12)
     assert reps[1]["hr_avg"] > reps[0]["hr_avg"]
     assert s["verdict"] == "good"
+
+
+def test_cadence_and_stride_come_with_each_rep_split_and_run(runs, client_factory):
+    sessions = by_date(review(client_factory))
+
+    reps = sessions["2026-11-10"]["actual"]["reps"]
+    assert [round(r["cadence_spm"]) for r in reps] == [180, 184]
+    for r, spm in zip(reps, (180, 184), strict=True):
+        assert r["stride_m"] == pytest.approx(1000 / 266 * 60 / spm, abs=0.02)
+    whole = sessions["2026-11-10"]["actual"]
+    assert 164 < whole["cadence_spm"] < 184
+    assert whole["stride_m"] == pytest.approx(
+        whole["dist_m"] / (whole["cadence_spm"] / 60 * whole["time_s"]), abs=0.02
+    )
+    effort = sessions["2026-11-14"]["actual"]["effort"]
+    assert effort["cadence_spm"] == pytest.approx(170, abs=0.5)
+    assert effort["stride_m"] == pytest.approx(5000 / 1240 * 60 / 170, abs=0.02)
+    assert all(sp["cadence_spm"] == pytest.approx(170, abs=0.5) for sp in effort["splits"])
+    assert all(sp["stride_m"] > 1.3 for sp in effort["splits"])
+    easy = sessions["2026-11-11"]["actual"]
+    assert easy["cadence_spm"] is None and easy["stride_m"] is None
 
 
 def test_a_cut_warmup_and_cooldown_is_neutral_not_a_failure(runs, client_factory):

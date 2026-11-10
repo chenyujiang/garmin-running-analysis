@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import bisect
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any, Literal, TypedDict
@@ -87,6 +87,8 @@ class Rep(TypedDict):
     pace: float  # s/km
     hr_avg: float | None
     hr_max: float | None
+    cadence_spm: float | None  # both feet
+    stride_m: float | None
     rest_s: float | None  # recovery before this rep (None for the first)
     verdict: Literal["ok", "fast", "slow", "extra"]
     off_s: float  # s/km outside the range (0 inside)
@@ -97,6 +99,8 @@ class Split(TypedDict):
     km: int
     time_s: float
     hr_avg: float | None
+    cadence_spm: float | None
+    stride_m: float | None
 
 
 class Effort(TypedDict):
@@ -105,6 +109,8 @@ class Effort(TypedDict):
     pace: float
     hr_avg: float | None
     hr_max: float | None
+    cadence_spm: float | None
+    stride_m: float | None
     splits: list[Split]
     full: bool  # a whole 5 km
     start_m: float
@@ -123,6 +129,8 @@ class Actual(TypedDict):
     time_s: float  # moving time
     pace: float | None
     hr_avg: float | None
+    cadence_spm: float | None
+    stride_m: float | None
     others: int  # other running activities that day
     warmup_m: float | None
     cooldown_m: float | None
@@ -248,22 +256,30 @@ def planned_steps(name: str, workout: dict[str, Any]) -> Planned:
 class Samples:
     """Per-second samples of one run. Each sample owns the interval since the
     previous one (`dt`, `dd`; 0 across a pause); `t` and `d` are the moving
-    time and distance up to and including it."""
+    time and distance up to and including it. `spm` is the cadence of both
+    feet; empty when the run has none."""
 
     t: list[float]
     d: list[float]
     dt: list[float]
     hr: list[float | None]
+    spm: list[float | None] = field(default_factory=list)
 
     @classmethod
-    def from_steps(cls, dt: list[float], dd: list[float], hr: list[float | None]) -> Samples:
+    def from_steps(
+        cls,
+        dt: list[float],
+        dd: list[float],
+        hr: list[float | None],
+        spm: list[float | None] | None = None,
+    ) -> Samples:
         t, d, tt, dist = [], [], 0.0, 0.0
         for a, b in zip(dt, dd, strict=True):
             tt += a
             dist += b
             t.append(tt)
             d.append(dist)
-        return cls(t=t, d=d, dt=list(dt), hr=list(hr))
+        return cls(t=t, d=d, dt=list(dt), hr=list(hr), spm=list(spm or []))
 
     def __len__(self) -> int:
         return len(self.t)
@@ -288,6 +304,22 @@ class Samples:
         else:
             avg = sum(h for h, _ in pairs) / len(pairs)
         return avg, max(h for h, _ in pairs)
+
+    def gait(self, a: int, b: int) -> tuple[float | None, float | None]:
+        """Time-weighted cadence (spm, both feet) and stride (metres per step:
+        distance / steps) of samples a..b, over the samples with a cadence."""
+        if not self.spm:
+            return None, None
+        steps = secs = metres = 0.0
+        for i in range(a, b + 1):
+            c = self.spm[i]
+            if c is not None and c > 0 and self.dt[i] > 0:
+                steps += c * self.dt[i] / 60.0
+                secs += self.dt[i]
+                metres += self.d[i] - (self.d[i - 1] if i > 0 else 0.0)
+        if steps <= 0:
+            return None, None
+        return steps * 60.0 / secs, metres / steps
 
     def smoothed_speed(self) -> list[float]:
         n, k = len(self), SMOOTH_HALF_S
@@ -352,6 +384,7 @@ def find_reps(s: Samples, planned: Planned) -> list[Rep]:
             if full or better:
                 part, count = nxt, 0
         hr_avg, hr_max = s.hr_stats(a, b)
+        cadence, stride = s.gait(a, b)
         pace = secs / dist * 1000
         rest = None if prev_end is None else s.before(a)[1] - s.t[prev_end]
         rep: Rep = {
@@ -362,6 +395,8 @@ def find_reps(s: Samples, planned: Planned) -> list[Rep]:
             "pace": pace,
             "hr_avg": hr_avg,
             "hr_max": hr_max,
+            "cadence_spm": cadence,
+            "stride_m": stride,
             "rest_s": rest,
             "verdict": "extra",
             "off_s": 0.0,
@@ -401,13 +436,21 @@ def fastest_5k(s: Samples) -> Effort | None:
                 best, a, b = secs, i, j
     dist, secs = s.span(a, b)
     hr_avg, hr_max = s.hr_stats(a, b)
+    cadence, stride = s.gait(a, b)
     base = s.before(a)[0]
     splits: list[Split] = []
     start = a
     for k in range(1, int(dist // 1000) + 1):
         end = min(s.index_at(base + 1000 * k), b)
+        cadence, stride = s.gait(start, end)
         splits.append(
-            {"km": k, "time_s": s.span(start, end)[1], "hr_avg": s.hr_stats(start, end)[0]}
+            {
+                "km": k,
+                "time_s": s.span(start, end)[1],
+                "hr_avg": s.hr_stats(start, end)[0],
+                "cadence_spm": cadence,
+                "stride_m": stride,
+            }
         )
         start = end + 1
         if start > b:
@@ -418,6 +461,8 @@ def fastest_5k(s: Samples) -> Effort | None:
         "pace": secs / dist * 1000,
         "hr_avg": hr_avg,
         "hr_max": hr_max,
+        "cadence_spm": cadence,
+        "stride_m": stride,
         "splits": splits,
         "full": full,
         "start_m": base,
@@ -578,6 +623,8 @@ def _totals_actual(row: dict[str, Any]) -> Actual:
         "time_s": secs,
         "pace": _pace(dist, secs),
         "hr_avg": row.get("avg_hr_bpm"),
+        "cadence_spm": None,
+        "stride_m": None,
         "others": 0,
         "warmup_m": None,
         "cooldown_m": None,
@@ -597,6 +644,7 @@ def review_session(
         actual["dist_m"], actual["time_s"] = samples.d[-1], samples.t[-1]
         actual["pace"] = _pace(samples.d[-1], samples.t[-1])
         actual["hr_avg"] = samples.hr_stats(0, len(samples) - 1)[0]
+        actual["cadence_spm"], actual["stride_m"] = samples.gait(0, len(samples) - 1)
     if planned["kind"] in ("easy", "long"):
         return actual, _easy_notes(planned, actual)
     if not has:
@@ -698,7 +746,10 @@ def _samples(root: Path, activity_ids: list[int], run_walk: RunWalk) -> dict[int
     for (aid,), part in df.group_by("activity_id"):
         part = part.sort("ts")
         out[int(aid)] = Samples.from_steps(
-            part["dt_s"].to_list(), part["dd_m"].to_list(), part["heart_rate"].to_list()
+            part["dt_s"].to_list(),
+            part["dd_m"].to_list(),
+            part["heart_rate"].to_list(),
+            part["spm"].to_list(),
         )
     return out
 
@@ -714,6 +765,8 @@ METHOD: Method = {
         "parkrun/比赛：最快的连续 5 km 和计划用时比，看第 1 km 有没有冲太快；"
         "不到 5 km 按全程算。热身和放松只列出来，跑短了不算未完成。"
         "E 跑/长距离：距离和计划比，平均配速只在快于 E 区间时提醒。"
+        "步频是双脚每分钟步数（按时间加权），步幅 = 距离 / 步数，"
+        "都只算有步频记录的秒；只列出来，不参与判断。"
     ),
     "params": {
         "smooth_half_s": SMOOTH_HALF_S,
