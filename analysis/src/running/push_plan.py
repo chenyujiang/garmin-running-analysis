@@ -9,7 +9,9 @@ sync with Garmin Connect.
 The ids Garmin returns are kept in `state/plan5k_push.json` in the data
 directory, written after every finished item, so a second `--apply` refuses
 to create duplicates and `--apply --replace` first deletes exactly the
-workouts an earlier push created (nothing else in the Garmin account).
+workouts an earlier push created (nothing else in the Garmin account). The
+file also keeps the plan settings and each workout's steps as sent, which the
+dashboard's plan review (`running.plan_review`) compares the runs against.
 
 A rate limit writes the same cooldown marker `runsync sync` writes
 (`state/garminconnect.cooldown.json`, 24 hours), and a push is refused while
@@ -193,6 +195,7 @@ def apply(
     runner: Runner,
     replace: bool,
     now: datetime,
+    settings: dict[str, Any] | None = None,
 ) -> tuple[int, str]:
     """Push and keep the state file current. Returns (exit code, message)."""
     until = active_cooldown(state_dir, now)
@@ -211,6 +214,8 @@ def apply(
         )
     by_date = {w["date"]: w for w in workouts}
     state = {"start": start.isoformat(), "pushed_at_utc": _utc(now), "workouts": old}
+    if settings is not None:
+        state["settings"] = settings
     counts = {"deleted": 0, "created": 0}
 
     def on_result(result: dict[str, Any]) -> None:
@@ -227,6 +232,7 @@ def apply(
                     "name": planned["name"],
                     "workout_id": result["workout_id"],
                     "schedule_id": result["schedule_id"],
+                    "workout": planned["workout"],
                 }
             )
             counts["created"] += 1
@@ -326,7 +332,14 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
             return EXIT_AUTH
         runner = script_runner(token_dir, args.interval)
     now = datetime.now(UTC)
-    code, message = apply(workouts, start, root / "state", runner, args.replace, now)
+    settings = {
+        "today": plan["today"],
+        "target_s": args.target,
+        "current_s": args.current,
+        "days": plan["days"],
+        "parkrun_day": plan["parkrun_day"],
+    }
+    code, message = apply(workouts, start, root / "state", runner, args.replace, now, settings)
     print(message, file=sys.stderr if code else sys.stdout)
     return code
 

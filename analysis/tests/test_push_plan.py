@@ -133,6 +133,8 @@ def test_apply_uploads_schedules_and_records_every_workout(data):
     assert s["start"] == "2026-11-09"
     assert {w["workout_id"] for w in s["workouts"]} == set(garmin.workouts)
     assert all(w["schedule_id"] for w in s["workouts"])
+    assert s["settings"]["today"] == TODAY and s["settings"]["days"] == [2, 3, 4, 6]
+    assert all(w["workout"]["workoutName"] == w["name"] for w in s["workouts"])
 
 
 def test_a_second_apply_refuses_to_create_duplicates(data, capsys):

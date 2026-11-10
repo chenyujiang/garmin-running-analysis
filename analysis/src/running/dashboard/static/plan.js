@@ -102,7 +102,8 @@ function pushText(push) {
     text.push(`其中 ${n} 节与这页的计划一致，已在下面标出；其余是按别的设置推送的。`,
       "要换成这页的计划，用 running-push-plan --apply --replace。");
   }
-  return h("p", { class: "small push-note" }, ...text);
+  text.push(" ");
+  return h("p", { class: "small push-note" }, ...text, h("a", { href: "#/review" }, "看计划复盘 →"));
 }
 
 function head(p) {

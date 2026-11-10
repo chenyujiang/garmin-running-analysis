@@ -26,6 +26,7 @@ from running.detail import ActivityDetail, activity_detail
 from running.load import TrainingLoad, training_load
 from running.longruns import LongRuns, long_runs
 from running.plan5k import Plan5k, plan_5k
+from running.plan_review import PlanReview, plan_review
 from running.push_plan import STATE_FILE, PushStatus, load_state, push_status
 from running.races import Predictions, RaceList, race_list, race_predictions
 from running.runwalk import running_summaries
@@ -159,6 +160,10 @@ def create_app(*, serve: bool = False) -> FastAPI:
             push = None
             plan["warnings"].append(f"读不了 state/{STATE_FILE}，没标出已推送的计划课：{err}")
         return {**plan, "push": push}
+
+    @app.get("/api/plan-review")
+    def plan_review_view(today: date | None = None) -> PlanReview:
+        return plan_review(today=today)
 
     app.mount("/", _RevalidatedStaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app
