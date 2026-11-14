@@ -37,7 +37,7 @@ Most documents are written in Chinese.
 
 - **Rust CLI (`runsync`)**: syncs from the official Garmin Connect Personal API, stores raw FIT and JSON files unchanged in a data directory outside the repository, and builds a SQLite analysis database from them.
 - **Python analysis package**: polars and DuckDB over the read-only analysis database; also usable from Jupyter.
-- **Dashboard**: FastAPI bound to `127.0.0.1`, serving JSON to a static frontend (plain HTML, native ES modules, hand-written SVG charts).
+- **Dashboard**: FastAPI bound to `127.0.0.1`, serving JSON to a static frontend (plain HTML, native ES modules, hand-written SVG charts). Styles are written in Tailwind CSS v4 (`dashboard/styles/tailwind.css`, semantic classes via `@apply`) and compiled into the committed `static/style.css`, so running the dashboard needs no build step; CI checks the two match.
 
 ## Data directory
 
@@ -191,6 +191,7 @@ Analysis and dashboard (run in `analysis/`):
 uv sync
 uv run python scripts/fetch_fonts.py   # once: download the self-hosted fonts (not committed)
 uv run running-dashboard               # http://127.0.0.1:8765
+uv run python scripts/build_css.py     # after editing styles/tailwind.css: rebuild static/style.css (fetches the pinned Tailwind CLI once)
 uv run running-push-plan               # preview the 5K plan as Garmin workouts; --apply to push (writes to Garmin)
 uv run pytest
 uv run ruff format
