@@ -5,13 +5,15 @@
 //   #/run/<id>       activity detail (run.js)
 //   #/plan?...       5K plan after Daniels (plan.js)
 //   #/review         pushed plan sessions against the runs (review.js)
-// Without an analysis database every page shows the empty state.
+//   #/parkruns?...   Auckland parkrun courses and pacing (parkruns.js)
+// Without an analysis database every page but #/parkruns shows the empty state.
 
 import { h, fmtDateTime, fmtDate } from "./dom.js";
 import { aerobicSection } from "./aerobic.js";
 import { markAllReadButton } from "./changes.js";
 import { loadSection } from "./load.js";
 import { longRunsSection } from "./longruns.js";
+import { parkrunsPage } from "./parkruns.js";
 import { planPage } from "./plan.js";
 import { predictionsSection } from "./predictions.js";
 import { racesSection } from "./races.js";
@@ -45,12 +47,14 @@ export function parseRoute(hash) {
   if (path === "runs") return { name: "runs", query };
   if (path === "plan") return { name: "plan", query };
   if (path === "review") return { name: "review", query };
+  if (path === "parkruns") return { name: "parkruns", query };
   const m = /^run\/(\d+)$/.exec(path);
   if (m) return { name: "run", id: m[1], query };
   return { name: "home", query };
 }
 
 function page(s, route) {
+  if (route.name === "parkruns") return parkrunsPage(route.query);
   if (!s.has_data) return empty(s);
   if (route.name === "runs") return runsPage(route.query);
   if (route.name === "run") return runPage(route.id);

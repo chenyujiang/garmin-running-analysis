@@ -25,6 +25,7 @@ from running.db import disable_shared_connections, enable_shared_connections, op
 from running.detail import ActivityDetail, activity_detail
 from running.load import TrainingLoad, training_load
 from running.longruns import LongRuns, long_runs
+from running.parkruns import ParkrunCourses, parkrun_courses
 from running.plan5k import Plan5k, plan_5k
 from running.plan_review import PlanReview, plan_review
 from running.push_plan import STATE_FILE, PushStatus, load_state, push_status
@@ -164,6 +165,10 @@ def create_app(*, serve: bool = False) -> FastAPI:
     @app.get("/api/plan-review")
     def plan_review_view(today: date | None = None) -> PlanReview:
         return plan_review(today=today)
+
+    @app.get("/api/parkruns")
+    def parkruns_view(target_s: float = Query(1200, ge=600, le=3600)) -> ParkrunCourses:
+        return parkrun_courses(target_s=target_s)
 
     app.mount("/", _RevalidatedStaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app
