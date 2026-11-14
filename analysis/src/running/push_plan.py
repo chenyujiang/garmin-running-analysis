@@ -317,6 +317,8 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     print(f"第 1 周从 {start}（周一）开始，到 {end}；要换开始日期用 --start")
     for warning in plan["warnings"]:
         print(f"注意：{warning}")
+    for note in plan["notes"]:
+        print(f"说明：{note}")
     for w in workouts:
         print(f"{w['date']}  {w['km']:>4g} km  {w['name']}")
         print(f"            {describe(w['workout'])}")

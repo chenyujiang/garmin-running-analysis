@@ -1,7 +1,7 @@
 // Race predictions, column 3 of the top band (ticket 14). Reads GET /api/predictions.
 // Prototype variant A: a small table, main prediction (VDOT; marathon = Vickers 2016)
 // with Riegel and Garmin as comparison columns, the basis race written underneath.
-// Stale (no all-out race in 6 months): the table fades, a red line gives the
+// Stale (no all-out race in 6 months): the table fades, a hint line gives the
 // last race date and asks for races.csv to be updated. Without a recent race
 // the API falls back to parkruns; a missing races.csv is a grey hint, not an error.
 
@@ -62,7 +62,7 @@ function render(v) {
     out.push(h("p", { class: "small muted" },
       "没有 races.csv，最近也没有 parkrun，暂不预测。在数据目录建 races.csv 记录比赛即可。"));
   } else if (v.stale && !v.races_error) {
-    out.push(h("p", { class: "warn small" },
+    out.push(h("p", { class: "hint small" },
       v.last_race_date
         ? `最近一场全力比赛是 ${fmtDate(v.last_race_date)}，已超过 6 个月，不给预测。比赛后请更新 races.csv。`
         : "races.csv 里还没有全力比赛（all_out = yes），不给预测。比赛后请更新 races.csv。"));

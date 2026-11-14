@@ -114,6 +114,7 @@ class Plan5k(TypedDict):
     paces_goal: Paces
     weeks: list[Week]
     warnings: list[str]
+    notes: list[str]  # guidance, not a warning
 
 
 def _speed_at(vo2: float) -> float:
@@ -451,6 +452,7 @@ def plan_5k(
     pred = race_predictions(today=today, root=root)
     target_vdot = vdot(FIVE_K, target_s)
     warnings: list[str] = []
+    notes: list[str] = []
     # A parkrun basis is weighed below, on this plan's own parkrun day.
     basis = pred["basis"] if pred["basis_source"] == "races" else None
     parkrun = None if parkrun_day is None else _parkrun_best(today, root, parkrun_day)
@@ -502,7 +504,7 @@ def plan_5k(
     recent = pred["weekly_km"]
     base_km = max(float(round(recent)), MIN_BASE_KM)
     if recent < MIN_BASE_KM:
-        warnings.append(
+        notes.append(
             f"近 8 周平均每周 {recent:.0f} km，计划按 {MIN_BASE_KM:.0f} km 起步。"
             "跑量每 3–4 周最多加一次，每次每周不超过约 10%。"
         )
@@ -514,7 +516,7 @@ def plan_5k(
         for n in range(1, WEEKS + 1)
     ]
     if any(s["note"] and "上限" in s["note"] for w in weeks for s in w["sessions"]):
-        warnings.append(
+        notes.append(
             "按 Daniels 的上限（I ≤ 周量 8%、T ≤ 10%、R ≤ 5%），"
             f"每周 {base_km:.0f} km 时部分质量课的组数被减少。周跑量越高，能做的组数越多。"
         )
@@ -534,4 +536,5 @@ def plan_5k(
         "paces_goal": training_paces(target_vdot),
         "weeks": weeks,
         "warnings": warnings,
+        "notes": notes,
     }

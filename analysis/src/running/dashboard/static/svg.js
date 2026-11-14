@@ -60,7 +60,7 @@ export function ticks(lo, hi, step) {
  * o: { width, height, x0, x1, y0, y1, yTicks, yFmt, zero, label, m: {t,r,b,l},
  *      xTicks: [{x, label}],
  *      series: [{ type: "line"|"area0", data: [{x, v}], color, w, pos, neg }],
- *      notes: [{ x, v, node }] }   // at most 2 notes per chart
+ *      notes: [{ x, v, node }] }   // at most 2 notes per chart, drawn as risk (red)
  * Returns a <div class="chart">.
  */
 export function chart(o) {
@@ -98,7 +98,7 @@ export function chart(o) {
     placed.push(ty);
     svg.append(s("circle", { cx: px, cy: py, r: 4.5, fill: "none", stroke: "var(--red)", "stroke-width": 1.5 }));
     svg.append(s("polyline", { points: `${px + 5},${py} ${W - m.r + 6},${ty + 8} ${W - m.r + 12},${ty + 8}`, fill: "none", stroke: "var(--red)", "stroke-width": 1 }));
-    const note = h("div", { class: "note", style: `left:${((W - m.r + 16) / W) * 100}%;top:${(ty / H) * 100}%;width:${((m.r - 18) / W) * 100}%` });
+    const note = h("div", { class: "note alert", style: `left:${((W - m.r + 16) / W) * 100}%;top:${(ty / H) * 100}%;width:${((m.r - 18) / W) * 100}%` });
     note.append(n.node);
     wrap.append(note);
   }

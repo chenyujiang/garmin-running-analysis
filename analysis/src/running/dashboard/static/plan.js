@@ -72,6 +72,7 @@ function render(p, query) {
     head(p),
     form(p, query),
     ...p.warnings.map((w) => h("p", { class: "warn" }, w)),
+    ...(p.notes ?? []).map((n) => h("p", { class: "hint small" }, n)),
     paceTable(p),
     h("h2", { class: "plan-h" }, "8 周课表"),
     h("p", { class: "small muted" }, layoutText(p)),

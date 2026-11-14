@@ -66,7 +66,7 @@ function render(L) {
     h("div", { class: "stat-line" },
       big("CTL 体能", f0(c.ctl), "var(--fit)", "load.ctl"),
       big("ATL 疲劳", f0(c.atl), "var(--fat)", "load.atl"),
-      big("TSB 状态", signed(c.tsb), c.tsb < 0 ? "var(--red)" : "var(--form-pos)", "load.tsb"),
+      big("TSB 状态", signed(c.tsb), c.tsb < -25 ? "var(--red)" : c.tsb < 0 ? "var(--form-neg)" : "var(--form-pos)", "load.tsb"),
     ),
     ...charts(L),
     h("div", { class: "load-foot" },
