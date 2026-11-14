@@ -55,7 +55,7 @@ function page(s, route) {
   if (route.name === "runs") return runsPage(route.query);
   if (route.name === "run") return runPage(route.id);
   if (route.name === "plan") return planPage(route.query);
-  if (route.name === "review") return reviewPage();
+  if (route.name === "review") return reviewPage(route.query);
   return summary(s);
 }
 

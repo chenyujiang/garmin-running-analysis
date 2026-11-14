@@ -327,7 +327,9 @@ a.brand { text-decoration: none; color: var(--ink); }
 .review .plan-head { display: grid; grid-template-columns: 1fr auto; gap: 0 16px; }
 .review .plan-head .tools { grid-column: 2; grid-row: 1; align-self: end; position: relative; }
 .review .plan-head .tools details.how .body { position: absolute; right: 0; z-index: 3; width: min(70ch, 90vw); box-shadow: 0 6px 20px rgba(0,0,0,.12); }
-.rv-card { margin: 28px 0 0; }
+.rv-pick { margin: 28px 0 0; }
+.rv-pick select { font-size: 15px; padding: 3px 6px; margin-left: 6px; max-width: 100%; }
+.rv-card { margin: 12px 0 0; }
 .rv-card h2 .wo { font-weight: 400; color: var(--ink-2); }
 .rv-tag { font-size: 13px; font-weight: 600; padding: 0 7px; border-radius: 3px; color: var(--ink-3); background: var(--paper-2); }
 .rv-tag.v-good { background: var(--good-wash); color: var(--good); }

@@ -1,8 +1,10 @@
-// Plan review page, #/review. Reads GET /api/plan-review: every session the
-// last `running-push-plan --apply` put on the Garmin calendar, with the run of
-// that day judged against the planned steps. Run sessions come newest first,
-// then the next few to run. Warm-up and cool-down are listed but never count
-// against a session.
+// Plan review page, #/review?session=<date>. Reads GET /api/plan-review: every
+// session the last `running-push-plan --apply` put on the Garmin calendar, with
+// the run of that day judged against the planned steps. One past session is
+// shown at a time, picked from a dropdown (newest first); it opens on the
+// newest session that has a run. The pick is kept in the hash without a
+// reload. Then the next few to run. Warm-up and cool-down are listed but never
+// count against a session.
 
 import { h, fmtDur, fmtPace } from "./dom.js";
 import { how } from "./run.js";
@@ -13,13 +15,13 @@ const VERDICT = { good: "好", neutral: "—", watch: "注意" };
 const REP = { ok: "区间内", fast: "偏快", slow: "偏慢", extra: "计划外" };
 const UPCOMING = 5;
 
-export function reviewPage() {
+export function reviewPage(query = new URLSearchParams()) {
   const root = h("div", { class: "review" }, h("p", { class: "loading" }, "正在读取计划复盘…"));
-  load(root);
+  load(root, query);
   return root;
 }
 
-async function load(root) {
+async function load(root, query) {
   const params = new URLSearchParams();
   const today = new URLSearchParams(location.search).get("today");
   if (today) params.set("today", today);
@@ -32,7 +34,7 @@ async function load(root) {
     root.replaceChildren(h("p", { class: "warn" }, `无法读取计划复盘：${err.message}`));
     return;
   }
-  root.replaceChildren(...render(r));
+  root.replaceChildren(...render(r, query.get("session")));
 }
 
 /** "2026-11-10" -> "11-10 周二". */
@@ -46,7 +48,12 @@ const range = (p) => `${fmtPace(p.fast)}–${fmtPace(p.slow)}`;
 const spm = (x) => (x ? `${Math.round(x)}` : "");
 const stride = (x) => (x ? x.toFixed(2) : "");
 
-function render(r) {
+/** The session to open: the one in the hash, else the newest with a run. */
+export function pickSession(past, date) {
+  return past.find((s) => s.date === date) ?? past.find((s) => s.status === "done") ?? past[0];
+}
+
+function render(r, date) {
   const past = r.sessions.filter((s) => s.status !== "upcoming").reverse();
   const next = r.sessions.filter((s) => s.status === "upcoming").slice(0, UPCOMING);
   return [
@@ -59,9 +66,34 @@ function render(r) {
       h("div", { class: "tools" }, how(r.method))),
     ...r.warnings.map((w) => h("p", { class: "warn" }, w)),
     r.totals ? totals(r.totals) : null,
-    ...past.map(card),
+    past.length ? picker(past, date) : null,
     next.length ? upcoming(next) : null,
   ].filter(Boolean);
+}
+
+function statusLabel(s) {
+  if (s.status === "done" && s.verdict && VERDICT[s.verdict] !== "—") return VERDICT[s.verdict];
+  return STATUS[s.status];
+}
+
+function picker(past, date) {
+  let current = pickSession(past, date);
+  const holder = h("div", {}, card(current));
+  const select = h("select", { name: "session", "aria-label": "选择课" },
+    ...past.map((s) => {
+      const o = h("option", { value: s.date }, `${dayLabel(s.date)} · ${s.name} · ${statusLabel(s)}`);
+      if (s === current) o.selected = true;
+      return o;
+    }));
+  select.addEventListener("change", () => {
+    current = past.find((s) => s.date === select.value) ?? current;
+    holder.replaceChildren(card(current));
+    history.replaceState(null, "", `#/review?session=${current.date}`);
+  });
+  return h("section", { class: "rv-pick" },
+    h("div", { class: "plan-form small" },
+      h("label", {}, `查看课（共 ${past.length} 节）`, select)),
+    holder);
 }
 
 function totals(t) {
@@ -81,7 +113,7 @@ function card(s) {
   const a = s.actual;
   const title = h("h2", {}, `${dayLabel(s.date)} · `, h("span", { class: "wo" }, s.name));
   const tag = h("span", { class: `rv-tag st-${s.status}${s.verdict ? ` v-${s.verdict}` : ""}` },
-    s.status === "done" && s.verdict ? VERDICT[s.verdict] === "—" ? STATUS.done : VERDICT[s.verdict] : STATUS[s.status]);
+    statusLabel(s));
   const link = a ? h("a", { href: `#/run/${a.activity_id}`, class: "small" }, "看这次跑步 →") : null;
   return h("section", { class: `rv-card st-${s.status}` },
     h("div", { class: "sec-head" }, title, tag, h("div", { class: "tools" }, link)),
