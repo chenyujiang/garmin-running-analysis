@@ -1,6 +1,8 @@
-// Auckland parkrun courses, #/parkruns?target=20:00. Reads GET /api/parkruns:
-// every course's 5 km elevation profile, climbs, even-effort splits for a flat
-// 5K target time and pacing advice. Courses come easiest first (least climb).
+// Auckland parkrun courses, #/parkruns?target=20:00&course=<slug>. Reads GET
+// /api/parkruns: every course's 5 km elevation profile, climbs, even-effort
+// splits for a flat 5K target time and pacing advice. Courses come easiest
+// first (least climb). One course is shown at a time, picked from a dropdown
+// or the summary table; the pick is kept in the hash without a reload.
 
 import { h, fmtDur, fmtPace } from "./dom.js";
 import { parseTime } from "./plan.js";
@@ -28,15 +30,33 @@ async function load(root, query) {
     root.replaceChildren(h("p", { class: "warn" }, `无法读取 parkrun 路线：${err.message}`));
     return;
   }
-  root.replaceChildren(...render(r));
+  root.replaceChildren(...render(r, query.get("course")));
 }
 
 const pct = (g) => `${(g * 100).toFixed(1)}%`;
 const signed = (s) => `${s >= 0 ? "+" : "−"}${Math.abs(Math.round(s))} 秒`;
 const metres = (m) => `${m >= 0 ? "+" : "−"}${Math.abs(m).toFixed(0)} m`;
-const anchor = (slug) => `pr-${slug}`;
 
-function render(r) {
+function render(r, slug) {
+  const bySlug = new Map(r.courses.map((c) => [c.slug, c]));
+  let current = bySlug.get(slug) ?? r.courses[0];
+  const card = h("div", {}, courseSection(current, r.target_s));
+  const select = h("select", { name: "course", "aria-label": "选择路线" },
+    ...r.courses.map((c) => {
+      const o = h("option", { value: c.slug }, `${c.name}（${c.tag}）`);
+      if (c === current) o.selected = true;
+      return o;
+    }));
+  const show = (c, scroll) => {
+    current = c;
+    select.value = c.slug;
+    card.replaceChildren(courseSection(c, r.target_s));
+    const q = new URLSearchParams(location.hash.split("?")[1] ?? "");
+    q.set("course", c.slug);
+    history.replaceState(null, "", `#/parkruns?${q}`);
+    if (scroll) select.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  select.addEventListener("change", () => show(bySlug.get(select.value), false));
   return [
     h("header", { class: "plan-head" },
       h("h1", { class: "headline" }, "奥克兰 parkrun 路线"),
@@ -45,8 +65,9 @@ function render(r) {
         + "每条路线给出高程图、按均匀用力分配的每公里配速和跑法建议。"),
       form(r),
       h("div", { class: "tools" }, how(r.method))),
-    summaryTable(r),
-    ...r.courses.map((c) => courseSection(c, r.target_s)),
+    summaryTable(r, (c) => show(c, true)),
+    h("div", { class: "pr-pick plan-form small" }, h("label", {}, "查看路线 ", select)),
+    card,
     h("p", { class: "small muted" }, `数据来源：${r.source}。`),
   ];
 }
@@ -61,6 +82,8 @@ function form(r) {
     e.preventDefault();
     const q = new URLSearchParams();
     if (parseTime(tgt.value)) q.set("target", tgt.value.trim());
+    const course = new URLSearchParams(location.hash.split("?")[1] ?? "").get("course");
+    if (course) q.set("course", course);
     location.hash = `#/parkruns?${q}`;
   });
   return f;
@@ -70,12 +93,12 @@ function tagChip(tag) {
   return h("span", { class: `pr-tag pr-${TAG_CLASS[tag] ?? "flat"}` }, tag);
 }
 
-function summaryTable(r) {
+function summaryTable(r, pick) {
   const jump = (c) => {
-    const a = h("a", { href: `#${anchor(c.slug)}` }, c.name);
+    const a = h("a", { href: `#/parkruns?course=${c.slug}` }, c.name);
     a.addEventListener("click", (e) => {
       e.preventDefault();
-      document.getElementById(anchor(c.slug))?.scrollIntoView({ behavior: "smooth" });
+      pick(c);
     });
     return a;
   };
@@ -134,7 +157,7 @@ function splitsTable(c) {
 
 function courseSection(c, targetS) {
   const notes = [...c.notes, c.fit_note].filter(Boolean);
-  return h("section", { class: "pr-course", id: anchor(c.slug) },
+  return h("section", { class: "pr-course" },
     h("div", { class: "sec-head" },
       h("h2", {}, c.name, " ", tagChip(c.tag)),
       h("div", { class: "tools small" },

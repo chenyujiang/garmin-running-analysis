@@ -361,7 +361,9 @@ a.brand { text-decoration: none; color: var(--ink); }
 .pr-rolling { background: var(--paper-2); color: var(--ink-2); }
 .pr-hilly { background: #efe2c6; color: var(--alt); }
 .pr-steep { background: var(--red-wash); color: var(--red); }
-.pr-course { margin: 36px 0 0; scroll-margin-top: 16px; }
+.pr-pick { margin: 32px 0 0; scroll-margin-top: 16px; }
+.pr-pick select { font-size: 15px; padding: 3px 6px; }
+.pr-course { margin: 12px 0 0; }
 .pr-course h3 { font-size: 14px; font-weight: 600; margin: 14px 0 4px; }
 .pr-body { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 0 32px; }
 .pr-splits tfoot td { border-bottom: 0; font-weight: 600; }

@@ -148,7 +148,7 @@ API (JSON, all on `127.0.0.1:8765`): `GET /api/activities?type=running|all&min_k
 
 ## Auckland parkrun courses
 
-`#/parkruns` (`GET /api/parkruns?target_s=1200`, 600 to 3600) lists the 16 parkruns of the Auckland region, least climb first. It needs no running data. Each course has a 5 km elevation profile, its climbs, per-km splits at even effort for a flat 5K target (`?target=20:00` on the page) and pacing advice in Chinese.
+`#/parkruns` (`GET /api/parkruns?target_s=1200`, 600 to 3600) lists the 16 parkruns of the Auckland region, least climb first, and shows one course at a time: pick it from the dropdown or the summary table (`?course=<slug>`). It needs no running data. Each course has a 5 km elevation profile, its climbs, per-km splits at even effort for a flat 5K target (`?target=20:00` on the page) and pacing advice in Chinese.
 
 - The profiles are packaged in `analysis/src/running/parkrun_courses.json`: elevations every 25 m, no coordinates. Course names, layouts and notes are in `running/parkruns.py`.
 - Even effort uses the Minetti cost of running on a grade, with half the downhill saving, grades clamped to ±15 %.
