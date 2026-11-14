@@ -4,6 +4,7 @@
 //   #/runs?...       activity list (runs.js)
 //   #/run/<id>       activity detail (run.js)
 //   #/plan?...       5K plan after Daniels (plan.js)
+//   #/review         pushed plan sessions against the runs (review.js)
 // Without an analysis database every page shows the empty state.
 
 import { h, fmtDateTime, fmtDate } from "./dom.js";
@@ -14,6 +15,7 @@ import { longRunsSection } from "./longruns.js";
 import { planPage } from "./plan.js";
 import { predictionsSection } from "./predictions.js";
 import { racesSection } from "./races.js";
+import { reviewPage } from "./review.js";
 import { runPage } from "./run.js";
 import { runsPage } from "./runs.js";
 import { volumeSection } from "./volume.js";
@@ -42,6 +44,7 @@ export function parseRoute(hash) {
   const query = new URLSearchParams(search);
   if (path === "runs") return { name: "runs", query };
   if (path === "plan") return { name: "plan", query };
+  if (path === "review") return { name: "review", query };
   const m = /^run\/(\d+)$/.exec(path);
   if (m) return { name: "run", id: m[1], query };
   return { name: "home", query };
@@ -52,6 +55,7 @@ function page(s, route) {
   if (route.name === "runs") return runsPage(route.query);
   if (route.name === "run") return runPage(route.id);
   if (route.name === "plan") return planPage(route.query);
+  if (route.name === "review") return reviewPage(route.query);
   return summary(s);
 }
 

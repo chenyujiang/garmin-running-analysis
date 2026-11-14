@@ -321,3 +321,30 @@ a.brand { text-decoration: none; color: var(--ink); }
 .plan-week tr.k-rest td { color: var(--ink-3); }
 .plan-rules ul { max-width: 70ch; padding-left: 1.2em; }
 .plan-rules li { margin: 4px 0; }
+
+/* plan review (#/review): one card per run session, newest first */
+.review { max-width: 980px; }
+.review .plan-head { display: grid; grid-template-columns: 1fr auto; gap: 0 16px; }
+.review .plan-head .tools { grid-column: 2; grid-row: 1; align-self: end; position: relative; }
+.review .plan-head .tools details.how .body { position: absolute; right: 0; z-index: 3; width: min(70ch, 90vw); box-shadow: 0 6px 20px rgba(0,0,0,.12); }
+.rv-pick { margin: 28px 0 0; }
+.rv-pick select { font-size: 15px; padding: 3px 6px; margin-left: 6px; max-width: 100%; }
+.rv-card { margin: 12px 0 0; }
+.rv-card h2 .wo { font-weight: 400; color: var(--ink-2); }
+.rv-tag { font-size: 13px; font-weight: 600; padding: 0 7px; border-radius: 3px; color: var(--ink-3); background: var(--paper-2); }
+.rv-tag.v-good { background: var(--good-wash); color: var(--good); }
+.rv-tag.v-watch, .rv-tag.st-missed { background: var(--red-wash); color: var(--red); }
+.rv-card.st-missed h2, .rv-card.st-today h2 { color: var(--ink-3); }
+.rv-line { margin: 0 0 10px; }
+.rv-table { margin: 0 0 10px; font-variant-numeric: tabular-nums; }
+.rv-table th, .rv-table td { white-space: nowrap; }
+.rv-table tr.rep-fast td:last-child, .rv-table tr.rep-slow td:last-child, .rv-table tr.rep-missing td:last-child { color: var(--red); font-weight: 600; }
+.rv-table tr.rep-ok td:last-child { color: var(--good); }
+.rv-table tr.total td { font-weight: 600; }
+.rv-notes { list-style: none; margin: 0; padding: 0; }
+.rv-notes li { display: grid; grid-template-columns: 4em 1fr; gap: 10px; padding: 4px 0; border-bottom: 1px solid var(--rule); }
+.rv-notes .verdict { font-weight: 600; justify-self: start; align-self: start; padding: 0 7px; border-radius: 3px; color: var(--ink-3); }
+.rv-notes .verdict-good .verdict { background: var(--good-wash); color: var(--good); }
+.rv-notes .verdict-watch .verdict { background: var(--red-wash); color: var(--red); }
+.rv-notes .verdict-watch .text { color: var(--red); }
+.rv-next { margin: 36px 0 0; }
