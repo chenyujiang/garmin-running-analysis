@@ -5,8 +5,12 @@
 // #/plan?current=21:30&target=20:00&days=2,3,4,6&parkrun=6 (parkrun=0: none).
 // `p.push` lists the sessions the last `running-push-plan --apply` put on the
 // Garmin calendar; those rows get their date and an "已推送" tag.
+// Only this week and next week are open; the rest fold into their heading.
+// Week 1 starts on the pushed start, else on the Monday `running-push-plan`
+// would use. Today's row is marked.
 
 import { h, fmtDur, fmtPace } from "./dom.js";
+import { addDays, weekOf } from "./week.js";
 
 const DAYS = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 const KIND = { E: "E 跑", L: "长距离", Q: "质量课", rest: "休息", race: "比赛", parkrun: "parkrun" };
@@ -72,7 +76,7 @@ function render(p, query) {
     h("h2", { class: "plan-h" }, "8 周课表"),
     h("p", { class: "small muted" }, layoutText(p)),
     pushText(p.push),
-    ...p.weeks.map((w) => weekBlock(w, p.push)),
+    ...weekBlocks(p),
     rules(),
   ];
 }
@@ -212,7 +216,7 @@ function partText(part, paces) {
   return [chip(part.pace), ` ${n}，每组 ${fmtDur(per)}${rest}`];
 }
 
-function sessionRow(s, paces, pushedOn) {
+function sessionRow(s, paces, pushedOn, isToday) {
   let content;
   if (s.kind === "Q") {
     content = [h("div", {}, ...s.parts.flatMap((part, i) => [i ? h("br") : null, ...partText(part, paces)]))];
@@ -228,8 +232,9 @@ function sessionRow(s, paces, pushedOn) {
     content = [h("span", { class: "muted" }, s.title)];
   }
   if (s.note) content.push(h("div", { class: "small muted" }, s.note));
-  return h("tr", { class: `k-${s.kind}${pushedOn ? " pushed" : ""}` },
-    h("td", { class: "day" }, DAYS[s.day],
+  return h("tr", { class: `k-${s.kind}${pushedOn ? " pushed" : ""}${isToday ? " today" : ""}`,
+    ...(isToday ? { "aria-current": "date" } : {}) },
+    h("td", { class: "day" }, DAYS[s.day], isToday ? h("span", { class: "today-tag" }, "今天") : null,
       pushedOn ? h("div", { class: "small muted num" }, monthDay(pushedOn)) : null),
     h("td", { class: "kind" }, KIND[s.kind],
       pushedOn ? h("div", {}, h("span", { class: "pushed-tag", title: `已在 Garmin 日历 ${pushedOn}` }, "已推送")) : null),
@@ -237,12 +242,40 @@ function sessionRow(s, paces, pushedOn) {
     h("td", { class: "r num" }, s.km ? `${s.km} km` : ""));
 }
 
-function weekBlock(w, push) {
+/** Today when it is a Monday, else the coming Monday (push_plan.week_one_start). */
+export function weekOneStart(today) {
+  const dow = new Date(`${today}T00:00:00Z`).getUTCDay(); // 0 = Sunday
+  return addDays(today, (8 - dow) % 7);
+}
+
+/** Weeks to keep open: this week and next; before week 1 only week 1, after the plan the last week. */
+export function openWeeks(n, weeks) {
+  if (n < 1) return new Set([1]);
+  if (n > weeks) return new Set([weeks]);
+  return new Set([n, n + 1].filter((x) => x <= weeks));
+}
+
+function weekBlocks(p) {
+  const start = p.push?.start ?? weekOneStart(p.today);
+  const n = weekOf(start, p.today);
+  const open = openWeeks(n, p.weeks.length);
+  return p.weeks.map((w) => weekBlock(w, p.push, {
+    start: addDays(start, (w.n - 1) * 7), today: p.today, open: open.has(w.n),
+    label: w.n === n ? "本周" : w.n === n + 1 ? "下周" : null,
+  }));
+}
+
+function weekBlock(w, push, { start, today, open, label }) {
   const on = new Map((push?.sessions ?? []).filter((x) => x.week === w.n).map((x) => [x.day, x.date]));
-  return h("section", { class: "plan-week" },
-    h("h3", {}, `第 ${w.n} 周`,
-      h("span", { class: "muted" }, ` · ${w.phase} · 约 ${w.km} km · 训练 VDOT ${w.vdot.toFixed(1)}`)),
-    h("table", {}, h("tbody", {}, ...w.sessions.map((s) => sessionRow(s, w.paces, on.get(s.day))))));
+  const block = h("details", { class: `plan-week${label ? " is-near" : ""}` },
+    h("summary", {}, h("h3", {}, `第 ${w.n} 周`,
+      label ? h("span", { class: "wk-tag" }, label) : null,
+      h("span", { class: "muted" },
+        ` · ${start.slice(5)} – ${addDays(start, 6).slice(5)} · ${w.phase} · 约 ${w.km} km · 训练 VDOT ${w.vdot.toFixed(1)}`))),
+    h("table", {}, h("tbody", {}, ...w.sessions.map((s) =>
+      sessionRow(s, w.paces, on.get(s.day), addDays(start, s.day - 1) === today)))));
+  block.open = open;
+  return block;
 }
 
 function rules() {
