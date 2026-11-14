@@ -43,6 +43,8 @@
   --temp-hot: #c0703c;
   --hot-wash: #f1dcc8;
   --dot: #8f8676;
+  --caution: #8a5a12;
+  --caution-wash: #f6e6cc;
   --sans: "IBM Plex Sans", "Noto Sans SC", system-ui, sans-serif;
   --serif: "Noto Serif SC", "Songti SC", serif;
 }
@@ -157,7 +159,7 @@ td {
 }
 .page {
   margin-inline: auto;
-  max-width: 1320px;
+  max-width: 1560px;
   padding-inline: calc(var(--spacing) * 8);
   padding-top: calc(var(--spacing) * 7);
   padding-bottom: calc(var(--spacing) * 30);
@@ -379,6 +381,12 @@ details.how .body p {
   margin-top: 0px;
   margin-bottom: calc(var(--spacing) * 1.5);
 }
+details.how .body pre {
+  margin: 0px;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 11.5px;
+  white-space: pre-wrap;
+}
 .band-load {
   grid-column: 1;
 }
@@ -486,6 +494,11 @@ details.how .body p {
   margin-inline: 0px;
   margin-top: calc(var(--spacing) * 2);
   margin-bottom: var(--spacing);
+  list-style-type: none;
+  padding: 0px;
+}
+.band-predict .basis li {
+  margin-bottom: calc(var(--spacing) * 0.5);
 }
 .band-predict .foot {
   position: relative;
@@ -538,6 +551,10 @@ details.how .body p {
   color: var(--ink);
   --tw-numeric-spacing: tabular-nums;
   font-variant-numeric: var(--tw-ordinal, ) var(--tw-slashed-zero, ) var(--tw-numeric-figure, ) var(--tw-numeric-spacing, ) var(--tw-numeric-fraction, );
+}
+.runs-search input::placeholder, .plan-form input::placeholder {
+  color: var(--ink-3);
+  opacity: 100%;
 }
 .runs-search input:focus {
   border-color: var(--accent);
@@ -734,15 +751,13 @@ tr.soft td {
   }
 }
 .new-dot {
-  margin-block: 0px;
-  margin-right: calc(var(--spacing) * -3);
+  position: absolute;
   margin-left: calc(var(--spacing) * 1.25);
   display: inline-block;
   height: 7px;
   width: 7px;
   border-radius: 50%;
   background-color: var(--accent);
-  vertical-align: top;
 }
 .mark-read {
   font: inherit;
@@ -761,6 +776,7 @@ tr.soft td {
   color: var(--accent);
 }
 .mark-read .new-dot {
+  position: static;
   margin: 0px;
   vertical-align: middle;
 }
@@ -1203,8 +1219,8 @@ a.brand {
   color: var(--good);
 }
 .feas-stretch {
-  background-color: #f6e6cc;
-  color: #8a5a12;
+  background-color: var(--caution-wash);
+  color: var(--caution);
 }
 .feas-far {
   background-color: var(--red-wash);
@@ -1481,6 +1497,16 @@ a.brand {
   --tw-font-weight: var(--font-weight-semibold);
   font-weight: var(--font-weight-semibold);
 }
+.rv-table tr.part th {
+  border-bottom-style: var(--tw-border-style);
+  border-bottom-width: 1px;
+  border-bottom-color: var(--rule);
+  padding-top: calc(var(--spacing) * 3);
+  text-align: left;
+  --tw-font-weight: var(--font-weight-semibold);
+  font-weight: var(--font-weight-semibold);
+  color: var(--ink-2);
+}
 .rv-notes {
   margin: 0px;
   list-style-type: none;
@@ -1569,11 +1595,8 @@ a.brand {
   color: var(--ink-2);
 }
 .pr-hilly {
-  background: var(--alt);
-  @supports (color: color-mix(in lab, red, red)) {
-    background: color-mix(in srgb, var(--alt) 18%, var(--paper));
-  }
-  color: var(--alt);
+  background-color: var(--caution-wash);
+  color: var(--caution);
 }
 .pr-steep {
   background-color: var(--alt);

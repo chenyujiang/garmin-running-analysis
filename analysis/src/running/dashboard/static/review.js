@@ -146,53 +146,56 @@ function detail(p, a) {
   return null;
 }
 
+const COLS = 8;
+
 function warmRow(label, plan, actualM) {
   if (!plan) return null;
   return h("tr", { class: "soft" },
-    h("td", {}, label),
-    h("td", {}, `${km(plan.dist_m)} @ ${range(plan)}`),
+    h("td", {}, `${label} `, h("span", { class: "muted" }, `${km(plan.dist_m)} @ ${range(plan)}`)),
     h("td", { class: "r" }, actualM == null ? "—" : km(actualM)),
-    h("td", {}), h("td", {}), h("td", {}), h("td", {}), h("td", {}), h("td", {}),
+    h("td", {}), h("td", {}), h("td", {}), h("td", {}), h("td", {}),
     h("td", { class: "small" }, "可缩短"));
+}
+
+/** Cadence and stride share a cell: "182 · 1.21". */
+const gait = (r) => [spm(r?.cadence_spm), stride(r?.stride_m)].filter(Boolean).join(" · ");
+
+function repCells(r) {
+  return [
+    h("td", { class: "r" }, r ? `${Math.round(r.dist_m)} m` : "—"),
+    h("td", { class: "r" }, r ? fmtDur(r.time_s) : ""),
+    h("td", { class: "r num" }, r ? fmtPace(r.pace) : ""),
+    h("td", { class: "r" }, r?.hr_avg ? `${Math.round(r.hr_avg)} / ${Math.round(r.hr_max)}` : ""),
+    h("td", { class: "r num" }, gait(r)),
+    h("td", { class: "r" }, r?.rest_s != null ? fmtDur(r.rest_s) : ""),
+  ];
 }
 
 function qualityTable(p, a) {
   const rows = [warmRow("热身", p.warmup, a.warmup_m)];
   p.parts.forEach((part, i) => {
+    // The plan of a part heads its reps instead of repeating on every row.
+    rows.push(h("tr", { class: "part" },
+      h("th", { colspan: COLS, scope: "colgroup" },
+        `第 ${i + 1} 段 · ${part.reps} × ${part.dist_m} m @ ${range(part)}`)));
     const reps = a.reps.filter((r) => r.part === i);
     for (let n = 1; n <= part.reps; n++) {
       const r = reps.find((x) => x.n === n);
       rows.push(h("tr", { class: r ? `rep-${r.verdict}` : "rep-missing" },
-        h("td", {}, `第 ${i + 1} 段 ${n}/${part.reps}`),
-        h("td", {}, `${part.dist_m} m @ ${range(part)}`),
-        h("td", { class: "r" }, r ? `${Math.round(r.dist_m)} m` : "—"),
-        h("td", { class: "r" }, r ? fmtDur(r.time_s) : ""),
-        h("td", { class: "r num" }, r ? fmtPace(r.pace) : ""),
-        h("td", { class: "r" }, r?.hr_avg ? `${Math.round(r.hr_avg)} / ${Math.round(r.hr_max)}` : ""),
-        h("td", { class: "r num" }, spm(r?.cadence_spm)),
-        h("td", { class: "r num" }, stride(r?.stride_m)),
-        h("td", { class: "r" }, r?.rest_s != null ? fmtDur(r.rest_s) : ""),
+        h("td", {}, `${n}/${part.reps}`),
+        ...repCells(r),
         h("td", {}, r ? repVerdict(r) : "没找到")));
     }
   });
   for (const r of a.reps.filter((x) => x.part == null)) {
-    rows.push(h("tr", { class: "soft" },
-      h("td", {}, "计划外"), h("td", {}),
-      h("td", { class: "r" }, `${Math.round(r.dist_m)} m`),
-      h("td", { class: "r" }, fmtDur(r.time_s)),
-      h("td", { class: "r num" }, fmtPace(r.pace)),
-      h("td", { class: "r" }, r.hr_avg ? `${Math.round(r.hr_avg)} / ${Math.round(r.hr_max)}` : ""),
-      h("td", { class: "r num" }, spm(r.cadence_spm)),
-      h("td", { class: "r num" }, stride(r.stride_m)),
-      h("td", { class: "r" }, r.rest_s != null ? fmtDur(r.rest_s) : ""),
-      h("td", {}, REP.extra)));
+    rows.push(h("tr", { class: "soft" }, h("td", {}, "计划外"), ...repCells(r), h("td", {}, REP.extra)));
   }
   rows.push(warmRow("放松", p.cooldown, a.cooldown_m));
   return h("table", { class: "rv-table" },
     h("thead", {}, h("tr", {},
-      h("th", {}, ""), h("th", {}, "计划"), h("th", { class: "r" }, "距离"), h("th", { class: "r" }, "用时"),
+      h("th", {}, ""), h("th", { class: "r" }, "距离"), h("th", { class: "r" }, "用时"),
       h("th", { class: "r" }, "配速"), h("th", { class: "r" }, "心率 均/高"),
-      h("th", { class: "r" }, "步频"), h("th", { class: "r" }, "步幅 m"), h("th", { class: "r" }, "组间"),
+      h("th", { class: "r" }, "步频 · 步幅 m"), h("th", { class: "r" }, "组间"),
       h("th", {}, ""))),
     h("tbody", {}, ...rows.filter(Boolean)));
 }

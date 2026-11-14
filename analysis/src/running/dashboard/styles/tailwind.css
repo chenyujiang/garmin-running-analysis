@@ -57,6 +57,8 @@
   --color-temp-hot: var(--temp-hot);
   --color-hot-wash: var(--hot-wash);
   --color-dot: var(--dot);
+  --color-caution: var(--caution);
+  --color-caution-wash: var(--caution-wash);
   --color-white: #fff;
 
   --font-*: initial;
@@ -111,6 +113,9 @@
   --temp-hot: #c0703c;
   --hot-wash: #f1dcc8;
   --dot: #8f8676;
+  /* caution that is not a warning: a stretch target, a hilly course */
+  --caution: #8a5a12;
+  --caution-wash: #f6e6cc;
   --sans: "IBM Plex Sans", "Noto Sans SC", system-ui, sans-serif;
   --serif: "Noto Serif SC", "Songti SC", serif;
 }
@@ -131,7 +136,7 @@ td { @apply py-1.75 px-2 border-b border-b-rule; }
 .topbar { @apply flex items-center gap-7 py-0 px-8 h-14 border-b-2 border-b-rule-strong; }
 .brand { @apply font-serif font-black text-[21px] leading-none tracking-[0.02em] normal-nums; }
 .sync { @apply ml-auto text-ink-3 text-sm flex gap-4 items-center; }
-.page { @apply max-w-[1320px] mx-auto pt-7 px-8 pb-30; }
+.page { @apply max-w-[1560px] mx-auto pt-7 px-8 pb-30; }
 
 /* type */
 .headline { @apply font-serif font-black text-[30px] leading-[1.25] normal-nums mt-0 mx-0 mb-1.5 tracking-[0.01em] text-balance; }
@@ -187,6 +192,7 @@ details.how summary::-webkit-details-marker { @apply hidden; }
 details.how[open] summary { @apply text-ink; }
 details.how .body { @apply mt-2 py-2.5 px-3 bg-paper-2 rounded-md max-w-[70ch]; }
 details.how .body p { @apply mt-0 mx-0 mb-1.5; }
+details.how .body pre { @apply m-0 font-mono text-xs whitespace-pre-wrap; }
 
 /* training-load column (ticket 09); chart notes come from svg.js */
 .band-load { @apply col-1; }
@@ -211,7 +217,8 @@ details.how .body p { @apply mt-0 mx-0 mb-1.5; }
 .band-predict table.predict td.main { @apply font-semibold; }
 .band-predict table.predict sup { @apply text-[10px] text-ink-3 ml-0.5; }
 .band-predict table.stale { @apply opacity-40; }
-.band-predict .basis { @apply mt-2 mx-0 mb-1; }
+.band-predict .basis { @apply list-none mt-2 mx-0 mb-1 p-0; }
+.band-predict .basis li { @apply mb-0.5; }
 .band-predict .foot { @apply relative mt-1.5; }
 
 /* aerobic trend, full width (ticket 12); crosshair readout from variant C */
@@ -222,6 +229,7 @@ details.how .body p { @apply mt-0 mx-0 mb-1.5; }
 .sec-head .tools { @apply ml-auto flex gap-3 items-center relative; }
 .runs-search { @apply flex gap-1.5 items-center flex-wrap; }
 .runs-search input { font: inherit; @apply text-sm py-0.5 px-1.5 border border-rule bg-paper text-ink tabular-nums; }
+.runs-search input::placeholder, .plan-form input::placeholder { @apply text-ink-3 opacity-100; }
 .runs-search input:focus { @apply outline-2 outline-accent-soft border-accent; }
 .runs-search button { font: inherit; @apply text-sm py-0.5 px-2.5 border border-accent bg-accent text-paper rounded-sm cursor-pointer; }
 .sec-head details.how .body { box-shadow: 0 6px 20px rgba(0,0,0,.12); @apply absolute right-0 z-3 w-[min(70ch,90vw)]; }
@@ -267,9 +275,10 @@ tr.soft td { @apply text-ink-3; }
 }
 
 /* "changed since last read" (ticket 15): a dot after a headline number */
-.new-dot { @apply inline-block w-[7px] h-[7px] rounded-[50%] bg-accent my-0 -mr-3 ml-1.25 align-top; }
+/* absolute with no offsets: drawn where it would sit inline but takes no width, so right-aligned numbers stay aligned */
+.new-dot { @apply absolute inline-block w-[7px] h-[7px] rounded-[50%] bg-accent ml-1.25; }
 .mark-read { font: inherit; background: none; @apply text-sm text-accent border border-accent rounded-sm py-0.75 px-2.5 cursor-pointer inline-flex items-center gap-1.5; }
-.mark-read .new-dot { @apply m-0 align-middle; }
+.mark-read .new-dot { @apply static m-0 align-middle; }
 .mark-read:hover { background: color-mix(in srgb, var(--accent-soft) 30%, var(--paper)); }
 .mark-read[hidden] { @apply hidden; }
 
@@ -370,7 +379,7 @@ a.brand { text-decoration: none; @apply text-ink; }
 .plan-num .tone-goal { @apply text-accent; }
 .feas { @apply inline-block mt-1 py-0 px-1.75 rounded-sm text-label font-semibold; }
 .feas-good { @apply bg-good-wash text-good; }
-.feas-stretch { @apply bg-[#f6e6cc] text-[#8a5a12]; }
+.feas-stretch { @apply bg-caution-wash text-caution; }
 .feas-far { @apply bg-red-wash text-red; }
 .plan-form { @apply flex flex-wrap gap-y-2 gap-x-4 items-center mt-0 mx-0 mb-4.5; }
 .plan-form select { font: inherit; @apply py-px px-1 border border-rule bg-paper text-ink; }
@@ -423,6 +432,7 @@ a.brand { text-decoration: none; @apply text-ink; }
 .rv-table tr.rep-fast td:last-child, .rv-table tr.rep-slow td:last-child, .rv-table tr.rep-missing td:last-child { @apply text-red font-semibold; }
 .rv-table tr.rep-ok td:last-child { @apply text-good; }
 .rv-table tr.total td { @apply font-semibold; }
+.rv-table tr.part th { @apply text-left font-semibold text-ink-2 pt-3 border-b border-b-rule; }
 .rv-notes { @apply list-none m-0 p-0; }
 .rv-notes li { @apply grid grid-cols-[4em_1fr] gap-2.5 py-1 px-0 border-b border-b-rule; }
 .rv-notes .verdict { justify-self: start; align-self: start; @apply font-semibold py-0 px-1.75 rounded-sm text-ink-3; }
@@ -441,7 +451,7 @@ a.brand { text-decoration: none; @apply text-ink; }
 .pr-tag { @apply text-label font-semibold py-0 px-1.75 rounded-sm whitespace-nowrap align-middle; }
 .pr-flat { @apply bg-good-wash text-good; }
 .pr-rolling { @apply bg-paper-2 text-ink-2; }
-.pr-hilly { background: color-mix(in srgb, var(--alt) 18%, var(--paper)); @apply text-alt; }
+.pr-hilly { @apply bg-caution-wash text-caution; }
 .pr-steep { @apply bg-alt text-paper; }
 .pr-pick { @apply mt-8 mx-0 mb-0 scroll-mt-4; }
 .pr-pick select { @apply text-base py-0.75 px-1.5; }

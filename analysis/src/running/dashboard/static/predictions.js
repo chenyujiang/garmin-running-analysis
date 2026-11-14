@@ -98,18 +98,14 @@ function basis(v) {
       : null;
   }
   const b = v.basis;
-  const parts = [
-    `依据 ${fmtDate(b.date)} ${fmtDistance(b.distance_m)} ${fmtTime(b.time_s)}`,
-    b.note ? `（${b.note}）` : "",
-    `，VDOT ${b.vdot.toFixed(1)}。`,
-    `全马（V）用 Vickers 2016，近 8 周平均每周 ${v.weekly_km.toFixed(1)} km`,
-    v.vickers_races.length === 2
-      ? `，并用 ${fmtDistance(v.vickers_races[1].distance_m)} ${fmtDate(v.vickers_races[1].date)} 定指数。`
-      : "。",
-    v.riegel_k_source === "personal" ? "Riegel 指数由多场比赛拟合。" : "Riegel 用默认指数 1.06。",
-    v.garmin ? `Garmin 为 ${fmtDate(v.garmin.date)} 的值。` : "",
-  ];
-  return h("p", { class: "small muted basis" }, parts.join(""));
+  const second = v.vickers_races.length === 2 ? v.vickers_races[1] : null;
+  return h("ul", { class: "small muted basis" },
+    h("li", {}, `依据 ${fmtDate(b.date)} ${fmtDistance(b.distance_m)} ${fmtTime(b.time_s)}`
+      + `${b.note ? `（${b.note}）` : ""}，VDOT ${b.vdot.toFixed(1)}`),
+    h("li", {}, `全马（V）用 Vickers 2016，近 8 周平均每周 ${v.weekly_km.toFixed(1)} km`
+      + (second ? `，${fmtDistance(second.distance_m)} ${fmtDate(second.date)} 定指数` : "")),
+    h("li", {}, v.riegel_k_source === "personal" ? "Riegel 指数由多场比赛拟合" : "Riegel 用默认指数 1.06"),
+    v.garmin ? h("li", {}, `Garmin 为 ${fmtDate(v.garmin.date)} 的值`) : null);
 }
 
 function how(v) {
