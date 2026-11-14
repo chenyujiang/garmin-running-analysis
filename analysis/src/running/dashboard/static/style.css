@@ -348,3 +348,26 @@ a.brand { text-decoration: none; color: var(--ink); }
 .rv-notes .verdict-watch .verdict { background: var(--red-wash); color: var(--red); }
 .rv-notes .verdict-watch .text { color: var(--red); }
 .rv-next { margin: 36px 0 0; }
+
+/* Auckland parkrun courses (#/parkruns): summary table, then one card per course */
+.parkruns { max-width: 980px; }
+.parkruns .plan-head { display: grid; grid-template-columns: 1fr auto; gap: 0 16px; }
+.parkruns .plan-head > :not(.tools) { grid-column: 1; }
+.parkruns .plan-head .tools { grid-column: 2; grid-row: 1; align-self: end; position: relative; }
+.parkruns .plan-head .tools details.how .body { position: absolute; right: 0; z-index: 3; width: min(70ch, 90vw); box-shadow: 0 6px 20px rgba(0,0,0,.12); }
+.pr-summary table th, .pr-summary table td { white-space: nowrap; }
+.pr-tag { font-size: 12.5px; font-weight: 600; padding: 0 7px; border-radius: 3px; white-space: nowrap; vertical-align: middle; }
+.pr-flat { background: var(--good-wash); color: var(--good); }
+.pr-rolling { background: var(--paper-2); color: var(--ink-2); }
+.pr-hilly { background: #efe2c6; color: var(--alt); }
+.pr-steep { background: var(--red-wash); color: var(--red); }
+.pr-course { margin: 36px 0 0; scroll-margin-top: 16px; }
+.pr-course h3 { font-size: 14px; font-weight: 600; margin: 14px 0 4px; }
+.pr-body { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 0 32px; }
+.pr-splits tfoot td { border-bottom: 0; font-weight: 600; }
+.pr-strategy, .pr-notes { padding-left: 1.2em; margin: 4px 0; max-width: 70ch; }
+.pr-strategy li, .pr-notes li { margin: 4px 0; }
+@media (max-width: 760px) {
+  .pr-body { grid-template-columns: 1fr; }
+  .parkruns .plan-head { display: block; }
+}
