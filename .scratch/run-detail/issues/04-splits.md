@@ -1,33 +1,33 @@
-# 04: 分段：圈和每公里
+# 04: Splits: laps and per kilometre
 
-**What to build:** 详情页两张表：手表的圈分段，和按距离切的每公里分段。
+**What to build:** Two tables on the detail page: the watch's lap splits, and per-kilometre splits cut by distance.
 
 **Blocked by:** 02
 
 **Status:** done
 
-来源：[实施 spec](../spec.md)，User Stories 13–14；Implementation Decisions 里的"每公里分段""圈分段"。
+Source: User Stories 13–14, and "Per-kilometre splits" and "Lap splits" under Implementation Decisions, in the [implementation spec](../spec.md).
 
-- [x] 圈：取 `laps` 表，`avg_cadence` ×2 换成 spm
-- [x] 每公里：按 `records.distance` 每满 1000 m 一段，最后不足 1 km 的一段单独列出并标明距离
-- [x] 每公里每段：跑步配速（只算跑的秒）、GAP 配速、平均心率、平均 spm、海拔升降
-- [x] 非跑步类活动没有每公里分段（null 加原因）；没有圈时圈表为空并说明
-- [x] Seam 3 测试：段数、最后一段距离、spm 换算、某段含走路时跑步配速不含走路
+- [x] Laps: read the `laps` table, converting `avg_cadence` ×2 to spm
+- [x] Per kilometre: one split for every full 1000 m of `records.distance`; a final split shorter than 1 km is listed separately with its distance
+- [x] Each kilometre: running pace (running seconds only), GAP pace, average heart rate, average spm, elevation gain and loss
+- [x] Non-running activities have no per-kilometre splits (null with a reason); without laps the lap table is empty with an explanation
+- [x] Seam 3 tests: number of splits, distance of the last split, spm conversion, running pace excludes walking when a split contains walking
 
-## 结论（实施记录）
+## Outcome (implementation notes)
 
-- 区块 `splits`，builder `_splits` 在 `analysis/src/running/detail.py` 的 ticket 04 块里，登记在 `SECTIONS` 的 ticket 04 槽。返回 `laps[]`、`kilometres[] | null`、`unavailable{字段: 原因}`、`method`。
-- `laps[]`：`lap`（从 1 起，`lap_index + 1`）、`distance_m`、`duration_s`、`pace_s_per_km`、`avg_hr_bpm`、`max_hr_bpm`、`avg_cadence_spm`、`elevation_gain_m`、`elevation_loss_m`，按 `lap_index` 排序。
-  - **圈时长（自定）**：取 `timer_duration_s`（不含暂停），没有时退回 `elapsed_duration_s`。配速取 `avg_speed_mps`，没有时用距离 ÷ 计时时长。
-  - **非跑步类活动的圈（自定）**：圈照样列出，但 `pace_s_per_km` 和 `avg_cadence_spm` 为 null：骑行的 cadence 是 rpm，×2 不是 spm；与 ticket 02 概要同一口径。
-  - 没有圈：`laps` 为 `[]`，`unavailable.laps = "手表没有记录圈"`。
-- `kilometres[]`：`km`（从 1 起）、`distance_m`、`partial`、`duration_s`、`running_pace_s_per_km`、`gap_pace_s_per_km`、`avg_hr_bpm`、`avg_cadence_spm`、`elevation_gain_m`、`elevation_loss_m`。
-  - 逐秒记录用 `aerobic.steady_state`（含 `classify_records` 的跑走分类和 `gap_mps`），不复制公式。
-  - **切分（自定）**：一个采样拥有到它为止的那段区间，归入区间起点所在的公里。整公里的 `distance_m` 写名义值 1000，最后一段写 `总距离 − 整公里数 × 1000`，`partial = true`。边界最多差一个采样（3 m/s 时约 1 秒、0.15 m 海拔）。
-  - **最后的零头（自定）**：不足 `MIN_LAST_SPLIT_M`（10 m）的零头不列，免得几米的段给出无意义的配速。
-  - 跑步配速 = 跑的秒 ÷ 跑的距离；GAP 配速 = 跑的秒 ÷ Σ(GAP 速度 × 秒)，即按时间加权的平均 GAP 速度。平均心率按 `dt_s` 时间加权（暂停不计，复用概要的 `_weighted_mean`）；平均步频只算跑的秒。
-  - **海拔升降（自定）**：逐个采样海拔差的正负分别求和，不平滑；真实数据的气压计噪声会让数值略偏大。
-  - 非跑步类活动：`kilometres = null`，`unavailable.kilometres = "仅跑步类活动"`。跑步类但没有逐秒距离（跑步机无记录）：`kilometres = null`，原因"没有逐秒距离记录"。
-  - `steady_state` 在函数里局部导入，避免改文件顶部的 import 行，与并行 ticket 的改动隔开。
-- 前端 `static/run.js` ticket 04 块：`splitsSection`，一个"分段"区块，先"每公里"表后"手表的圈"表；null 显示 `unavailable` 里的原因或"—"。最后一段在公里号后标距离，如"4（0.30 km）"。复用全局表格样式，没有改 `style.css`；模块级辅助函数都带 `split` 前缀，避免与并行 ticket 重名。
-- 测试 `analysis/tests/test_detail_splits.py`（Seam 3，8 个），合成圈数据的辅助函数在新文件 `analysis/tests/synthetic_laps.py`（`Lap`、`add_laps`）：3300 m 分成 3 段整公里加 300 m；含 200 m 走路的一公里跑步配速约 333.75 s/km（全段约 467 s）；5% 上坡和下坡的 GAP 配速 256.1 / 437.0 s/km 与海拔升降 50 m；圈的 spm 换算（88 → 176、84.5 → 169）、计时时长和配速；没有圈时为空并说明；2 m 零头不列；骑行的每公里为 null 加原因、圈不给配速和步频；没有逐秒记录的跑步机跑。
+- Section `splits`, builder `_splits` in the ticket 04 block of `analysis/src/running/detail.py`, registered in the ticket 04 slot of `SECTIONS`. Returns `laps[]`, `kilometres[] | null`, `unavailable{field: reason}` and `method`.
+- `laps[]`: `lap` (from 1, `lap_index + 1`), `distance_m`, `duration_s`, `pace_s_per_km`, `avg_hr_bpm`, `max_hr_bpm`, `avg_cadence_spm`, `elevation_gain_m`, `elevation_loss_m`, ordered by `lap_index`.
+  - **Lap duration (our choice)**: `timer_duration_s` (excluding pauses), falling back to `elapsed_duration_s`. Pace uses `avg_speed_mps`, falling back to distance ÷ timer duration.
+  - **Laps of non-running activities (our choice)**: laps are still listed, but `pace_s_per_km` and `avg_cadence_spm` are null: cycling cadence is rpm, and ×2 is not spm; same rule as the ticket 02 summary.
+  - No laps: `laps` is `[]`, and `unavailable.laps = "手表没有记录圈"` (the watch recorded no laps).
+- `kilometres[]`: `km` (from 1), `distance_m`, `partial`, `duration_s`, `running_pace_s_per_km`, `gap_pace_s_per_km`, `avg_hr_bpm`, `avg_cadence_spm`, `elevation_gain_m`, `elevation_loss_m`.
+  - Per-second records come from `aerobic.steady_state` (which includes the run/walk classification of `classify_records` and `gap_mps`); formulas are not copied.
+  - **Splitting (our choice)**: each sample owns the interval ending at it, and belongs to the kilometre in which that interval starts. Full kilometres report the nominal `distance_m` of 1000; the last split reports `total distance − full kilometres × 1000`, with `partial = true`. Boundaries are off by at most one sample (about 1 second and 0.15 m of elevation at 3 m/s).
+  - **Trailing remainder (our choice)**: a remainder shorter than `MIN_LAST_SPLIT_M` (10 m) is not listed, so a split of a few metres does not show a meaningless pace.
+  - Running pace = running seconds ÷ running distance; GAP pace = running seconds ÷ Σ(GAP speed × seconds), i.e. the time-weighted mean GAP speed. Average heart rate is weighted by `dt_s` (pauses excluded, reusing the summary's `_weighted_mean`); average cadence covers running seconds only.
+  - **Elevation gain and loss (our choice)**: positive and negative sample-to-sample elevation differences are summed separately, without smoothing; barometer noise in real data makes the values slightly high.
+  - Non-running activities: `kilometres = null`, `unavailable.kilometres = "仅跑步类活动"` (running activities only). Running activities without per-second distance (treadmill without records): `kilometres = null`, reason "没有逐秒距离记录" (no per-second distance records).
+  - `steady_state` is imported locally inside the function, to avoid touching the import lines at the top of the file and keep clear of parallel tickets' edits.
+- Frontend: the ticket 04 block of `static/run.js`: `splitsSection`, one "分段" (splits) section, with the "每公里" (per kilometre) table first and then the "手表的圈" (watch laps) table; null shows the reason from `unavailable` or "—". The last split shows its distance after the kilometre number, e.g. "4（0.30 km）". Reuses the global table styles without changing `style.css`; module-level helpers all carry a `split` prefix to avoid name clashes with parallel tickets.
+- Tests `analysis/tests/test_detail_splits.py` (Seam 3, 8 tests), with helpers for synthetic laps in the new file `analysis/tests/synthetic_laps.py` (`Lap`, `add_laps`): 3300 m splits into 3 full kilometres plus 300 m; a kilometre containing 200 m of walking has a running pace of about 333.75 s/km (about 467 s for the whole split); GAP pace of 256.1 / 437.0 s/km and 50 m of elevation gain/loss on 5% up- and downhill; lap spm conversion (88 → 176, 84.5 → 169), timer duration and pace; empty with an explanation when there are no laps; a 2 m remainder is not listed; cycling gets null per-kilometre splits with a reason and no lap pace or cadence; a treadmill run without per-second records.

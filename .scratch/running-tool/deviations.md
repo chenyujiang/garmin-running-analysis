@@ -1,20 +1,20 @@
-# 与 spec 的偏离
+# Deviations from the spec
 
-## 已确认保留的偏离
+## Deviations confirmed and kept
 
-下面五项是实现时做的取舍，code review 时没有改。用户 2026-10-31 确认全部保留，spec 已按此更新。
+The five items below are trade-offs made during implementation and left unchanged in code review. On 2026-10-31 the user confirmed keeping all of them, and the spec was updated to match.
 
-1. **跑步类型有 9 种**（`RUNNING_TYPES`）：除了 spec 写的几种，还包括 Garmin 的其他跑步子类型（跑道、越野、跑步机、虚拟跑等）。负荷、周跑量和长距离都按这 9 种来算。
-2. **TSB 用的是昨天的 CTL/ATL**：TSB = CTL(昨天) − ATL(昨天)，也就是今天训练之前的状态（TrainingPeaks 的口径）。spec 写的是同一天的 CTL − ATL。
-3. **Riegel 指数 k 截断在 [1.01, 1.20]**：用两场比赛拟合出来的 k 超出这个范围时会被截断，避免数据离谱时给出离谱的预测。
-4. **`MetricsSource` 是一个单独的 trait**：Garmin 三项参照指标的同步，用的是自己的 trait，而不是和活动同步共用一个 source 抽象。
-5. **冷却期内退出码为 0**：Garmin 限流后进入 24 小时冷却期，这期间运行 `runsync sync` 会跳过 Garmin 指标，打印提示，退出码仍然是 0，不当作失败。
+1. **There are 9 running types** (`RUNNING_TYPES`): besides the ones the spec named, they include Garmin's other running subtypes (track, trail, treadmill, virtual run and so on). Load, weekly volume and long runs all count these 9.
+2. **TSB uses yesterday's CTL/ATL**: TSB = CTL(yesterday) − ATL(yesterday), i.e. the state before today's training (the TrainingPeaks convention). The spec said same-day CTL − ATL.
+3. **The Riegel exponent k is clamped to [1.01, 1.20]**: a k fitted from two races that falls outside this range is clamped, so odd data does not give odd predictions.
+4. **`MetricsSource` is a separate trait**: syncing Garmin's three reference metrics uses its own trait instead of sharing one source abstraction with activity sync.
+5. **Exit code 0 during a cooldown**: after a Garmin rate limit there is a 24-hour cooldown. During it, `runsync sync` skips the Garmin metrics, prints a notice and still exits 0; this is not a failure.
 
-下面两项来自推送 5K 计划到 Garmin Connect（PR #10，`running-push-plan`），code review 时提出。用户 2026-11-09 确认保留，spec 已按此更新。
+The two items below come from pushing the 5K plan to Garmin Connect (PR #10, `running-push-plan`) and were raised in code review. On 2026-11-09 the user confirmed keeping them, and the spec was updated to match.
 
-6. **Python 调用导入端的 garminconnect 脚本**：spec 原本写两边只通过数据目录交换数据。推送需要 garminconnect 的 token 和客户端，这些只在 `importer/garminconnect/garmin_metrics.py` 里，所以 `running-push-plan --apply` 用 `uv run --script` 启动它的 `push` 子命令，经 stdin/stdout 交换 JSON。分析库仍然只读。测试时 `push_plan.main` 接受 `runner` 参数，把导入端脚本的 `push()` 接到假 Garmin 客户端上；另有一个测试用存根 `garminconnect` 包真实运行脚本的 `push` 子命令，检查中文名称在任何控制台代码页下都不乱码。
-7. **Python 写 `state/`**：spec 原本写分析包只读、`state/` 只放冷却标记。推送把 Garmin 返回的 id 写进 `state/plan5k_push.json`（防重复、`--replace` 只删自己建的），限流时写和 `runsync sync` 相同格式的 `state/garminconnect.cooldown.json`，冷却期内拒绝推送。
+6. **Python calls the importer's garminconnect script**: the spec originally said the two sides exchange data only through the data directory. Pushing needs garminconnect's tokens and client, which live only in `importer/garminconnect/garmin_metrics.py`, so `running-push-plan --apply` starts its `push` subcommand with `uv run --script` and exchanges JSON over stdin/stdout. The analysis database stays read-only. In tests, `push_plan.main` takes a `runner` argument that wires the importer script's `push()` to a fake Garmin client; another test runs the script's `push` subcommand for real with a stub `garminconnect` package, checking that Chinese names survive any console code page.
+7. **Python writes `state/`**: the spec originally said the analysis package is read-only and `state/` only holds the cooldown marker. The push writes the ids Garmin returns into `state/plan5k_push.json` (to prevent duplicates, and so `--replace` deletes only what it created); on a rate limit it writes `state/garminconnect.cooldown.json` in the same format as `runsync sync`, and it refuses to push during a cooldown.
 
-## 其他已确认的决定
+## Other confirmed decisions
 
-- **训练状态统一写法**（2026-10-31）：API 的 `trainingStatusFeedbackPhrase` 带数字后缀（`PRODUCTIVE_1`），导出包没有（`PRODUCTIVE`）。`garmin_metrics.training_status` 统一存不带后缀的名字（`importer/src/garmin_metrics.rs` 的 `training_status_name`）。
+- **One spelling for training status** (2026-10-31): the API's `trainingStatusFeedbackPhrase` has a numeric suffix (`PRODUCTIVE_1`); the export does not (`PRODUCTIVE`). `garmin_metrics.training_status` always stores the name without the suffix (`training_status_name` in `importer/src/garmin_metrics.rs`).

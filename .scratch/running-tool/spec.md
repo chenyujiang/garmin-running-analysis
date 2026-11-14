@@ -1,32 +1,32 @@
-# 个人跑步分析工具：实施 spec
+# Personal running analysis tool: implementation spec
 
 Label: ready-for-agent
 Status: open
 
-来源：地图 [个人跑步数据分析（Garmin）](../running-analysis/map.md) 和它下面已解决的 ticket。每条决定的理由和来源以各 ticket 的 Answer 为准，这里只汇总要实施的内容。术语见根目录 `GLOSSARY.md`，产品背景见 `PRODUCT.md`。
+Source: the map [Personal running data analysis (Garmin)](../running-analysis/map.md) and the resolved tickets under it. The reasons and sources for each decision are given in each ticket's Answer; this spec only collects what to implement. Terms are in `GLOSSARY.md` at the root, product background in `PRODUCT.md`.
 
 ## Problem Statement
 
-用户用 Garmin 手表跑步，账号里有从 2021-08-06 起约 1000–1500 个活动。Garmin Connect 给出的 Training Load、VO2max、Race Predictor 是黑盒：公式不公开，参数不能调，也看不出"同样心率下是不是跑得更快了"。Garmin 的平均配速还把跑完后走路的时间算进去，数字偏慢。用户想要一套自己算、每个数字都能追溯到公式和参数的分析，用来回答三个问题：
+The user runs with a Garmin watch, and the account holds about 1000–1500 activities since 2021-08-06. The Training Load, VO2max and Race Predictor that Garmin Connect gives are black boxes: the formulas are not public, the parameters cannot be tuned, and they do not show "am I running faster at the same heart rate". Garmin's average pace also counts the walking time after a run, so the number is too slow. The user wants an analysis they compute themselves, in which every number can be traced back to a formula and parameters, to answer three questions:
 
-1. 最近的训练负荷够不够、是不是太多了。
-2. 有氧能力在几个月到几年的尺度上是在进步还是退步。
-3. 现在去比赛，各距离大概能跑多少。
+1. Is recent training load enough, or too much?
+2. Is aerobic fitness improving or declining over months to years?
+3. Racing now, roughly what could I run at each distance?
 
-数据现在只在 Garmin 那边，本机没有完整的原始档案，也没有可以查询的分析库。
+The data is currently only at Garmin; the machine has no complete raw archive and no queryable analysis database.
 
 ## Solution
 
-两个独立的程序，只通过数据目录交换数据：
+Two independent programs that exchange data only through the data directory:
 
-- **导入 CLI `runsync`**（Rust）：把 Garmin 的全部历史和之后的新数据同步到本机。原始文件原样存进原始档案，同时解析写入 SQLite 分析库。三个命令：`sync`、`login`、`rebuild`，全部手动运行。
-- **分析包 `running`**（Python）：只读分析库（推送 5K 计划时写 `state/`，见 `deviations.md`），计算有氧能力、训练负荷、周跑量和成绩预测。同一套计算给 Jupyter 用于深入探索，也给本机仪表盘用。仪表盘是只在 `127.0.0.1` 上运行的 FastAPI 服务加静态网页，用户每周打开一两次，几分钟看完"这周该怎么练"。
+- **Import CLI `runsync`** (Rust): syncs all of Garmin's history, and new data after that, to the machine. Raw files are stored as is in the raw archive, and parsed into the SQLite analysis database at the same time. Three commands, `sync`, `login` and `rebuild`, all run by hand.
+- **Analysis package `running`** (Python): reads the analysis database only (it writes `state/` when pushing the 5K plan, see `deviations.md`), and computes aerobic fitness, training load, weekly volume and race predictions. The same computations serve Jupyter for deep exploration and the local dashboard. The dashboard is a FastAPI service running only on `127.0.0.1` plus static web pages; the user opens it once or twice a week and takes a few minutes to see "how should I train this week".
 
-用户每次想看新数据，就运行一次 `runsync sync`，然后打开仪表盘。
+Whenever the user wants to see new data, they run `runsync sync` once and then open the dashboard.
 
 ## User Stories
 
-**首次设置**
+**First-time setup**
 
 1. As a runner, I want to point both programs at one data directory through `RUNNING_DATA_DIR`, so that my personal data never lives inside the repo or its worktrees.
 2. As a runner, I want the data directory to default to `%USERPROFILE%\running-data` when the variable is unset, so that I don't have to configure anything on a fresh machine.
@@ -37,7 +37,7 @@ Status: open
 7. As a runner, I want physiology parameters (HRmax, HRrest, LTHR) listed with an effective date, so that changing them later recalculates only activities after that date.
 8. As a runner, I want a clear error when the data directory, config file or key file is missing, so that I know exactly what to create.
 
-**回填与同步**
+**Backfill and sync**
 
 9. As a runner, I want the first `runsync sync` to backfill my full history since 2021-08 in one run, so that I don't have to babysit batches.
 10. As a runner, I want a progress bar during backfill, so that I can tell the roughly 75-minute run is moving.
@@ -58,7 +58,7 @@ Status: open
 25. As a runner, I want log verbosity controlled by `RUST_LOG`, so that I can debug a failing sync without changing code.
 26. As a runner, I want a sync to be safe while Jupyter or the dashboard has the database open, so that I don't have to close them first.
 
-**原始档案与重建**
+**Raw archive and rebuild**
 
 27. As a runner, I want every FIT and JSON file stored exactly as Garmin returned it, so that the raw archive is the single source of truth.
 28. As a runner, I want `runsync rebuild` to delete the analysis database and recreate it from the raw archive offline, so that parser fixes apply to all history without hitting Garmin.
@@ -66,7 +66,7 @@ Status: open
 30. As a runner, I want a FIT file that fails to parse to be kept in the raw archive, logged and skipped, so that one bad file doesn't stop the whole sync or rebuild.
 31. As a runner, I want to back up only the `raw/` directory, so that my backup stays small and everything else can be regenerated.
 
-**分析（Jupyter）**
+**Analysis (Jupyter)**
 
 32. As a runner, I want every run's running pace computed from running seconds only, so that the walk after a run doesn't make it look slower.
 33. As a runner, I want each second classified as running or walking by cadence, so that walk breaks in long runs are handled the same way.
@@ -86,7 +86,7 @@ Status: open
 47. As a runner, I want the same calculation functions available in Jupyter, so that what I explore there matches what the dashboard shows.
 48. As a runner, I want notebook outputs stripped on commit, so that personal data never lands in git.
 
-**仪表盘**
+**Dashboard**
 
 49. As a runner, I want the top of the dashboard to say whether my load this week is fine or spiking, so that I know what to do this week at a glance.
 50. As a runner, I want a red headline when ATL/CTL exceeds 1.5, so that a load spike is impossible to miss.
@@ -106,12 +106,12 @@ Status: open
 
 ## Implementation Decisions
 
-**整体结构**
+**Overall structure**
 
-- 仓库根目录下两个独立项目：Rust crate（二进制 `runsync`）和 uv 管理的 Python 项目（包 `running`），不用 Cargo workspace，也不用 uv workspace。仪表盘是 Python 项目的一部分。
-- 两边只通过数据目录交换数据，唯一的例外是 `running-push-plan --apply` 调用导入端的 garminconnect 脚本推送 5K 计划（见 `deviations.md`）。分析库的 schema 由 Rust 拥有，Python 一律只读打开。
-- 数据目录由 `RUNNING_DATA_DIR` 指定，默认 `%USERPROFILE%\running-data`。结构：`config.toml`、`races.csv`、`secrets/`（Personal API key、garminconnect token）、`raw/`（原始档案）、`state/`（冷却标记；以及 `plan5k_push.json`，记录推送到 Garmin 的计划课 id）、`running.sqlite`（分析库）、可选的 `analysis.sqlite`（Python 的派生值缓存）。
-- `config.toml` 两边共用，Rust 用 `toml` crate 读，Python 用 `tomllib` 读。形状如下（来自 ticket「项目骨架与依赖」）：
+- Two independent projects at the repository root: a Rust crate (binary `runsync`) and a uv-managed Python project (package `running`); no Cargo workspace and no uv workspace. The dashboard is part of the Python project.
+- The two sides exchange data only through the data directory; the one exception is `running-push-plan --apply`, which calls the importer's garminconnect script to push the 5K plan (see `deviations.md`). The analysis database schema is owned by Rust; Python always opens it read-only.
+- The data directory is set by `RUNNING_DATA_DIR`, defaulting to `%USERPROFILE%\running-data`. Layout: `config.toml`, `races.csv`, `secrets/` (Personal API key, garminconnect token), `raw/` (raw archive), `state/` (cooldown markers; plus `plan5k_push.json`, recording the ids of plan workouts pushed to Garmin), `running.sqlite` (analysis database), and an optional `analysis.sqlite` (Python's cache of derived values).
+- `config.toml` is shared by both sides; Rust reads it with the `toml` crate, Python with `tomllib`. Its shape (from the ticket "Project skeleton and dependencies"):
 
 ```toml
 [aerobic]
@@ -124,88 +124,88 @@ hr_rest = 55
 lthr = 170
 ```
 
-  其余阈值（步频 140 spm、稳态段的各项条件、请求间隔）也写进配置，代码里给默认值。
+  The other thresholds (cadence 140 spm, the steady-state segment conditions, request intervals) also go into the config, with defaults in code.
 
-**导入 CLI `runsync`**
+**Import CLI `runsync`**
 
-- 依赖：`reqwest`（`blocking`、`json`、`rustls-tls`，不用 tokio）、`rusqlite`（bundled）、`fitparser`、`clap`（derive）、`anyhow`、`log` + `env_logger`、`indicatif`、`serde`、`serde_json`、`toml`、`zip`、`chrono`。工具链为 rustup stable，`x86_64-pc-windows-msvc`，edition 2024。
-- **数据源 trait**：把一个数据源抽象成一个 trait，两个实现分别是 Personal API 客户端和 garminconnect 小脚本。同步逻辑只依赖这个 trait（测试 seam，见下）。错误分成三类，用一个小 enum 表示：限流（429 或 `CAPTCHA_REQUIRED`）、凭据失效、其他。
-- **Personal API 客户端**：用 `reqwest` + `serde` 手写，只实现用到的 GET 接口：活动列表翻页、活动详情、FIT 下载（zip，解出里面唯一的 FIT 后丢掉 zip）、每日汇总（7 天一个区间）。每次运行 `sync` 时用 key 换一次 access token（`POST` 到 personal-api-key token 接口，请求头 `Authorization: ApiKey <key>`，响应是纯文本 JWT，过期时间取 `exp`），接近过期时再换。token 不写盘。
-- **garminconnect 小脚本**：一个 PEP 723 Python 脚本，放在 Rust 项目里，依赖 `garminconnect`，CLI 用 `uv run --script` 调用，路径在编译时由 `CARGO_MANIFEST_DIR` 确定。子命令：`login`（用 `getpass` 读密码，只保存 token）和三项指标的查询。stdout 只输出 JSON，退出码区分成功、限流、认证失败、其他错误。不在 Rust 里重写 Garmin 登录。
-- **原始档案布局**：Personal API 的 `activities/<activityId>.fit` 和 `activities/<activityId>.json`、`daily_summaries/<YYYY-MM-DD>.json`；garminconnect 的 `<metric>/<YYYY-MM-DD>.json`；账号数据导出包原样放在 `export/<导出日期>/`，由 `runsync import-export` 解析（见 ticket 17）。重新拉取的数据覆盖同名文件，不保留历史版本。HRV 和睡眠的空响应只留在原始档案里，不建表。
-- **同步算法**：
-  - 新活动：活动列表从最新往前翻页，直到某一页的活动在原始档案里全都已有为止。
-  - 最近 7 天内的活动：重新拉取详情 JSON 并覆盖；FIT 只在缺失时下载。
-  - 每日汇总：每次重新拉取最近 7 天，覆盖并 upsert。
-  - Garmin 三项指标：回填时每周取一天；之后每次同步存当天快照。接口能否按日期查历史要在实施时验证，查不了就只存快照。
-  - 续传只看原始文件是否已存在，不存进度。每下载一个文件就解析写库。
-  - 两个数据源串行处理，各自独立：一个出错不影响另一个。
-  - 限流：立即停掉这个数据源，在 `state/` 写冷却标记（含时间和原因）。24 小时内跳过并说明原因。凭据失效：停掉这个数据源，提示运行 `login`（garminconnect）或重新生成 key（Personal API）。
-- **迁移**：手写 SQL 文件，用 `include_str!` 编进二进制，用 `PRAGMA user_version` 记录版本，启动时在一个事务里依次执行未执行的文件。不用 `rusqlite_migration`。分析库开启 WAL。
-- **`rebuild`**：删除分析库，按 schema 重建，遍历原始档案全部重新解析。完全离线。
-- **FIT 解析**：`fitparser`。已知 issue #58：开发者字段出现在其描述之前时整个文件解析失败。这类文件记日志后跳过，`rustyfit` 作为备选。私有消息（`unknown_*`）不入库。
+- Dependencies: `reqwest` (`blocking`, `json`, `rustls-tls`, no tokio), `rusqlite` (bundled), `fitparser`, `clap` (derive), `anyhow`, `log` + `env_logger`, `indicatif`, `serde`, `serde_json`, `toml`, `zip`, `chrono`. Toolchain: rustup stable, `x86_64-pc-windows-msvc`, edition 2024.
+- **Data source trait**: a data source is abstracted as a trait with two implementations, the Personal API client and the small garminconnect script. The sync logic depends only on this trait (the test seam, see below). Errors fall into three kinds, represented by a small enum: rate-limited (429 or `CAPTCHA_REQUIRED`), invalid credentials, other.
+- **Personal API client**: hand-written with `reqwest` + `serde`, implementing only the GET endpoints in use: activity list paging, activity details, FIT download (a zip; extract the single FIT inside and discard the zip), daily summaries (one 7-day range per request). Each `sync` run exchanges the key for an access token once (`POST` to the personal-api-key token endpoint with the header `Authorization: ApiKey <key>`; the response is a plain-text JWT, whose expiry is taken from `exp`), and exchanges again when close to expiry. The token is not written to disk.
+- **Small garminconnect script**: a PEP 723 Python script kept in the Rust project, depending on `garminconnect`, called by the CLI with `uv run --script`, its path fixed at compile time by `CARGO_MANIFEST_DIR`. Subcommands: `login` (reads the password with `getpass` and saves only the token) and queries for the three metrics. stdout outputs only JSON; exit codes distinguish success, rate-limited, authentication failure and other errors. Garmin login is not rewritten in Rust.
+- **Raw archive layout**: Personal API `activities/<activityId>.fit` and `activities/<activityId>.json`, `daily_summaries/<YYYY-MM-DD>.json`; garminconnect `<metric>/<YYYY-MM-DD>.json`; the account data export package is kept as is in `export/<export date>/` and parsed by `runsync import-export` (see ticket 17). Re-fetched data overwrites the file of the same name; no history of versions is kept. Empty HRV and sleep responses stay only in the raw archive, with no tables.
+- **Sync algorithm**:
+  - New activities: page through the activity list from newest to oldest until every activity on a page is already in the raw archive.
+  - Activities within the last 7 days: re-fetch the detail JSON and overwrite it; download the FIT only when missing.
+  - Daily summaries: re-fetch the last 7 days on every run, overwrite and upsert.
+  - The three Garmin metrics: during backfill take one day per week; after that store a snapshot of the current day on every sync. Whether the endpoints can query history by date is to be verified during implementation; if not, only snapshots are stored.
+  - Resuming depends only on whether the raw file already exists; no progress is stored. Each downloaded file is parsed and written to the database at once.
+  - The two data sources are processed serially and independently: an error in one does not affect the other.
+  - Rate limiting: stop that data source at once and write a cooldown marker (with time and reason) in `state/`. Within 24 hours it is skipped, with the reason stated. Invalid credentials: stop that data source and prompt to run `login` (garminconnect) or generate a new key (Personal API).
+- **Migrations**: hand-written SQL files compiled into the binary with `include_str!`, versioned with `PRAGMA user_version`; at startup, the files not yet run are executed in order within one transaction. No `rusqlite_migration`. The analysis database uses WAL.
+- **`rebuild`**: delete the analysis database, recreate it from the schema, and re-parse the whole raw archive. Fully offline.
+- **FIT parsing**: `fitparser`. Known issue #58: a whole file fails to parse when a developer field appears before its description. Such files are logged and skipped, with `rustyfit` as the fallback. Private messages (`unknown_*`) are not stored.
 
-**分析库 schema**（单位一律 SI：m、m/s、s、bpm；时间戳 UTC）
+**Analysis database schema** (units always SI: m, m/s, s, bpm; timestamps in UTC)
 
-- `activities`：每个活动一行。从详情 JSON 里挑出有类型的列：activity_id、类型、`start_time_utc`、`start_time_local`、距离、时长、平均和最大心率、爬升等。完整 JSON 只留在原始档案里。
-- `records`：逐秒数据流长表，主键 `(activity_id, timestamp)`，列有 `heart_rate`、`speed`、`cadence`、`altitude`、`distance`、`lat`、`lon`、`power`、`temperature`，缺失为 NULL。`cadence` 按 FIT 原样存单脚步频。
-- `laps`：手表的分段。
-- `daily_wellness`：每天一行（静息心率等），upsert。
-- `garmin_metrics`：每天一行，存三项 Garmin 指标的快照。
+- `activities`: one row per activity. Typed columns picked from the detail JSON: activity_id, type, `start_time_utc`, `start_time_local`, distance, duration, average and maximum heart rate, ascent and so on. The full JSON stays only in the raw archive.
+- `records`: a long table of per-second data streams, primary key `(activity_id, timestamp)`, with columns `heart_rate`, `speed`, `cadence`, `altitude`, `distance`, `lat`, `lon`, `power`, `temperature`, NULL when missing. `cadence` is stored as in the FIT, as single-foot cadence.
+- `laps`: the watch's laps.
+- `daily_wellness`: one row per day (resting heart rate and so on), upserted.
+- `garmin_metrics`: one row per day, storing snapshots of the three Garmin metrics.
 
-**分析包 `running`**
+**Analysis package `running`**
 
-- Python 3.14，依赖 polars 和 DuckDB（`ATTACH` SQLite，只读），不直接依赖 pandas。jupyterlab 放在 dev 依赖组。用 `nbstripout` 在提交时清掉 notebook 输出。派生值每次现算，不落库；以后需要缓存再写进 `analysis.sqlite`。
-- 模块按领域划分：配置与数据读取；跑和走的分类与跑步配速；有氧能力；训练负荷；周跑量；成绩预测。notebook 和仪表盘都只调用这些模块的公开函数。
-- **跑和走**：步频 ×2 得到 spm，10 秒平滑，≥140 spm 算跑；连续走不到 10 秒的仍算跑。跑步配速 = 跑的秒的距离 ÷ 跑的秒的时长。Garmin 的平均配速作参照保留。
-- **有氧能力**：只算户外路跑（`running` 类型，排除跑步机和越野）。稳态段：去掉前 10 分钟；心率和速度各做 30 秒滚动平滑；只保留同时满足以下条件的秒：在跑、心率在参考心率 ±15 bpm 内、60 秒内速度变化 ≤5%、没有暂停、心率与 spm 的差 ≥5。有效时长不足 10 分钟的跑步不计入。坡度用平滑后的气压海拔、按 30 秒距离窗口计算，限制在 ±15%，用 Minetti 2002 的 `Cr(i)` 把速度换成 GAP 速度。在稳态秒上拟合 `GAP速度 ~ 心率` 的直线，取参考心率处的值作为这次跑步的有氧能力值。按周取有效跑步的中位数，不足 2 次的周留空，再算 4 周滚动中位数。温度取 FIT 的手表温度，只按周求平均用于显示，不做校正。
-- **EF 与 decoupling**：EF = GAP 速度 ÷ 心率，只用稳态段，稳态段不加有氧能力的心率带（145 ± 15），否则漂出带的秒被剔掉，decoupling 就看不出漂移。decoupling 只对 ≥60 分钟的跑步计算，>5% 标出。
-- **训练负荷**：逐秒 Banister TRIMP，男性系数 `0.64·e^(1.92x)`，`x = (HR − HRrest) / (HRmax − HRrest)`，参数按活动日期取当时生效的一组。所有带心率的活动都计入；没有心率的记为缺失。CTL 用 42 天 EWMA，ATL 用 7 天，TSB = CTL − ATL。ATL/CTL > 1.5 标为"负荷突增"。
-- **周跑量**：只统计跑步类活动（路跑、跑步机、越野都算），只算跑的秒的距离。按 `start_time_local` 的自然周（周一到周日）统计，另给滚动 7 天的值。
-- **比赛清单**：`races.csv`，字段 `date, activity_id, distance_m, time_s, all_out, note`。缺失或格式错误时给出明确提示。
-- **成绩预测**（5K、10K、半马、全马）：取最近 6 个月内最好的一场 `all_out` 比赛算 VDOT，再换算各距离。Riegel 作对照：有 2 场以上比赛时拟合个人指数，否则用 1.06。全马按 Vickers 2016 用最近 8 周平均周跑量修正。Garmin Race Predictor 的值作参照。6 个月内没有比赛时标为过期，不给预测值。
+- Python 3.14, depending on polars and DuckDB (`ATTACH` SQLite, read-only), with no direct pandas dependency. jupyterlab goes in the dev dependency group. `nbstripout` clears notebook outputs on commit. Derived values are computed fresh each time and not stored; if caching is needed later, they go into `analysis.sqlite`.
+- Modules are split by domain: config and data reading; run/walk classification and running pace; aerobic fitness; training load; weekly volume; race prediction. Notebooks and the dashboard call only the public functions of these modules.
+- **Running and walking**: cadence ×2 gives spm, smoothed over 10 seconds; ≥140 spm counts as running; walking stretches shorter than 10 seconds still count as running. Running pace = distance of running seconds ÷ duration of running seconds. Garmin's average pace is kept as a reference.
+- **Aerobic fitness**: only outdoor road runs count (`running` type, excluding treadmill and trail). Steady-state segment: drop the first 10 minutes; smooth heart rate and speed each with a 30-second rolling window; keep only seconds that satisfy all of: running, heart rate within ±15 bpm of the reference heart rate, speed change ≤5% within 60 seconds, no pause, and a difference between heart rate and spm of ≥5. Runs with less than 10 minutes of valid time do not count. Grade is computed from smoothed barometric altitude over a 30-second distance window, clamped to ±15%, and Minetti 2002's `Cr(i)` converts speed to GAP speed. A line `GAP speed ~ heart rate` is fitted on the steady-state seconds, and its value at the reference heart rate is the run's aerobic fitness value. Weekly, take the median of valid runs, leave weeks with fewer than 2 empty, then compute a 4-week rolling median. Temperature is the watch temperature from the FIT, averaged by week for display only, with no correction.
+- **EF and decoupling**: EF = GAP speed ÷ heart rate, using only steady-state segments; the steady-state segment does not apply aerobic fitness's heart-rate band (145 ± 15), since otherwise seconds that drift out of the band would be dropped and decoupling could not show the drift. Decoupling is computed only for runs ≥60 minutes, and >5% is flagged.
+- **Training load**: per-second Banister TRIMP, male coefficient `0.64·e^(1.92x)`, `x = (HR − HRrest) / (HRmax − HRrest)`, with the parameter set in effect on the activity's date. Every activity with heart rate counts; those without heart rate are recorded as missing. CTL is a 42-day EWMA, ATL 7 days, TSB = CTL − ATL. ATL/CTL > 1.5 is flagged as "负荷突增" (load spike).
+- **Weekly volume**: counts only running activities (road, treadmill and trail all count), and only the distance of running seconds. Grouped by calendar week (Monday to Sunday) of `start_time_local`, with a rolling 7-day value as well.
+- **Race list**: `races.csv`, fields `date, activity_id, distance_m, time_s, all_out, note`. A clear message is given when it is missing or malformed.
+- **Race prediction** (5K, 10K, half, marathon): compute VDOT from the best `all_out` race within the last 6 months, then convert to each distance. Riegel as comparison: with 2 or more races fit a personal exponent, otherwise use 1.06. The marathon is adjusted by the average weekly volume of the last 8 weeks, following Vickers 2016. Garmin Race Predictor's value as reference. Without a race within 6 months, mark it stale and give no prediction.
 
-**仪表盘**
+**Dashboard**
 
-- FastAPI 只绑定 `127.0.0.1`，没有账号。它只做一件事：调用 `running` 计算，以 JSON 返回。同一服务提供静态前端文件。
-- JSON 接口按仪表盘的区块划分：负荷（CTL/ATL/TSB 当前值和近 12 周序列、突增标志）、周跑量（本周、上周、滚动 7 天、近 12 周）、成绩预测（三种方法、依据、是否过期）、有氧能力趋势（按范围参数返回周序列，含空周和每周温度）、长距离表、最近比赛、数据状态（是否已同步、最近同步时间、数据目录）。确切的路径和字段名在实施时定，并作为 Seam 3 的契约。
-- 每个区块的返回里带上"怎么算的"所需的公式名和当前参数，前端只负责展示。
-- 前端：原生 ES modules + 手写 SVG 图表，不用 node 构建，不引入图表库。字体（Noto Serif SC、Noto Sans SC、IBM Plex Sans）本地托管。"上次打开以来变化"的红点用浏览器 localStorage 记录上次看到的值，服务端不写任何东西。
-- 视觉与布局以原型分支 `prototype/dashboard`（commit `8013fab`）里 HTML 原型的变体 A 为准：报纸体育版风格，新闻纸色底 `#f3efe6`、墨黑文字、红色 `#b0281f` 只用于批注和警告；数字用 tabular-nums；每张图最多 2 条编辑式批注。有氧能力图使用原型变体 C 的十字线读数。原型用的是合成数据，正式版换成接口数据。
-- 三种状态：未同步（空状态，显示同步步骤和数据目录）、预测过期（预测表变淡，红字说明最近一场比赛的日期，提示更新 `races.csv`）、数据不足的周（点留空，不插值）。
+- FastAPI binds only to `127.0.0.1`, with no accounts. It does one thing: call `running` to compute and return JSON. The same service serves the static frontend files.
+- The JSON API is split by dashboard block: load (current CTL/ATL/TSB and the last 12 weeks' series, the spike flag), weekly volume (this week, last week, rolling 7 days, last 12 weeks), race prediction (three methods, basis, whether stale), aerobic fitness trend (weekly series by range parameter, including empty weeks and weekly temperature), the long-run table, recent races, data status (whether synced, last sync time, data directory). Exact paths and field names are fixed during implementation and form the Seam 3 contract.
+- Each block's response carries the formula name and current parameters needed for "how is this calculated"; the frontend only displays them.
+- Frontend: native ES modules + hand-written SVG charts, no node build, no chart library. Fonts (Noto Serif SC, Noto Sans SC, IBM Plex Sans) are self-hosted. The "changed since last visit" red dot records the last seen values in browser localStorage; the server writes nothing.
+- Visuals and layout follow variant A of the HTML prototype on the prototype branch `prototype/dashboard` (commit `8013fab`): newspaper sports-section style, newsprint background `#f3efe6`, ink-black text, red `#b0281f` used only for annotations and warnings; numbers use tabular-nums; at most 2 editorial annotations per chart. The aerobic fitness chart uses the crosshair readout of prototype variant C. The prototype uses synthetic data; the production version switches to API data.
+- Three states: not synced (empty state, showing the sync steps and the data directory), prediction stale (the prediction table fades, red text gives the date of the latest race and suggests updating `races.csv`), weeks with too little data (the point stays empty, no interpolation).
 
 ## Testing Decisions
 
-好的测试只通过外部行为验证结果：给定输入（fixture 文件、合成数据库、假数据源），检查输出（数据库内容、文件系统状态、命令输出、JSON），不检查内部函数怎么调用、中间结构长什么样。测试 seam 只有下面这些，不为了测试再加新的抽象层。
+A good test checks results only through external behaviour: given inputs (fixture files, a synthetic database, a fake data source), check outputs (database contents, file system state, command output, JSON), not how internal functions are called or what intermediate structures look like. The test seams are only the ones below; no new abstraction layers are added just for testing.
 
-- **Seam 1：导入 CLI，原始档案到分析库。** 准备一个小型的原始档案 fixture 目录（手写的详情 JSON、每日汇总 JSON，以及合成的小 FIT 文件），在上面运行 `rebuild`，然后直接查询生成的 SQLite，断言：各表行数；单位为 SI；`start_time_utc` 和 `start_time_local` 正确；同一天重复写入时是 upsert；无法解析的 FIT 被跳过而不是中断；迁移在空库和旧版本库上都能执行到最新版本。fixture 不含真实 GPS，可以提交。读取真实 FIT 的集成测试从数据目录读文件，标 `#[ignore]`，用 `cargo test -- --ignored` 手动运行。
-- **Seam 2：导入 CLI，`sync` 对接数据源 trait。** 用内存里的假数据源驱动 `sync`，断言原始档案和 `state/` 的结果：原始文件已存在时跳过（续传）；翻页在整页都已存在时停止；最近 7 天的详情和每日汇总被覆盖；某个数据源返回限流后写冷却标记，24 小时内再次运行时跳过这个数据源，超过 24 小时恢复；一个数据源失败时另一个照常完成；凭据失效时输出相应提示。不测真实 HTTP，也不调用真实的 Python 小脚本。
-  - **例外（ticket 22a）**：`importer/tests/open_meteo.rs` 里有一个测试用本机 `TcpListener` 起一个桩服务器（`127.0.0.1`，返回固定状态码）和一个已关闭的端口，驱动真实的 `OpenMeteoClient`。原因：要证明的是真实客户端的错误信息里不带网格点坐标和请求 URL（reqwest 的错误默认带 URL，URL 里有坐标），假数据源测不到这一点。连接只到本机，不访问外网，不发真实请求到 Open-Meteo。其余 Open-Meteo 测试照常用内存假数据源。
-- **Seam 3：仪表盘 JSON 接口。** pytest + FastAPI `TestClient`，测试启动时用合成数据生成一个小 `running.sqlite`（用与 Rust 相同的 schema），再加 `config.toml` 和 `races.csv`。断言各接口返回的数值，以及三种状态：没有分析库或分析库为空；6 个月内没有比赛；某周有效跑步不足 2 次。
-- **公式级测试（Seam 3 之外唯一的补充）**：TRIMP、VDOT 换算、Riegel、Vickers 修正、Minetti `Cr(i)` 这几个公式，用 pytest 直接测 `running` 的公开函数，用原始出处里的数值核对。其余逻辑（稳态段筛选、跑走分类、周聚合、EWMA）都通过 Seam 3 测试。
-- 仓库目前没有代码，也就没有现成的测试可以参照。
-- 格式化和 lint：Rust 用 `rustfmt` + `clippy`，Python 用 `ruff`。不加 pre-commit hook，不加 `justfile`，常用命令写进 README。
+- **Seam 1: import CLI, raw archive to analysis database.** Prepare a small raw archive fixture directory (hand-written detail JSON, daily summary JSON, and small synthetic FIT files), run `rebuild` on it, then query the resulting SQLite directly, asserting: row counts per table; SI units; correct `start_time_utc` and `start_time_local`; repeated writes for the same day are upserts; unparseable FIT files are skipped rather than aborting; migrations run to the latest version on both an empty database and an older database. The fixtures contain no real GPS and can be committed. Integration tests reading real FIT files read from the data directory, are marked `#[ignore]`, and are run by hand with `cargo test -- --ignored`.
+- **Seam 2: import CLI, `sync` against the data source trait.** Drive `sync` with in-memory fake data sources, asserting the results in the raw archive and `state/`: skip when the raw file already exists (resume); paging stops when a whole page already exists; details and daily summaries of the last 7 days are overwritten; after a data source returns rate limiting a cooldown marker is written, a rerun within 24 hours skips that data source, and after 24 hours it resumes; when one data source fails the other completes as usual; invalid credentials print the matching message. Real HTTP is not tested, and the real Python script is not called.
+  - **Exception (ticket 22a)**: one test in `importer/tests/open_meteo.rs` starts a stub server with a local `TcpListener` (`127.0.0.1`, returning a fixed status code) and a closed port, and drives the real `OpenMeteoClient`. Reason: what needs proving is that the real client's error messages contain neither the grid point coordinates nor the request URL (reqwest errors include the URL by default, and the URL contains coordinates), which a fake data source cannot test. Connections go only to the local machine; there is no external network access and no real request to Open-Meteo. The other Open-Meteo tests use in-memory fake data sources as usual.
+- **Seam 3: dashboard JSON API.** pytest + FastAPI `TestClient`; at test startup, generate a small `running.sqlite` from synthetic data (with the same schema as Rust), plus `config.toml` and `races.csv`. Assert the values each endpoint returns, and three states: no analysis database or an empty one; no race within 6 months; a week with fewer than 2 valid runs.
+- **Formula-level tests (the only addition beyond Seam 3)**: the formulas TRIMP, VDOT conversion, Riegel, the Vickers adjustment and Minetti `Cr(i)` are tested with pytest directly on `running`'s public functions, checked against values from the original sources. All other logic (steady-state filtering, run/walk classification, weekly aggregation, EWMA) is tested through Seam 3.
+- The repository has no code yet, so there are no existing tests to follow.
+- Formatting and lint: Rust uses `rustfmt` + `clippy`, Python uses `ruff`. No pre-commit hook and no `justfile`; common commands go in the README.
 
 ## Out of Scope
 
-- 数据质量与清洗（光电心率异常、GPS 漂移、暂停和自动暂停、跑步机活动的问题）：第一次回填完成后，在 Jupyter 里统计实际情况，再另开 ticket 决定。
-- 温度校正：第一版只显示每周平均温度。要不要用外部历史气温（会把位置发给第三方）做回归校正，等看过全部历史的季节波动后再决定。
-- 拟合完整的 Banister 表现模型；把 ACWR 当受伤预警。
-- 解析账号数据导出包里活动、FIT、每日汇总和三项 Garmin 指标以外的内容（睡眠、个人资料等）：只随整个包原样存档（ticket 17）。
-- HRV 和睡眠分析：用户晚上不戴表，没有数据。
-- 定时自动同步（Windows 任务计划程序）。
-- 多用户、账号、云部署、手机访问。
-- Tauri 或其他桌面外壳；Streamlit。
-- Garmin Connect Developer Program。
+- Data quality and cleaning (optical heart-rate artefacts, GPS drift, pauses and auto-pause, treadmill activity issues): after the first backfill, count the actual situation in Jupyter, then decide in separate tickets.
+- Temperature correction: the first version only shows weekly mean temperature. Whether to regress against external historical air temperature (which sends a location to a third party) is decided after looking at the seasonal swing across the whole history.
+- Fitting the full Banister performance model; using ACWR as an injury warning.
+- Parsing anything in the account data export package other than activities, FIT, daily summaries and the three Garmin metrics (sleep, profile and so on): it is only archived as part of the whole package (ticket 17).
+- HRV and sleep analysis: the user does not wear the watch at night, so there is no data.
+- Scheduled automatic sync (Windows Task Scheduler).
+- Multiple users, accounts, cloud deployment, phone access.
+- Tauri or any other desktop shell; Streamlit.
+- Garmin Connect Developer Program.
 
 ## Further Notes
 
-- **已确认的偏离**：实现与本 spec 不同、用户 2026-10-31 确认保留的五项（9 种跑步类型、TSB 用前一天的 CTL/ATL、Riegel k 截断在 [1.01, 1.20]、单独的 `MetricsSource`、冷却跳过时退出码为 0），以及训练状态统一为不带数字后缀的写法，见 [deviations.md](deviations.md)。
+- **Confirmed deviations**: five places where the implementation differs from this spec and the user confirmed on 2026-10-31 to keep them (9 running types, TSB using the previous day's CTL/ATL, Riegel k clamped to [1.01, 1.20], a separate `MetricsSource`, exit code 0 when skipped for cooldown), plus training status unified without a numeric suffix; see [deviations.md](deviations.md).
 
-- **实施前提**：本机还没有 Rust。需要先装 rustup，以及带 C++ 工作负载的 Visual Studio Build Tools（`rusqlite` 的 bundled feature 要用它编译 SQLite）。
-- **凭据**：用户自己把仓库根目录的 `.env` 移到数据目录的 `secrets/` 下，`garminconnect` 的 token 从 `~/.garminconnect` 移过去。实施时不要读取、打印或提交任何 key 或 token 的内容。Personal API key 大约 2027-10 到期。
-- **登录风险**：本机的 garminconnect mobile 登录策略已经被 429，需要退到后备策略。尽量复用 token，少登录；调试时不要反复调用 `login`。
-- **公式出处**：VDOT 表、Vickers 2016 系数、Banister TRIMP 系数原文在调研时没有读到，写代码前要核对原始出处（见 ticket「有氧能力、训练负荷、成绩预测的算法调研」和分支 `research/analysis-methods`）。
-- **待实施时验证**：garminconnect 三项指标能否按日期查历史；`fitparser` 和 `rustyfit` 在 Windows 上能否构建；参考心率 145 是否接近真实数据里轻松跑心率的中位数，偏离明显时调整一次。
-- **账号数据导出**：导出包已到（2026-10），由 `runsync import-export <zip>` 存进 `raw/export/<导出日期>/` 并解析，代替大部分 API 回填（ticket 17）。
-- 研究资料在分支 `research/garmin-data-access`、`research/analysis-methods`、`research/rust-api-coverage`，原型在 `prototype/dashboard`，都不合并进 main。
+- **Implementation prerequisites**: the machine has no Rust yet. First install rustup, and Visual Studio Build Tools with the C++ workload (the bundled feature of `rusqlite` uses it to compile SQLite).
+- **Credentials**: the user moves `.env` from the repository root into the data directory's `secrets/` themselves, and moves the `garminconnect` token from `~/.garminconnect` there. During implementation, never read, print or commit the content of any key or token. The Personal API key expires around 2027-10.
+- **Login risk**: the garminconnect mobile login strategy on this machine has already received a 429 and must fall back to the backup strategy. Reuse the token as much as possible and log in rarely; do not call `login` repeatedly while debugging.
+- **Formula sources**: the original texts of the VDOT table, the Vickers 2016 coefficients and the Banister TRIMP coefficients were not read during research; check the original sources before writing code (see the ticket "Survey of methods for aerobic fitness, training load and race prediction" and the branch `research/analysis-methods`).
+- **To verify during implementation**: whether the three garminconnect metrics can query history by date; whether `fitparser` and `rustyfit` build on Windows; whether the reference heart rate of 145 is close to the median easy-run heart rate in real data, adjusting once if clearly off.
+- **Account data export**: the export package arrived (2026-10); `runsync import-export <zip>` stores it in `raw/export/<export date>/` and parses it, replacing most of the API backfill (ticket 17).
+- Research material is on the branches `research/garmin-data-access`, `research/analysis-methods` and `research/rust-api-coverage`, and the prototype on `prototype/dashboard`; none are merged into main.

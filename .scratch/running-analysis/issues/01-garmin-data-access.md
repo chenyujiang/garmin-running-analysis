@@ -1,4 +1,4 @@
-# Garmin Connect 数据获取途径调研
+# Survey of ways to get data out of Garmin Connect
 
 Type: research
 Status: resolved
@@ -6,21 +6,21 @@ Blocked by: none
 
 ## Question
 
-截至 2026 年，从 Garmin Connect 国际版（未开 MFA）以个人身份拉取自己数据，最可行的途径是什么？
+As of 2026, what is the most workable way to pull one's own data, as an individual, from international Garmin Connect (MFA not enabled)?
 
-具体要查清：
+Specifically, find out:
 
-- `garminconnect` / `garth` 等非官方库现在还在维护、还能用吗？登录流程、token 持久化位置和有效期。
-- 能拿到哪些数据：活动列表、原始 FIT 文件下载（逐秒数据流）、HRV、静息心率、睡眠，以及 Garmin 自带的 Training Load、VO2max、Race Predictor。
-- 限流和锁号的已知行为：回填 5 年历史需要多慢才安全。
-- 后备途径：账号数据导出（Garmin 的数据导出请求）里包含什么、什么格式，能否覆盖上面的数据。
+- Are unofficial libraries such as `garminconnect` / `garth` still maintained and working? The login flow, where tokens are stored and how long they last.
+- Which data is available: the activity list, raw FIT downloads (per-second data streams), HRV, resting heart rate, sleep, and Garmin's own Training Load, VO2max and Race Predictor.
+- Known rate-limit and account-lock behaviour: how slow must a 5-year backfill be to stay safe?
+- Fallback: what the account data export (Garmin's data export request) contains, in what format, and whether it covers the data above.
 
 ## Answer
 
-详细调研（每条附来源）：分支 `research/garmin-data-access` 的 `research/garmin-data-access.md`（commit `031a024`，仅本地）。
+Detailed survey (with a source for every point): `research/garmin-data-access.md` on branch `research/garmin-data-access` (commit `031a024`, local only).
 
-- **主力途径：官方 Garmin Connect Personal API**（2026-10-21 发布，官方 Python 客户端 `garmin/connect-personal-api-python` v1.0.0）。只读；API key（有效期 30 天至 1 年）换 24 小时 access token，无 refresh token。覆盖活动列表/详情、FIT 下载（zip）、HRV、睡眠、每日汇总（含 `restingHeartRate`）。**不含** Training Status、VO2max 趋势、Race Predictor。
-- **`garth` 已弃用**（2026-03-28），因 Garmin 改了登录流程，自 2026-03-17 起新登录被 Cloudflare 429。
-- **`garminconnect` 仍维护**（0.3.19，2026-10-16）。用于补 `get_training_status`、`get_max_metrics_range`、`get_race_predictions`。token 存在 `~/.garminconnect/garmin_tokens.json`。原始 FIT 要传 `ActivityDownloadFormat.ORIGINAL`。库本身不限速；已知 429 多发生在登录环节，有一例锁号 48-72 小时以上。用法：只登录一次，串行慢速，遇到 429/403 立即停。
-- **账号数据导出**：里面的 FIT 与手表上的文件逐字节一致，作为 5 年原始存档兜底。导出包里健康数据的格式未能核实。
-- **未决风险**：Personal API 能往回查多久、限流多少都没有公开；经 API 下载的 FIT 可能被改写，丢失私有字段（待实测）；非官方登录随时可能再失效。
+- **Main route: the official Garmin Connect Personal API** (released 2026-10-21, official Python client `garmin/connect-personal-api-python` v1.0.0). Read-only; an API key (valid 30 days to 1 year) is exchanged for a 24-hour access token, with no refresh token. Covers the activity list/details, FIT downloads (zip), HRV, sleep and daily summaries (including `restingHeartRate`). It does **not** cover Training Status, the VO2max trend or Race Predictor.
+- **`garth` is deprecated** (2026-03-28): Garmin changed the login flow, and since 2026-03-17 new logins get a Cloudflare 429.
+- **`garminconnect` is still maintained** (0.3.19, 2026-10-16). Use it to fill in `get_training_status`, `get_max_metrics_range` and `get_race_predictions`. Tokens are stored in `~/.garminconnect/garmin_tokens.json`. Raw FIT needs `ActivityDownloadFormat.ORIGINAL`. The library itself does not throttle; known 429s mostly hit the login step, and one account was locked for 48–72 hours or more. Usage: log in only once, go serially and slowly, and stop at the first 429/403.
+- **Account data export**: its FIT files are byte-for-byte the files on the watch, a fallback raw archive of the 5-year history. The format of the health data in the export could not be confirmed.
+- **Open risks**: how far back the Personal API reaches and its rate limits are not published; FIT files downloaded through the API may be rewritten and lose private fields (to be tested); the unofficial login may break again at any time.

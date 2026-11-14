@@ -1,4 +1,4 @@
-# 回填与增量同步策略
+# Backfill and incremental sync strategy
 
 Type: grilling
 Status: resolved
@@ -6,51 +6,51 @@ Blocked by: 01, 03, 10
 
 ## Question
 
-5 年历史怎么回填、之后怎么增量同步？同步逻辑由 Rust 导入 CLI 实现。
+How are the 5 years of history backfilled, and how is incremental sync done afterwards? The sync logic is implemented by the Rust import CLI.
 
-- 回填节奏：限速多少、分几批、中断后如何续传。
-- 增量触发：手动跑命令，还是 Windows 任务计划程序定时跑。
-- 怎么判断"新数据"：按活动 ID、按日期，健康数据（HRV、睡眠）事后被 Garmin 修正时怎么处理。
-- token 过期或接口失效时的行为和后备（手动导出）。
-- Training Status / VO2max / Race Predictor 由 Rust CLI 调一个 Python 小脚本获取（见 [Rust 导入 CLI 如何调用 Garmin 接口](10-rust-api-coverage.md)）。这个脚本的登录状态和 Personal API 的 token 缓存是分开的，要分别处理过期和 429 的情况。
+- Backfill pace: what rate limit, how many batches, how to resume after an interruption.
+- Incremental trigger: run a command by hand, or run it on a schedule with Windows Task Scheduler.
+- How to tell "new data": by activity ID or by date, and what to do when Garmin later corrects health data (HRV, sleep).
+- Behaviour and fallback (manual export) when a token expires or an API stops working.
+- Training Status / VO2max / Race Predictor are fetched by the Rust CLI calling a small Python script (see [How the Rust import CLI calls the Garmin APIs](10-rust-api-coverage.md)). That script's login state is separate from the Personal API's token cache, so expiry and 429s must be handled separately for each.
 
 ## Comments
 
-- 2026-10-23（来自 [存储方案](04-storage.md)）：要拉取所有活动类型，不只是跑步。Garmin 事后修正的某天数据，重新拉取后覆盖原始档案里对应日期的文件。导入 CLI 需要一个"从原始档案重建分析库"的命令，什么时候触发它在这里决定。增量同步时 Jupyter 或仪表盘可能正在读取分析库，SQLite 的 WAL 模式允许这种情况。
+- 2026-10-23 (from [Storage design](04-storage.md)): every activity type is pulled, not just running. When Garmin later corrects a day's data, re-pulling overwrites that date's file in the raw archive. The import CLI needs a "rebuild the analysis database from the raw archive" command; when it is triggered is decided here. During an incremental sync Jupyter or the dashboard may be reading the analysis database, which SQLite's WAL mode allows.
 
 ## Answer
 
-2026-10-23 与用户逐条讨论后确定。术语见 `GLOSSARY.md`：**同步**、**回填**、**原始档案**、**分析库**。
+Decided point by point with the user on 2026-10-23. Terms are in `GLOSSARY.md`: **sync**, **backfill**, **raw archive**, **analysis database**.
 
-**命令集**（导入 CLI 只有三个命令）：
+**Commands** (the import CLI has only three):
 
-- `sync`：第一次运行就是回填，之后是增量同步。每下载一个原始文件，就立即解析写入分析库。
-- `login`：交互式登录 garminconnect，用 `getpass` 读密码，只保存 token。`sync` 本身从不询问密码。
-- `rebuild`：删掉分析库，从原始档案全部重新解析，完全离线。只在解析逻辑改变时手动运行；schema 变化走迁移，不做自动触发。
+- `sync`: the first run is the backfill, later runs are incremental. Each raw file is parsed and written into the analysis database as soon as it is downloaded.
+- `login`: interactive garminconnect login, reading the password with `getpass` and saving only the tokens. `sync` itself never asks for a password.
+- `rebuild`: deletes the analysis database and re-parses everything from the raw archive, fully offline. Run by hand only when the parsing logic changes; schema changes go through migrations, with no automatic trigger.
 
-**触发**：手动运行 `sync`，不配 Windows 任务计划程序。原因是 garminconnect 的 token 失效后需要在交互式终端输入密码，定时任务做不到。以后要改成定时任务也容易。
+**Trigger**: run `sync` by hand; no Windows Task Scheduler. The reason is that when garminconnect's tokens expire the password must be typed in an interactive terminal, which a scheduled task cannot do. Switching to a scheduled task later is easy.
 
-**回填节奏**：
+**Backfill pace**:
 
-- 单线程串行请求。Personal API 间隔 1.5 秒，garminconnect 间隔 5 秒。不分批，一次跑完。
-- 续传靠原始档案：对应的原始文件已经存在就跳过。中断后重新运行 `sync` 即可，不需要进度文件。
-- 每日汇总按 7 天一个区间请求，约 270 次。
-- 估算：活动约 1500 个 × 2 次请求，约 75 分钟。
-- Garmin 三项指标按周回填历史，每周取一天，约 260 天 × 3 项，约 1 小时。之后每次同步存一份当天快照。接口是否支持按日期查询历史，实施时再验证。
+- Single-threaded, serial requests. 1.5 seconds between Personal API requests, 5 seconds between garminconnect requests. No batches; it runs to completion in one go.
+- Resuming relies on the raw archive: if the raw file already exists it is skipped. After an interruption just run `sync` again; no progress file is needed.
+- Daily summaries are requested in 7-day ranges, about 270 requests.
+- Estimate: about 1500 activities × 2 requests, about 75 minutes.
+- Garmin's three metrics backfill history weekly, one day per week, about 260 days × 3 metrics, about 1 hour. After that every sync stores a snapshot of the current day. Whether the endpoints support querying history by date is verified during implementation.
 
-**增量同步**：
+**Incremental sync**:
 
-- 新活动：用 `search_activities` 从最新往前翻页，翻到一页里的活动在原始档案里全都已有为止。新活动下载详情和 FIT。
-- 最近 7 天内的活动：重新拉取详情 JSON 并覆盖，因为改名、改类型会体现在详情里。FIT 只在缺失时下载。
-- 每日汇总：每次重新拉取最近 7 天，覆盖原始档案中对应的文件，再 upsert 进分析库。当天的数据不完整，下次同步时会被覆盖。
+- New activities: page through `search_activities` from newest backwards until a page whose activities are all already in the raw archive. New activities have their details and FIT downloaded.
+- Activities within the last 7 days: re-pull the detail JSON and overwrite it, because renames and type changes show up in the details. The FIT is downloaded only when missing.
+- Daily summaries: every run re-pulls the last 7 days, overwrites the matching files in the raw archive, then upserts into the analysis database. The current day's data is incomplete and gets overwritten by the next sync.
 
-**同步状态**：不另存，"已经拉过什么"一律由原始档案目录推断。唯一的例外是冷却标记文件，放在数据目录下的 `state/`。
+**Sync state**: not stored separately; "what has already been pulled" is always inferred from the raw archive directories. The only exception is the cooldown marker files, in `state/` under the data directory.
 
-**凭据**：Personal API 的 access token 不写到磁盘。每次运行 `sync` 时用 key 换一次 token（约 1.8 秒），快到 `exp` 时再换。
+**Credentials**: the Personal API access token is not written to disk. Each `sync` run exchanges the key for a token once (about 1.8 seconds), and again when `exp` is close.
 
-**失败处理**（两个数据源互相独立，一个失败不影响另一个）：
+**Failure handling** (the two data sources are independent; one failing does not affect the other):
 
-- Personal API 换 token 失败（key 过期或失效）：这个数据源停止，提示用户重新生成 key。当前 key 有效期 1 年，大约 2027-10 到期。
-- garminconnect 的 token 失效：Python 小脚本以专门的退出码结束，CLI 提示用户运行 `login`。
-- 任何数据源返回 429 或 `CAPTCHA_REQUIRED`：立即停止这个数据源，不重试，并在 `state/` 写一个冷却标记。24 小时内再运行 `sync` 时，自动跳过这个数据源并说明原因。
-- 两边都不可用时，后备方案是手动导出 FIT 或申请账号数据导出（见 [申请账号数据导出](09-account-export.md)）。
+- The Personal API token exchange fails (key expired or revoked): this source stops and the user is told to generate a new key. The current key is valid for 1 year, expiring around 2027-10.
+- garminconnect's tokens expire: the small Python script ends with a dedicated exit code, and the CLI tells the user to run `login`.
+- Any source returns 429 or `CAPTCHA_REQUIRED`: stop this source at once, do not retry, and write a cooldown marker in `state/`. Running `sync` again within 24 hours skips this source automatically and says why.
+- When both are unavailable, the fallback is to export FIT files by hand or request an account data export (see [Request an account data export](09-account-export.md)).

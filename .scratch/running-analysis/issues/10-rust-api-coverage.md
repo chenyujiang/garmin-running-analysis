@@ -1,4 +1,4 @@
-# Rust 导入 CLI 如何调用 Garmin 接口
+# How the Rust import CLI calls the Garmin APIs
 
 Type: research
 Status: resolved
@@ -6,22 +6,22 @@ Blocked by: none
 
 ## Question
 
-导入 CLI 定为用 Rust 写，但 [Garmin Connect 数据获取途径调研](01-garmin-data-access.md) 推荐的两条途径都只有 Python 客户端。Rust 侧怎么接上？
+The import CLI is to be written in Rust, but both routes recommended by the [Garmin Connect data access survey](01-garmin-data-access.md) only have Python clients. How does the Rust side connect?
 
-- **Personal API**：有没有现成的 Rust crate？没有的话，能否从官方 OpenAPI 文档生成客户端（如 `progenitor`、`openapi-generator` 的 Rust 输出），生成质量如何？手写 API key 换 access token 的流程有多复杂？
-- **`garminconnect` 才有的指标**（Training Status、VO2max、Race Predictor）：在 Rust 里重新实现它的 mobile SSO 登录和 TLS 伪装（`curl_cffi` 对应的 Rust 方案，如 `rquest` / `wreq`）可行吗，维护成本多大？
-- 如果 Rust 侧不值得做，备选方案：Rust CLI 调一个小的 Python 脚本只负责这几项指标；或者干脆不要这几项（它们只是参照）。
-- FIT 解析：`fitparser` 等 crate 是否还在维护，能否读开发者字段和私有字段。
+- **Personal API**: is there a ready-made Rust crate? If not, can a client be generated from the official OpenAPI document (for example `progenitor`, or `openapi-generator`'s Rust output), and how good is the generated code? How complex is a hand-written exchange of the API key for an access token?
+- **Metrics only `garminconnect` has** (Training Status, VO2max, Race Predictor): is it feasible to reimplement its mobile SSO login and TLS impersonation in Rust (a Rust counterpart to `curl_cffi`, such as `rquest` / `wreq`), and how costly is it to maintain?
+- If the Rust side is not worth it, the alternatives: the Rust CLI calls a small Python script responsible only for these metrics; or drop these metrics altogether (they are only a reference).
+- FIT parsing: are crates such as `fitparser` still maintained, and can they read developer fields and private fields?
 
 ## Answer
 
-完整报告在分支 `research/rust-api-coverage` 的 `research/rust-api-coverage.md`（commit `1c5df3f`）。结论：
+The full report is `research/rust-api-coverage.md` on branch `research/rust-api-coverage` (commit `1c5df3f`). Conclusions:
 
-- **Personal API**：没有现成的 Rust crate。官方 OpenAPI 是 3.0.1，26 个只读 GET，只能从 Swagger 页面的 JS chunk 里提取，并且所有 operation 都缺 `operationId`，`progenitor` 原样读入会报错。推荐用 `reqwest` + `serde` 手写客户端。key 换 token 只是一个 `POST .../personal-api-key/token`，请求头 `Authorization: ApiKey <key>`，响应是纯文本 JWT，过期时间取 payload 里的 `exp`，加缓存约 50 行。如果想省写结构体的工夫，可以给 spec 补上 `operationId` 后用 `progenitor` 或 `typify` 只生成 model。
-- **Training Status / VO2max / Race Predictor**：不在 Rust 里重写登录。登录要过 TLS 伪装的 mobile SSO 和 DI OAuth2 换 token；Rust 侧的 `wreq` 能做，但调试一次被拦截就消耗一次登录机会，有锁号风险。现有的 Rust crate（`garmin-cli`、`pulse`）走的都是 2026-03 起被 429 的 OAuth1 旧流程。做法：Rust CLI 通过 `uv run --script` 调一个 PEP 723 Python 小脚本，stdout 只输出 JSON，用退出码区分 429 和认证失败。也可以先不拉这三项。
-- **FIT 解析**：用 `fitparser` 0.11.0，默认会保留开发者字段和未知消息。已知 issue #58：开发者字段如果出现在它的描述之前，整个文件解析失败。`rustyfit` 0.11.0 作为备选。原始 FIT 字节要先原样保存，再解析。
-- **未验证**：progenitor 对 zip 响应、200/204 混用的处理；DI refresh token 的有效期；两个 FIT crate 在 Windows 上能否构建。
+- **Personal API**: no ready-made Rust crate. The official OpenAPI is 3.0.1 with 26 read-only GETs; it can only be extracted from a JS chunk of the Swagger page, and every operation lacks an `operationId`, so `progenitor` errors on it as is. Recommended: a hand-written client with `reqwest` + `serde`. Exchanging the key for a token is a single `POST .../personal-api-key/token` with header `Authorization: ApiKey <key>`; the response is a plain-text JWT whose expiry is the `exp` in its payload; with caching that is about 50 lines. To save writing the structs, add `operationId`s to the spec and have `progenitor` or `typify` generate only the models.
+- **Training Status / VO2max / Race Predictor**: do not rewrite the login in Rust. The login goes through a TLS-impersonated mobile SSO and a DI OAuth2 token exchange; `wreq` on the Rust side could do it, but every blocked debugging attempt spends one login, with a risk of an account lock. The existing Rust crates (`garmin-cli`, `pulse`) all use the old OAuth1 flow that gets 429s since 2026-03. Approach: the Rust CLI calls a small PEP 723 Python script through `uv run --script`; stdout carries only JSON, and exit codes tell a 429 from an authentication failure. Pulling these three can also be postponed.
+- **FIT parsing**: use `fitparser` 0.11.0, which keeps developer fields and unknown messages by default. Known issue #58: if a developer field appears before its description, the whole file fails to parse. `rustyfit` 0.11.0 is the fallback. Save the raw FIT bytes as they are first, then parse.
+- **Not verified**: how progenitor handles zip responses and mixed 200/204; how long the DI refresh token lasts; whether the two FIT crates build on Windows.
 
 ## Comments
 
-- 2026-10-23：「试拉一小批真实数据」实测，Personal API 下载的 FIT 保留了大量 Garmin 私有消息（`unknown_233`、`unknown_325`、`unknown_140` 等，用 Python `fitdecode` 读取）。报告最后一条风险因此基本排除；与 `ORIGINAL` 格式逐字节对比的结果，记录在试拉 ticket 上。
+- 2026-10-23: the "trial pull of a small batch of real data" showed that FIT files downloaded through the Personal API keep many Garmin private messages (`unknown_233`, `unknown_325`, `unknown_140` and others, read with Python `fitdecode`). That largely rules out the report's last risk; the byte-for-byte comparison with the `ORIGINAL` format is recorded on the trial-pull ticket.

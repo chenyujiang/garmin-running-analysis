@@ -1,25 +1,25 @@
-# 15: "上次打开以来变化"红点
+# 15: "Changed since last visit" red dots
 
-**What to build:** 用户打开仪表盘时，上次打开以来发生变化的数字旁边有红点；点一下"全部标为已读"就清掉全部红点。
+**What to build:** When the user opens the dashboard, numbers that changed since the last visit have a red dot next to them; one click on "全部标为已读" (mark all as read) clears every dot.
 
-**Blocked by:** 09（训练负荷：TRIMP 和 CTL/ATL/TSB，接到仪表盘负荷栏），10（跑和走的分类与周跑量，接到仪表盘跑量栏），14（成绩预测与比赛）
+**Blocked by:** 09 (training load: TRIMP and CTL/ATL/TSB in the dashboard load column), 10 (run/walk classification and weekly volume in the dashboard volume column), 14 (race prediction and races)
 
 **Status:** done
 
-来源：[实施 spec](../spec.md)，User Story 59。
+Source: User Story 59 in the [implementation spec](../spec.md).
 
-- [x] 用浏览器 localStorage 记录上次看到的值，服务端不写任何东西
-- [x] 负荷、跑量、预测里的头条数字变化时显示红点
-- [x] "全部标为已读"把当前值存为已读，红点全部消失
-- [x] 第一次打开（localStorage 为空）时不显示红点
-- [x] 在浏览器里检查：改动合成数据后刷新出现红点，标为已读后消失
+- [x] The browser's localStorage records the last seen values; the server writes nothing
+- [x] A red dot shows when a headline number in load, volume or prediction changes
+- [x] "Mark all as read" stores the current values as read, and every red dot disappears
+- [x] No red dots on the first visit (empty localStorage)
+- [x] Browser check: after changing the synthetic data, a refresh shows red dots, and marking as read removes them
 
-## 结论
+## Outcome
 
-- 新模块 `analysis/src/running/dashboard/static/changes.js`：纯逻辑 `createTracker(storage)`（`observe(key, shown)`、`changedKeys()`、`markAllRead()`、`subscribe(fn)`），浏览器胶水 `watch(el, key, shown)`（变了就在 `el` 末尾加 `span.new-dot`，title 写上次已读的值）和 `markAllReadButton()`（顶栏同步时间左边，"N 处有变化 · 全部标为已读"，没有变化时隐藏）。
-- localStorage 键 `running-dashboard.seen.v1`，值是 `{key: 显示文本}`。比较的是页面上显示的文本，不是原始浮点数，所以四舍五入抖动不算变化。
-- 跟踪的数字：负荷 `load.ctl/atl/tsb`；跑量 `volume.this_week/last_week/rolling_7d`（km 一位小数）；预测 `predict.5k/10k/half/marathon`（预测列）。
-- 决定：第一次打开（或新出现的数字）没有已读值时不显示红点，并把当前值直接记为已读基线，否则第一次打开后永远没有对照。之后已读值只在点"全部标为已读"时更新，所以红点在刷新后保留，直到点按钮。
-- localStorage 不可用或内容损坏时不显示红点，不报错。
-- 测试：`analysis/tests/js/changes.test.mjs`（`node --test`，8 个用例），由 `tests/test_changes_js.py` 在 `uv run pytest` 里跑；没装 Node 时跳过。
-- 浏览器检查（临时合成数据目录，端口 8795）：首次打开 0 个红点；改合成数据后刷新出现 10 个红点和"10 处有变化"按钮；点击后红点全部消失、按钮隐藏，再刷新仍为 0。
+- New module `analysis/src/running/dashboard/static/changes.js`: pure logic `createTracker(storage)` (`observe(key, shown)`, `changedKeys()`, `markAllRead()`, `subscribe(fn)`), browser glue `watch(el, key, shown)` (on a change it appends `span.new-dot` to `el`, with the last read value in its title) and `markAllReadButton()` (left of the sync time in the top bar, "N 处有变化 · 全部标为已读" (N changes · mark all as read), hidden when nothing changed).
+- localStorage key `running-dashboard.seen.v1`, value `{key: shown text}`. The comparison uses the text shown on the page, not the raw float, so rounding jitter is not a change.
+- Tracked numbers: load `load.ctl/atl/tsb`; volume `volume.this_week/last_week/rolling_7d` (km, one decimal); prediction `predict.5k/10k/half/marathon` (the prediction column).
+- Decision: on the first visit (or for a newly appearing number) with no read value, no red dot is shown and the current value becomes the read baseline right away; otherwise there would never be anything to compare against after the first visit. After that the read values change only when "mark all as read" is clicked, so the dots survive a refresh until the button is clicked.
+- When localStorage is unavailable or its content is corrupt, no dots show and nothing errors.
+- Tests: `analysis/tests/js/changes.test.mjs` (`node --test`, 8 cases), run inside `uv run pytest` by `tests/test_changes_js.py`; skipped when Node is not installed.
+- Browser check (temporary synthetic data directory, port 8795): 0 dots on the first visit; after changing the synthetic data a refresh shows 10 dots and a "10 处有变化" (10 changes) button; clicking it removes all dots and hides the button, and a further refresh still shows 0.

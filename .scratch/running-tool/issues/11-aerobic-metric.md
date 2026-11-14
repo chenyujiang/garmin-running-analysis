@@ -1,39 +1,39 @@
-# 11: 有氧能力的计算与接口
+# 11: Aerobic fitness computation and endpoint
 
-**What to build:** 每次户外路跑都得到一个有氧能力值（参考心率下的 GAP 配速），再按周汇总成趋势。仪表盘可以通过接口拿到按范围筛选的周序列。图表在下一个 ticket 做。
+**What to build:** Every outdoor road run gets an aerobic fitness value (GAP pace at the reference heart rate), summarised by week into a trend. The dashboard can fetch the weekly series filtered by range through an endpoint. The chart comes in the next ticket.
 
-**Blocked by:** 10（跑和走的分类与周跑量，接到仪表盘跑量栏）
+**Blocked by:** 10 (run/walk classification and weekly volume, wired into the dashboard's volume column)
 
 **Status:** done
 
-来源：[实施 spec](../spec.md)，User Stories 34–37、56；Implementation Decisions 里的"有氧能力"。
+Source: User Stories 34–37 and 56, and "Aerobic fitness" under Implementation Decisions, in the [implementation spec](../spec.md).
 
-- [x] 只算户外路跑，排除跑步机和越野
-- [x] 稳态段：去掉前 10 分钟；心率和速度各做 30 秒滚动平滑；只保留同时满足以下条件的秒：在跑、心率在参考心率 ±15 bpm 内、60 秒内速度变化 ≤5%、没有暂停、心率与 spm 的差 ≥5。各阈值从 `config.toml` 读，代码里有默认值
-- [x] 稳态段有效时长不足 10 分钟的跑步不计入
-- [x] 坡度用平滑后的气压海拔、按 30 秒距离窗口计算，限制在 ±15%；用 Minetti 2002 的 `Cr(i)` 把速度换成 GAP 速度
-- [x] 在稳态秒上拟合 `GAP速度 ~ 心率` 的直线，取参考心率（默认 145）处的值
-- [x] 按周取有效跑步的中位数，不足 2 次的周留空、不插值；再算 4 周滚动中位数；每周平均温度取 FIT 的手表温度，只用于显示
-- [x] 有氧能力接口接受范围参数（半年、1 年、2 年、全部），返回周序列（含空周和温度），以及公式说明和参数
-- [x] 公式级测试：Minetti `Cr(i)` 的数值与原文核对
-- [x] Seam 3 测试：只有 1 次有效跑步的周返回空值；跑步机和越野不计入；稳态段不足 10 分钟的跑步不计入
-- [ ] 如果第一次全量回填已经完成，核对参考心率 145 是否接近真实数据里轻松跑心率的中位数，偏离明显时调整一次，并记下结论（**推迟**：ticket 08 的全量回填还没做，数据目录里还没有 `running.sqlite`。回填后在 notebook 里用 `aerobic_runs` 的 `mean_hr` 或轻松跑的平均心率核对）
+- [x] Only outdoor road runs count; treadmill and trail runs are excluded
+- [x] Steady-state segment: drop the first 10 minutes; apply a 30-second rolling smooth to heart rate and speed; keep only seconds that meet all of: running, heart rate within ±15 bpm of the reference heart rate, speed change ≤5% within 60 seconds, no pause, difference between heart rate and spm ≥5. Each threshold is read from `config.toml`, with defaults in code
+- [x] Runs whose steady-state segments total less than 10 minutes do not count
+- [x] Grade from smoothed barometric altitude over a 30-second distance window, clamped to ±15%; Minetti 2002's `Cr(i)` converts speed to GAP speed
+- [x] Fit a straight line `GAP speed ~ heart rate` on steady-state seconds and take its value at the reference heart rate (default 145)
+- [x] Take the weekly median of valid runs; weeks with fewer than 2 stay empty, no interpolation; then a 4-week rolling median; each week's mean temperature comes from the watch temperature in the FIT and is for display only
+- [x] The aerobic fitness endpoint takes a range parameter (half year, 1 year, 2 years, all) and returns the weekly series (including empty weeks and temperatures), plus the formula description and parameters
+- [x] Formula-level tests: Minetti `Cr(i)` values checked against the original paper
+- [x] Seam 3 tests: a week with only 1 valid run returns null; treadmill and trail runs do not count; runs with less than 10 minutes of steady state do not count
+- [ ] If the first full backfill is done, check whether the reference heart rate of 145 is close to the median easy-run heart rate in real data; adjust it once if it is clearly off, and record the conclusion (**deferred**: ticket 08's full backfill has not been done, and there is no `running.sqlite` in the data directory yet. After the backfill, check in a notebook with `mean_hr` of `aerobic_runs` or the average heart rate of easy runs)
 
-## 结论
+## Outcome
 
-**实现**：`analysis/src/running/aerobic.py`，接口 `GET /api/aerobic?range=6m|1y|2y|all&today=YYYY-MM-DD`（默认 `1y`，其他值返回 422）。测试：`tests/test_minetti.py`（公式级）、`tests/test_aerobic_api.py`（Seam 3），合成数据帮手 `tests/synthetic_aerobic.py`（`tests/synthetic_hr.py` 是 ticket 09 的）。
+**Implementation**: `analysis/src/running/aerobic.py`, endpoint `GET /api/aerobic?range=6m|1y|2y|all&today=YYYY-MM-DD` (default `1y`, other values return 422). Tests: `tests/test_minetti.py` (formula level), `tests/test_aerobic_api.py` (Seam 3), synthetic data helper `tests/synthetic_aerobic.py` (`tests/synthetic_hr.py` belongs to ticket 09).
 
-**自己定的口径**（写进了"怎么算的"）：
+**Definitions we chose** (written into "how it is computed"):
 
-- "户外路跑"= Garmin 类型 `running` 和 `street_running`。`track_running` 不算。
-- 各阈值放在 `config.toml` 的 `[aerobic]` 段，字段名见 `running.config.Aerobic`。`reference_hr` 仍然在 `[aerobic]` 里，`Config.reference_hr` 保留并与 `Config.aerobic.reference_hr` 一致。
-- 去掉前 10 分钟按**移动时间**算（暂停不计时），每个采样点代表它之前的那一秒，这一秒的起点要在 10 分钟之后。
-- "没有暂停"：暂停后恢复的第一个采样点（间隔 > `pause_gap_s`，`dt_s = 0`）不算稳态。
-- 心率与 spm 的差用**原始**逐秒值 `|HR − spm| ≥ 5`；心率带用平滑后的心率。
-- 速度稳定：最近 60 秒内平滑速度的 `(max − min) / mean ≤ 5%`，窗口向后看。
-- 坡度：海拔做 30 秒滚动平均后，取当前点与 30 秒前那个点的海拔差 ÷ 距离差；距离差 < 1 m 或缺海拔时记 0。
-- 拟合：普通最小二乘，不按时长加权。心率方差 < 1 bpm² 时直线不确定，改用稳态秒的平均 GAP 速度。
-- 4 周滚动中位数取最近 4 周里**非空周的周中位数**的中位数；当周为空时滚动值也留空（线在空周断开）。窗口会往范围起点之前多读 3 周。
-- 温度：每次户外路跑（不论是否有效）先求平均，再按周平均。跑步机的温度不算。
-- 接口的 `runs` 只列有效跑步；`weeks[].runs` 是当周的有效跑步次数。
-- 下坡用 Minetti 的完整折算（formulas.md 第 5 节提到 −10% 时 GAP 只有实际速度的 0.6 倍）。等有真实数据再看是否需要单独的下坡截断。
+- "Outdoor road run" = Garmin types `running` and `street_running`. `track_running` does not count.
+- The thresholds live in the `[aerobic]` section of `config.toml`; field names are in `running.config.Aerobic`. `reference_hr` stays in `[aerobic]`; `Config.reference_hr` is kept and equals `Config.aerobic.reference_hr`.
+- The first 10 minutes are dropped by **moving time** (pauses not counted); each sample represents the second before it, and that second must start after the 10 minutes.
+- "No pause": the first sample after resuming from a pause (gap > `pause_gap_s`, `dt_s = 0`) is not steady state.
+- The heart-rate–spm difference uses the **raw** per-second values, `|HR − spm| ≥ 5`; the heart-rate band uses the smoothed heart rate.
+- Stable speed: `(max − min) / mean ≤ 5%` of smoothed speed over the last 60 seconds, a backward-looking window.
+- Grade: after a 30-second rolling mean of altitude, the altitude difference between the current point and the point 30 seconds earlier ÷ the distance difference; 0 when the distance difference is < 1 m or altitude is missing.
+- Fit: ordinary least squares, not weighted by duration. When the heart-rate variance is < 1 bpm² the line is unreliable, and the mean GAP speed of the steady-state seconds is used instead.
+- The 4-week rolling median is the median of the **weekly medians of non-empty weeks** among the last 4 weeks; when the current week is empty the rolling value is empty too (the line breaks at empty weeks). The window reads 3 extra weeks before the start of the range.
+- Temperature: each outdoor road run (valid or not) is averaged first, then averaged per week. Treadmill temperatures do not count.
+- The endpoint's `runs` lists valid runs only; `weeks[].runs` is the number of valid runs in that week.
+- Downhill uses Minetti's full conversion (section 5 of formulas.md notes that at −10% GAP is only 0.6 times the actual speed). Whether a separate downhill cap is needed will be decided once there is real data.

@@ -1,20 +1,20 @@
-# 08: 文档更新和真实数据检查（HITL）
+# 08: Documentation updates and a real-data check (HITL)
 
-**What to build:** 更新 `PRODUCT.md`、`GLOSSARY.md`、`README.md`；用户在真实数据上打开几次跑步检查详情页和报告，必要时调一次报告阈值。
+**What to build:** Update `PRODUCT.md`, `GLOSSARY.md` and `README.md`. The user opens a few runs on real data to check the detail page and the report, and tunes the report thresholds once if needed.
 
 **Blocked by:** 01–07
 
 **Status:** open
 
-来源：[实施 spec](../spec.md)，Implementation Decisions 里的"文档"；Further Notes。
+Source: "Documentation" under Implementation Decisions, and Further Notes, in the [implementation spec](../spec.md).
 
-- [x] `PRODUCT.md`：单次复盘在详情页，跨活动的深入探索仍在 Jupyter
-- [x] `GLOSSARY.md`：心率区间、训练类型、分析报告、配速分布
-- [x] `README.md`：`[zones]`、`[report]` 配置段和新接口
-- [ ] 用户检查（agent 不读真实路线坐标，只报汇总数字）：一次轻松跑、一次间歇、一次长距离、一次跑步机、一次非跑步活动；训练类型和配速分布的结论是否符合用户的感觉
-- [x] 结论不符时，记下调整的阈值和理由
+- [x] `PRODUCT.md`: single-run review lives on the detail page; deeper exploration across activities stays in Jupyter
+- [x] `GLOSSARY.md`: heart-rate zones, training type, analysis report, pace distribution
+- [x] `README.md`: the `[zones]` and `[report]` config sections and the new endpoints
+- [ ] User check (the agent reads no real route coordinates and reports only aggregate numbers): one easy run, one interval session, one long run, one treadmill run and one non-running activity; do the training-type and pace-distribution verdicts match how the user felt?
+- [x] Where a verdict does not match, record the adjusted threshold and the reason
 
-## 阈值调整
+## Threshold adjustments
 
-- 2026-11-04 `interval_speed_ratio` 0.15 → 0.10。用户在真实数据上看到一次间歇跑被判成混合。推测是快段比全程中位速度快不到 15%，凑不够 `interval_min_reps` 段：中位速度本身已含快段，15% 对快慢差不大的间歇过严（未逐秒核对这次跑）。`interval_min_s`、`interval_min_reps` 不变。
-- 2026-11-04 验证：改为 0.10 后，用户在详情页确认那次跑判成了间歇，0.10 保留。
+- 2026-11-04 `interval_speed_ratio` 0.15 → 0.10. On real data the user saw an interval session classified as mixed. The likely cause: the fast reps were less than 15% faster than the run's median speed, so too few reps counted towards `interval_min_reps`. The median speed already includes the fast reps, so 15% is too strict for intervals with a small fast/slow gap (this run was not checked second by second). `interval_min_s` and `interval_min_reps` are unchanged.
+- 2026-11-04 check: after the change to 0.10, the user confirmed on the detail page that the run is classified as intervals; 0.10 stays.

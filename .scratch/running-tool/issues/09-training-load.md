@@ -1,35 +1,35 @@
-# 09: 训练负荷：TRIMP 和 CTL/ATL/TSB，接到仪表盘负荷栏
+# 09: Training load: TRIMP and CTL/ATL/TSB, wired into the dashboard's load column
 
-**What to build:** 用户打开仪表盘，首屏第一栏就能看到这周负荷是否正常：负荷头条（ATL/CTL > 1.5 时标题变红，写成"负荷突增：ATL 是 CTL 的 1.6 倍"，下面一句建议），CTL/ATL/TSB 三个大数字，近 12 周的 CTL/ATL 曲线加 TSB 柱，旁边有"负荷怎么算的"。
+**What to build:** When the user opens the dashboard, the first column of the first screen shows whether this week's load is normal: a load headline (when ATL/CTL > 1.5 the title turns red and reads "负荷突增：ATL 是 CTL 的 1.6 倍" (load spike: ATL is 1.6 times CTL), with one line of advice below), three big numbers for CTL/ATL/TSB, the CTL/ATL curves of the last 12 weeks with TSB bars, and "负荷怎么算的" (how load is computed) beside them.
 
-**Blocked by:** 03（FIT 解析进 `records` 和 `laps`）
+**Blocked by:** 03 (FIT parsing into `records` and `laps`)
 
 **Status:** done
 
-来源：[实施 spec](../spec.md)，User Stories 7、39–41、49、50、58；Implementation Decisions 里的"训练负荷"。
+Source: User Stories 7, 39–41, 49, 50 and 58, and "Training load" under Implementation Decisions, in the [implementation spec](../spec.md).
 
-- [x] 生理参数（HRmax、HRrest、LTHR）按 `config.toml` 里的生效日期取值，每个活动用当时生效的一组
-- [x] 逐秒计算 Banister TRIMP，男性系数 `0.64·e^(1.92x)`，`x = (HR − HRrest) / (HRmax − HRrest)`；所有带心率的活动都计入，没有心率的记为缺失，不估算
-- [x] CTL 为 42 天 EWMA，ATL 为 7 天，TSB = CTL − ATL；ATL/CTL > 1.5 标为"负荷突增"
-- [x] 负荷接口返回当前值、近 12 周序列、突增标志，以及"怎么算的"所需的公式名和当前参数
-- [x] 前端用手写 SVG 画负荷栏，视觉按原型变体 A，每张图最多 2 条编辑式批注
-- [x] 公式级测试：TRIMP 的数值与原始出处核对（写代码前先核对 Banister 系数出处）
-- [x] Seam 3 测试：合成数据下 CTL/ATL/TSB 的数值、突增标志、没有心率的活动记为缺失
+- [x] Physiological parameters (HRmax, HRrest, LTHR) are taken by effective date from `config.toml`; each activity uses the set in effect at the time
+- [x] Compute Banister TRIMP second by second with the male coefficients `0.64·e^(1.92x)`, `x = (HR − HRrest) / (HRmax − HRrest)`; every activity with heart rate counts, activities without heart rate are recorded as missing and not estimated
+- [x] CTL is a 42-day EWMA, ATL 7-day, TSB = CTL − ATL; ATL/CTL > 1.5 is flagged as a "负荷突增" (load spike)
+- [x] The load endpoint returns the current values, the series of the last 12 weeks, the spike flag, and the formula name and current parameters needed for "how it is computed"
+- [x] The frontend draws the load column in hand-written SVG, styled after prototype variant A, with at most 2 editorial annotations per chart
+- [x] Formula-level tests: TRIMP values checked against the original source (check the source of the Banister coefficients before writing code)
+- [x] Seam 3 tests: CTL/ATL/TSB values on synthetic data, the spike flag, activities without heart rate recorded as missing
 
-## 结论
+## Outcome
 
-- **代码位置**：计算在 `analysis/src/running/load.py`（`training_load(today, root)`），接口是 `GET /api/load?today=YYYY-MM-DD`（不传时取今天；页面 URL 上的 `?today=` 会透传）。前端在 `static/load.js`，手写 SVG 的通用部分在 `static/svg.js`。
-- **递推选 1/N 形式**：`CTL_t = CTL_{t−1} + (TRIMP_t − CTL_{t−1})/42`，ATL 同理，N=7。
-  - 理由：TrainingPeaks 帮助页的转述、WKO 和原型用的都是这一形式，与用户在 TrainingPeaks 里看到的数一致。
-  - GoldenCheetah 的 `exp(−1/N)` 形式在 42 天后只差 0.7%，对相对比较没有影响。
-  - 递推从第一个活动日开始，初值为 0。选择写进接口的 `method.recursion` 和 `recursion_formula`，"负荷怎么算的"直接显示。
-- **TSB = 昨天的 CTL − 昨天的 ATL**，即 TrainingPeaks 的 Form，表示今天出门前的状态。
-- **ATL/CTL > 1.5 判为突增**（要求 CTL > 0）。`spike_since` 是截至当前这段连续突增的起始日，用于标题下的建议和图上的批注。
-- **逐秒 TRIMP**：Δt 是到下一条 record 的间隔，上限是 `[load] max_sample_gap_s`，默认 10 秒（暂停不算），最后一条按 1 秒算。x 截断到 [0, 1]，原文没有规定这一点。只用男性系数 0.64/1.92。
-- **摘要心率回退**（code review 后加入）：没有心率记录、但摘要里有平均心率和时长的活动，用平均心率形式 `duration_min · x · 0.64 · e^(1.92x)` 估算，计入负荷，在 `summary_hr_count` 和 `summary_hr_recent` 里返回，界面会注明。
-- **缺失**：既没有心率记录、也没有摘要平均心率的活动记为缺失，原因是"没有心率"。活动当天没有生效的生理参数也记为缺失，原因是"该日期没有生效的生理参数"。两种都不计入负荷，在 `missing_hr_count` 和 `missing_hr_recent` 里返回。
-- **所有活动类型都计入**，按 `start_time_local` 的日期汇总到每天。
-- **接口字段**：`today`、`has_data`、`current{date,ctl,atl,tsb,ratio}`、`spike`、`spike_since`、`series[{date,trimp,ctl,atl,tsb}]`（最近 84 天）、`missing_hr_count`、`missing_hr_recent`、`summary_hr_count`、`summary_hr_recent`、`config_error`、`method{name,description,params}`。`today` 之后的活动不计入，`today` 字段回显实际使用的日期（与其他端点一致）。
-- **测试向量**取自共享笔记 `formulas.md` 第 1 节（sport-activities-features PR #231 的修正值：32.05 和 261.92）。CTL/ATL 的期望值是按 1/N 递推独立手算的闭式结果。
-- **未核实**：Banister 系数没读到原文（Morton 1990、Banister 1991 都返回 403 或只有书），只有同行评审的二手引用，各处一致。
-- **附带发现，不属于本 ticket**：stdout 不是 UTF-8 时，`running-dashboard` 的 `main()` 在 `print` 时报 `UnicodeEncodeError: 'charmap' codec can't encode characters`。已在 code review 修复中处理（`main()` 把 stdout 改为 UTF-8）。
+- **Code location**: computation in `analysis/src/running/load.py` (`training_load(today, root)`), endpoint `GET /api/load?today=YYYY-MM-DD` (today when omitted; `?today=` on the page URL is passed through). Frontend in `static/load.js`; the shared hand-written SVG parts are in `static/svg.js`.
+- **Recursion uses the 1/N form**: `CTL_t = CTL_{t−1} + (TRIMP_t − CTL_{t−1})/42`, ATL likewise with N=7.
+  - Reason: the TrainingPeaks help page's description, WKO and the prototype all use this form, so the numbers match what the user sees in TrainingPeaks.
+  - GoldenCheetah's `exp(−1/N)` form differs by only 0.7% after 42 days, which does not matter for relative comparison.
+  - The recursion starts on the first activity day with initial value 0. The choice is written into the endpoint's `method.recursion` and `recursion_formula`, and "how it is computed" shows it directly.
+- **TSB = yesterday's CTL − yesterday's ATL**, i.e. TrainingPeaks' Form, meaning the state before going out today.
+- **ATL/CTL > 1.5 counts as a spike** (requires CTL > 0). `spike_since` is the start date of the current continuous spike, used for the advice under the title and the annotation on the chart.
+- **Per-second TRIMP**: Δt is the gap to the next record, capped at `[load] max_sample_gap_s`, default 10 seconds (pauses do not count); the last record counts as 1 second. x is clamped to [0, 1], which the original does not specify. Only the male coefficients 0.64/1.92 are used.
+- **Summary heart-rate fallback** (added after code review): activities without heart-rate records but with average heart rate and duration in the summary are estimated with the average-heart-rate form `duration_min · x · 0.64 · e^(1.92x)` and counted in the load; they are returned in `summary_hr_count` and `summary_hr_recent`, and the UI notes them.
+- **Missing**: activities with neither heart-rate records nor a summary average heart rate are recorded as missing, reason "没有心率" (no heart rate). Activities on a day with no physiological parameters in effect are also missing, reason "该日期没有生效的生理参数" (no physiological parameters in effect on this date). Neither counts towards the load; both are returned in `missing_hr_count` and `missing_hr_recent`.
+- **All activity types count**, summed per day by the date of `start_time_local`.
+- **Endpoint fields**: `today`, `has_data`, `current{date,ctl,atl,tsb,ratio}`, `spike`, `spike_since`, `series[{date,trimp,ctl,atl,tsb}]` (last 84 days), `missing_hr_count`, `missing_hr_recent`, `summary_hr_count`, `summary_hr_recent`, `config_error`, `method{name,description,params}`. Activities after `today` do not count; the `today` field echoes the date actually used (consistent with the other endpoints).
+- **Test vectors** come from section 1 of the shared notes `formulas.md` (the corrected values from sport-activities-features PR #231: 32.05 and 261.92). The expected CTL/ATL values are closed-form results computed independently by hand with the 1/N recursion.
+- **Unverified**: the original source of the Banister coefficients was not read (Morton 1990 and Banister 1991 both returned 403 or exist only as books); only peer-reviewed secondary citations, all consistent.
+- **Side finding, not part of this ticket**: when stdout is not UTF-8, `main()` of `running-dashboard` fails on `print` with `UnicodeEncodeError: 'charmap' codec can't encode characters`. Handled in the code review fixes (`main()` switches stdout to UTF-8).

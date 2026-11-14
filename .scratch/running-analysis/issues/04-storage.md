@@ -1,4 +1,4 @@
-# 存储方案
+# Storage design
 
 Type: grilling
 Status: resolved
@@ -6,56 +6,56 @@ Blocked by: 01, 03
 
 ## Question
 
-拉下来的数据存成什么样？
+What form should the pulled data be stored in?
 
-- 原始 FIT / JSON 是否原样保留（作为可重放的事实来源）。
-- 分析用存储选哪个：SQLite、DuckDB、Parquet 文件，还是组合。
-- 逐秒数据流和汇总数据、健康数据分别怎么组织。
-- 存储格式要能由 Rust 导入 CLI 写入、由 Python 分析读取：两边库的支持程度，以及 schema 由哪一边定义。
-- 原始 FIT 字节和 API 原始 JSON 先原样落盘，再解析（见 [Rust 导入 CLI 如何调用 Garmin 接口](10-rust-api-coverage.md)）。解析结果可以随时从原始文件重建。
+- Whether the raw FIT / JSON are kept as they are (as a replayable source of truth).
+- Which storage to use for analysis: SQLite, DuckDB, Parquet files, or a combination.
+- How the per-second data stream, the summaries and the health data are each organised.
+- The storage format must be writable by the Rust import CLI and readable by the Python analysis: how well each side's libraries support it, and which side defines the schema.
+- The raw FIT bytes and the raw API JSON are written to disk as they are first, then parsed (see [How the Rust import CLI calls the Garmin APIs](10-rust-api-coverage.md)). The parsed results can be rebuilt from the raw files at any time.
 
 ## Answer
 
-2026-10-23 与用户逐条讨论后确定。数据量很小（约 1000–1500 个活动，原始文件约 150–250MB，逐秒数据约 270 万行），所以选型看的是并发访问和上手难度，不看性能。
+Decided point by point with the user on 2026-10-23. The data volume is small (about 1000–1500 activities, about 150–250 MB of raw files, about 2.7 million rows of per-second data), so the choice turns on concurrent access and ease of use, not performance.
 
-**两层结构**（术语见 `GLOSSARY.md`）：**原始档案**是事实来源，**分析库**可以随时删掉，再从原始档案重建。
+**Two layers** (terms in `GLOSSARY.md`): the **raw archive** is the source of truth; the **analysis database** can be deleted at any time and rebuilt from the raw archive.
 
-**数据目录**放在仓库外，例如 `%USERPROFILE%\running-data\`，路径由配置或环境变量指定。这样不会被误提交，也不会在各个 worktree 里各存一份。
+**The data directory** lives outside the repository, e.g. `%USERPROFILE%\running-data\`, with the path set by config or an environment variable. That way it cannot be committed by mistake, and there is not a separate copy in every worktree.
 
-**原始档案**（`raw/`）：
+**Raw archive** (`raw/`):
 
 ```
 raw/
-  personal_api/activities/<activityId>.fit        # 从 zip 解出，zip 丢弃（zip 里只有 FIT 和修改时间）
-  personal_api/activities/<activityId>.json       # get_activity 详情
-  personal_api/daily_summaries/<YYYY-MM-DD>.json  # 每天一个文件
-  garminconnect/<metric>/<YYYY-MM-DD>.json        # Training Status / VO2max / Race Predictor 每日快照
-  export/<导出日期>/                               # 账号数据导出包原样解压，只存档，不解析
+  personal_api/activities/<activityId>.fit        # extracted from the zip, zip discarded (the zip holds only the FIT and a modification time)
+  personal_api/activities/<activityId>.json       # get_activity details
+  personal_api/daily_summaries/<YYYY-MM-DD>.json  # one file per day
+  garminconnect/<metric>/<YYYY-MM-DD>.json        # daily snapshots of Training Status / VO2max / Race Predictor
+  export/<export date>/                           # account data export unpacked as is, archived only, not parsed
 ```
 
-- 所有活动类型都拉取并入库，不只是跑步，分析时再按类型筛选。这样以后决定把非跑步活动算进负荷时，不需要重新回填。
-- Garmin 事后修正某天的数据时，重新拉取后覆盖那一天的文件，不保留历史版本。
-- HRV 和睡眠的空响应只留在原始档案里，不建表（用户晚上不戴表）。
-- 只备份原始档案，不备份分析库。
+- Every activity type is pulled and stored, not just running; filtering by type happens at analysis time. That way, if non-running activities are later counted in the load, no new backfill is needed.
+- When Garmin later corrects a day's data, re-pulling overwrites that day's file; no history of versions is kept.
+- Empty HRV and sleep responses stay only in the raw archive; no tables are created for them (the user does not wear the watch at night).
+- Only the raw archive is backed up, not the analysis database.
 
-**分析库**：SQLite，开启 WAL 模式。
+**Analysis database**: SQLite with WAL mode.
 
-- 写入：Rust 用 `rusqlite`（bundled feature）。
-- 读取：Python 用 `sqlite3`、polars，或者用 DuckDB 的 sqlite 扩展直接查询。需要列式分析时用 DuckDB 读这个 SQLite 文件。
-- 不选 DuckDB 文件作分析库：同一时间只能有一个进程写入，Jupyter 或仪表盘开着时会和同步冲突；而且 Rust crate 在 Windows 上编译慢。
-- 不选 Parquet：Rust 侧依赖重；汇总表更新时只能整个文件重写。
-- schema 由 Rust 定义：迁移 SQL 放在 Rust 项目里，导入 CLI 启动时自动执行。Python 对分析库只读。
-- 单位一律用 FIT 的 SI 单位（m、m/s、s、bpm），配速只在 Python 展示时换算。
-- 时间：`records.timestamp` 存 UTC。`activities` 同时存 `start_time_utc` 和 `start_time_local`（来自 `startTimeLocal`），按本地日期统计周跑量。
+- Writing: Rust with `rusqlite` (bundled feature).
+- Reading: Python with `sqlite3`, polars, or DuckDB's sqlite extension querying directly. When columnar analysis is needed, DuckDB reads this SQLite file.
+- A DuckDB file was not chosen as the analysis database: only one process can write at a time, which would conflict with syncing while Jupyter or the dashboard is open; and the Rust crate compiles slowly on Windows.
+- Parquet was not chosen: heavy dependencies on the Rust side; updating a summary table means rewriting the whole file.
+- Rust defines the schema: migration SQL lives in the Rust project and runs automatically when the import CLI starts. Python only reads the analysis database.
+- Units are always FIT's SI units (m, m/s, s, bpm); pace is converted only for display in Python.
+- Time: `records.timestamp` is stored in UTC. `activities` stores both `start_time_utc` and `start_time_local` (from `startTimeLocal`); weekly volume is counted by local date.
 
-**表结构**：
+**Tables**:
 
-- `records`：逐秒数据流的长表，每秒一行。主键 `(activity_id, timestamp)`，固定列包括 `heart_rate`、`speed`、`cadence`、`altitude`、`distance`、`lat`、`lon`、`power`、`temperature`，缺失值为 NULL。私有消息（`unknown_*`）不入库，需要时再解析原始 FIT。
-- `laps`：手表的分段。
-- `activities`：每个活动一行。从详情 JSON 里挑出有类型的列（类型、开始时间、距离、时长、平均/最大心率、爬升等），完整 JSON 只留在原始档案里。
-- `daily_wellness`：每天一行（静息心率等），重新拉取时 upsert。
-- `garmin_metrics`：每天一行，存 Garmin 三项指标的快照，作为参照。
+- `records`: a long table of the per-second data stream, one row per second. Primary key `(activity_id, timestamp)`; fixed columns include `heart_rate`, `speed`, `cadence`, `altitude`, `distance`, `lat`, `lon`, `power` and `temperature`, with NULL for missing values. Private messages (`unknown_*`) are not stored; parse the raw FIT when needed.
+- `laps`: the watch's splits.
+- `activities`: one row per activity. Typed columns are picked from the detail JSON (type, start time, distance, duration, average/max heart rate, ascent and so on); the full JSON stays only in the raw archive.
+- `daily_wellness`: one row per day (resting heart rate and so on), upserted on re-pull.
+- `garmin_metrics`: one row per day, holding snapshots of Garmin's three metrics as a reference.
 
-**派生值**（TRIMP、EF、CTL 等）先在 Python 里每次现算，不落库。以后需要缓存时，写进一个独立的 `analysis.sqlite`，由 Python 拥有，不碰 Rust 的分析库。
+**Derived values** (TRIMP, EF, CTL and so on) are computed in Python on every use for now and not stored. If caching is needed later, it goes into a separate `analysis.sqlite` owned by Python, without touching Rust's analysis database.
 
-**留给其他 ticket**：导入 CLI 需要一个"从原始档案重建分析库"的命令，什么时候触发它由同步方案决定。
+**Left to other tickets**: the import CLI needs a "rebuild the analysis database from the raw archive" command; the sync strategy decides when it is triggered.

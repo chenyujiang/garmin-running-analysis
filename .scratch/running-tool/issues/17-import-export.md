@@ -1,50 +1,50 @@
-# 17: 导入 Garmin 账号数据导出包
+# 17: Import the Garmin account data export
 
-**What to build:** 新命令 `runsync import-export <zip>`：把 Garmin 账号数据导出包原样存进原始档案，并解析写入分析库，让本机不经 API 就拥有 2021-08 起的历史。之后的 `runsync sync` 只补导出日期之后的新数据，不重复拉取导出包里已有的内容。完全离线。
+**What to build:** a new command `runsync import-export <zip>`: store the Garmin account data export package as is in the raw archive, and parse it into the analysis database, so that the machine has the history from 2021-08 onwards without going through the API. Later `runsync sync` runs only fill in new data after the export date and do not re-pull what the export package already contains. Fully offline.
 
-**Blocked by:** 05（每日汇总同步），06（garminconnect 指标），07（限流冷却与凭据失效处理）
+**Blocked by:** 05 (daily summary sync), 06 (garminconnect metrics), 07 (rate-limit cooldown and credential failure handling)
 
 **Status:** done
 
-来源：[实施 spec](../spec.md)，User Stories 9–11、31；本 ticket 修改了 spec「原始档案布局」里"导出包只存档，不解析"这一条。
+Source: User Stories 9–11 and 31 in the [implementation spec](../spec.md); this ticket changes the rule "the export package is only archived, not parsed" under "Raw archive layout" in the spec.
 
-## 导出包结构（来自用户 2026-10 的真实导出包，只看过结构）
+## Export package structure (from the user's real export package of 2026-10, structure only)
 
-- `DI_CONNECT/DI-Connect-Fitness/<email>_<n>_summarizedActivities.json`：所有活动的摘要（约 1100 个，2021-08 起），字段有 `activityId`、`activityType`、`beginTimestamp`、`startTimeLocal`、`startTimeGmt`、`distance`、`duration`、`avgHr`、`maxHr`、`elevationGain` 等。**单位不是 SI**（例如距离可能是 cm、时长可能是 ms），实施时要用距离/时长/配速互相校验确认。
-- `DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part{1,2,3}.zip`：zip 里套 zip，共约 17770 个 `.fit`，混有日常监测类 FIT；按 `file_id` 的 `type` 只取 activity，再对应到 `activityId`（文件名或 session 开始时间对 `beginTimestamp`，实施时确认）。
-- `DI_CONNECT/DI-Connect-Aggregator/UDSFile_*.json`：每日汇总（静息心率、步数、压力、Body Battery 等）。
-- `DI_CONNECT/DI-Connect-Metrics/`：`MetricsMaxMetData_*`（vo2Max）、`RunRacePredictions_*`（5K/10K/半马/全马预测）、`TrainingHistory_*`（训练状态、负荷）。
-- 其余（睡眠、个人资料等）只存档，不解析。
+- `DI_CONNECT/DI-Connect-Fitness/<email>_<n>_summarizedActivities.json`: summaries of all activities (about 1100, from 2021-08), with fields `activityId`, `activityType`, `beginTimestamp`, `startTimeLocal`, `startTimeGmt`, `distance`, `duration`, `avgHr`, `maxHr`, `elevationGain` and so on. **Units are not SI** (e.g. distance may be cm, duration ms); confirm during implementation by cross-checking distance, duration and pace.
+- `DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part{1,2,3}.zip`: zips inside the zip, about 17770 `.fit` files in total, mixed with daily monitoring FIT files; take only activity files by `file_id`'s `type`, then map them to `activityId` (by file name, or session start time against `beginTimestamp`; confirm during implementation).
+- `DI_CONNECT/DI-Connect-Aggregator/UDSFile_*.json`: daily summaries (resting heart rate, steps, stress, Body Battery and so on).
+- `DI_CONNECT/DI-Connect-Metrics/`: `MetricsMaxMetData_*` (vo2Max), `RunRacePredictions_*` (5K/10K/half/marathon predictions), `TrainingHistory_*` (training status, load).
+- Everything else (sleep, profile and so on) is only archived, not parsed.
 
-## 要求
+## Requirements
 
-- [x] `runsync import-export <zip>`：zip 原样复制到 `raw/export/<导出日期>/`（导出日期的取法写进结论），然后从这份存档解析。重复导入同一个包是幂等的；导入更新的包时新数据覆盖旧数据
-- [x] 活动摘要写入 `activities`，换算成 SI，时间列遵守 `conventions.md` 的格式；活动类型和 Personal API 的类型键一致（不一致时做映射）
-- [x] activity FIT 解析写入 `records`、`laps`，复用现有 FIT 解析；非 activity 的 FIT 跳过；解析失败的 FIT 计数并跳过，不中断
-- [x] UDS 每日汇总写入 `daily_wellness`；三项 Garmin 指标写入 `garmin_metrics`，字段对不上的留 NULL
-- [x] 同一活动或同一天既有导出数据又有 Personal API / garminconnect 数据时，API 数据优先
-- [x] `runsync rebuild` 也从 `raw/export/` 重建上述数据，结果与直接导入一致
-- [x] `runsync sync`：导出包里已有的活动算作"已有"（翻页停止、不下载 FIT 和详情，最近 7 天的刷新规则不变）；导出包已覆盖的日子不再回填每日汇总；garminconnect 回填同理
-- [x] 命令结束时输出汇总：各类条目数、跳过的非 activity FIT 数、解析失败数、数据日期范围。不输出 GPS 坐标
-- [x] Seam 1 测试：手写的迷你导出包 fixture（合成 JSON + 合成小 FIT，不含真实 GPS、不含邮箱），断言各表行数、单位、幂等、API 优先、rebuild 一致
-- [x] Seam 2 测试：导入后 `sync` 对导出包已有的活动和日子不再请求
-- [x] 读真实导出包的集成测试标 `#[ignore]`，从数据目录读
-- [x] README 写明导入步骤
+- [x] `runsync import-export <zip>`: copy the zip as is to `raw/export/<export date>/` (how the export date is determined goes in the outcome), then parse from that archived copy. Importing the same package again is idempotent; importing a newer package overwrites old data with new
+- [x] Activity summaries go into `activities`, converted to SI, with time columns following the format in `conventions.md`; activity types match the Personal API's type keys (map them if they differ)
+- [x] Activity FIT files are parsed into `records` and `laps`, reusing the existing FIT parsing; non-activity FIT files are skipped; FIT files that fail to parse are counted and skipped without aborting
+- [x] UDS daily summaries go into `daily_wellness`; the three Garmin metrics go into `garmin_metrics`, with NULL for fields that do not match
+- [x] When the same activity or day has both export data and Personal API / garminconnect data, the API data wins
+- [x] `runsync rebuild` also rebuilds this data from `raw/export/`, with the same result as importing directly
+- [x] `runsync sync`: activities already in the export package count as "already there" (paging stops, no FIT or detail download, the last-7-days refresh rule unchanged); days already covered by the export package are no longer backfilled for daily summaries; the same for garminconnect backfill
+- [x] At the end the command prints a summary: counts per kind of entry, number of skipped non-activity FIT files, number of parse failures, date range of the data. No GPS coordinates
+- [x] Seam 1 tests: a hand-written mini export package fixture (synthetic JSON + small synthetic FIT, no real GPS, no email), asserting row counts per table, units, idempotence, API precedence, and that rebuild matches
+- [x] Seam 2 tests: after an import, `sync` no longer requests activities and days the export package already has
+- [x] Integration tests reading the real export package are marked `#[ignore]` and read from the data directory
+- [x] README documents the import steps
 
-## 安全
+## Safety
 
-- 真实导出包含 GPS 和邮箱，不进 git（仓库 `.gitignore` 已有 `*.zip`）。fixture 全部手写合成。
-- 用真实包手动验证时，只用临时 `RUNNING_DATA_DIR`（放在仓库外），只看汇总数字，验证完删除临时目录。不碰 `%USERPROFILE%\running-data`。
-- 导出包是不可信数据：解析时防 zip 路径穿越（不按条目名写文件），不在解压目录里运行任何东西。
+- The real export package contains GPS and an email address and stays out of git (the repository's `.gitignore` already has `*.zip`). Fixtures are entirely hand-written and synthetic.
+- Manual verification with the real package uses only a temporary `RUNNING_DATA_DIR` (outside the repository), looks only at aggregate numbers, and deletes the temporary directory afterwards. `%USERPROFILE%\running-data` is not touched.
+- The export package is untrusted data: guard against zip path traversal while parsing (never write files by entry name), and never run anything in an extracted directory.
 
-## 结论
+## Outcome
 
-实现在 `importer/src/export.rs`（`runsync::export`），以下都用 2026-10 的真实包核对过（只看汇总数字）。
+Implemented in `importer/src/export.rs` (`runsync::export`); everything below was checked against the real package of 2026-10 (aggregate numbers only).
 
-- **导出日期**：包内所有条目修改时间里最新的那天。真实包所有条目都是 2026-10-30，所以存到 `raw/export/2026-10-30/<原文件名>`。包从不解压到磁盘：条目只读进内存、按名字挑选，嵌套的 `UploadedFiles_*.zip` 也在内存里打开；单个条目超过 1 GiB 不读。
-- **活动单位**（用 FIT session 的距离、时长、热量交叉核对）：`beginTimestamp` 是 UTC 毫秒；`startTimeLocal` 是把本地钟面时间当 UTC 写成的毫秒数；`duration`/`movingDuration`/`elapsedDuration` 是 ms；`distance`、`elevationGain/Loss` 是 cm；`avgSpeed`/`maxSpeed` 乘 10 才是 m/s；`calories` 除以 4.19 才是 kcal。`activityType` 的值（`running`、`track_running`、`walking` 等）与 Personal API 的类型键相同，不需要映射。`timeZoneId` 只有 Garmin 内部的数字 id，所以 `time_zone` 留 NULL。
-- **FIT 对应活动**：FIT 里没有 activityId，按 session 开始时间（Unix 秒）== `beginTimestamp / 1000` 对应（真实包 1097 个 activity FIT 中 1096 个对上）。`file_id.type` 不是 activity 的 FIT 计为"not an activity"跳过；对不上任何活动的计为"matching no activity"；解析失败的计数后跳过。
-- **Garmin 指标**：`MetricsMaxMetData` 只取 `sport == RUNNING` 的行（`vo2MaxValue`）；`RunRacePredictions` 写四个比赛预测；`TrainingHistory` 只有训练状态，没有 acute/chronic 负荷，这几列留 NULL。同一天多行时取更新时间最新的一行。训练状态的词表与 API 不同：导出包写 `PRODUCTIVE`，API 写 `PRODUCTIVE_1`；后来（2026-10-31，见 18）API 的数字后缀在写入时去掉，两边统一存 `PRODUCTIVE`。
-- **优先级**：API 已存档的数据（`raw/personal_api/activities/<id>.json|.fit`、非 `null` 的 `raw/personal_api/daily_summaries/<日期>.json`、`raw/garminconnect/<metric>/<日期>.json`）优先，导出包里对应的那份直接不加载，所以与加载顺序无关。多个导出包按导出日期从旧到新加载；导入一个包后，导出日期不早于它的已存档包会重新加载一遍，保证新包覆盖旧包。重复导入同一个包是幂等的。`rebuild` 在 API 文件之后加载 `raw/export/` 下所有包，结果与直接导入一致（Seam 1 测试逐行比对 `activities`、`records`、`laps`、`daily_wellness`、`garmin_metrics`）；单个包加载失败时 `rebuild` 回滚这个包并继续。
-- **sync 的处理**：`activities` 表里已有的活动（不管来自 API 还是导出包）算"已有"：翻页照常停止，不下载详情和 FIT；最近 7 天的刷新不变。新增 migration `0006_export_packages.sql`，表 `export_packages` 记每个包的导出日期和每日汇总/指标各自的第一天；`db::export_covers` 判断某天是否落在某个包"第一天..导出日期"之间。每日汇总回填把这些日子视作已存档；garminconnect 回填跳过这些日子。今天的快照和最近 7 天照常请求。
-- **真实包结果**（临时数据目录，耗时约 66 s，验证完已删除）：活动 1098 个；FIT 共 17770 个，其中 1096 个 activity FIT 载入，1 个对不上活动，16673 个非 activity 跳过，0 个解析失败；每日汇总 1912 天（2021-08-06..2026-10-30）；Garmin 指标 1909 天（2021-08-07..2026-10-30）。之后的 `runsync rebuild` 也成功重建。
+- **Export date**: the latest day among the modification times of all entries in the package. All entries in the real package are 2026-10-30, so it is stored at `raw/export/2026-10-30/<original file name>`. The package is never extracted to disk: entries are only read into memory and picked by name, and the nested `UploadedFiles_*.zip` are opened in memory too; any single entry over 1 GiB is not read.
+- **Activity units** (cross-checked against the FIT session's distance, duration and calories): `beginTimestamp` is UTC milliseconds; `startTimeLocal` is the local wall-clock time written as if it were UTC, in milliseconds; `duration`/`movingDuration`/`elapsedDuration` are ms; `distance` and `elevationGain/Loss` are cm; `avgSpeed`/`maxSpeed` must be multiplied by 10 to get m/s; `calories` must be divided by 4.19 to get kcal. The values of `activityType` (`running`, `track_running`, `walking` and so on) match the Personal API's type keys, so no mapping is needed. `timeZoneId` is only a Garmin-internal numeric id, so `time_zone` is left NULL.
+- **Matching FIT to activities**: FIT files contain no activityId; they are matched by session start time (Unix seconds) == `beginTimestamp / 1000` (1096 of the 1097 activity FIT files in the real package matched). FIT files whose `file_id.type` is not activity are counted as "not an activity" and skipped; those matching no activity are counted as "matching no activity"; those that fail to parse are counted and skipped.
+- **Garmin metrics**: `MetricsMaxMetData` takes only rows with `sport == RUNNING` (`vo2MaxValue`); `RunRacePredictions` writes the four race predictions; `TrainingHistory` has only the training status, no acute/chronic load, so those columns stay NULL. With several rows on the same day, the row with the latest update time wins. The training status vocabulary differs from the API: the export package writes `PRODUCTIVE`, the API `PRODUCTIVE_1`; later (2026-10-31, see 18) the API's numeric suffix is stripped on write, and both sides store `PRODUCTIVE`.
+- **Precedence**: data already archived from the API (`raw/personal_api/activities/<id>.json|.fit`, non-`null` `raw/personal_api/daily_summaries/<date>.json`, `raw/garminconnect/<metric>/<date>.json`) wins, and the corresponding part of the export package is simply not loaded, so the result does not depend on load order. Several export packages are loaded from oldest to newest export date; after importing a package, the archived packages whose export date is not earlier than it are loaded again, so a newer package overwrites an older one. Importing the same package again is idempotent. `rebuild` loads all packages under `raw/export/` after the API files, with the same result as importing directly (the Seam 1 test compares `activities`, `records`, `laps`, `daily_wellness` and `garmin_metrics` row by row); when one package fails to load, `rebuild` rolls back that package and continues.
+- **How sync handles it**: activities already in the `activities` table (whether from the API or the export package) count as "already there": paging stops as usual, and no detail or FIT is downloaded; the last-7-days refresh is unchanged. New migration `0006_export_packages.sql` adds the table `export_packages`, recording each package's export date and the first day of its daily summaries and of its metrics; `db::export_covers` decides whether a day falls between some package's "first day..export date". The daily summary backfill treats those days as archived; the garminconnect backfill skips them. Today's snapshot and the last 7 days are requested as usual.
+- **Real package results** (temporary data directory, about 66 s, deleted after verification): 1098 activities; 17770 FIT files in total, of which 1096 activity FIT files loaded, 1 matched no activity, 16673 non-activity skipped, 0 parse failures; daily summaries for 1912 days (2021-08-06..2026-10-30); Garmin metrics for 1909 days (2021-08-07..2026-10-30). A later `runsync rebuild` also rebuilt successfully.

@@ -1,37 +1,37 @@
-# 07: 分析报告（固定规则）
+# 07: Analysis report (fixed rules)
 
-**What to build:** 详情页最上面一段中文分析报告：训练类型、有氧能力对比、心率漂移、配速分布、负荷、气温。每条带规则名、结论级别、实际数值和阈值；阈值在 `config.toml` 里可调。
+**What to build:** a Chinese analysis report at the top of the detail page: training type, aerobic fitness comparison, heart-rate drift, pacing, load, air temperature. Each item carries its rule name, verdict level, actual values and thresholds; the thresholds are adjustable in `config.toml`.
 
-**Blocked by:** 03、04、06
+**Blocked by:** 03, 04, 06
 
 **Status:** done
 
-来源：[实施 spec](../spec.md)，User Stories 21–30；Implementation Decisions 里的"分析报告"。
+Source: User Stories 21–30, and "Analysis report" under Implementation Decisions, in the [implementation spec](../spec.md).
 
-- [x] `running/report.py`：纯函数 `run_report(detail, context)`，每条含 `rule, verdict, text, params`，`verdict` 为 `good`、`neutral`、`watch`、`unknown`
-- [x] 六条规则按 spec 实现：训练类型、有氧能力对比、心率漂移、配速分布、负荷、气温
-- [x] 新配置 `[report]`，默认值见 spec；气温阈值沿用 `[aerobic].hot_week_c`
-- [x] 判断不了的规则说明原因（没有心率、没有 GPS、太短、非跑步类）
-- [x] 报告并入 `GET /api/activities/{activity_id}` 的返回
-- [x] 前端：每条一行，结论在前，规则和数值可展开；watch 用红色 `#b0281f`
-- [x] Seam 3 测试：每条规则命中和不命中各一个合成活动；改 `[report]` 阈值后结论随之改变
+- [x] `running/report.py`: pure function `run_report(detail, context)`, each item with `rule, verdict, text, params`; `verdict` is `good`, `neutral`, `watch` or `unknown`
+- [x] The six rules implemented per the spec: training type, aerobic fitness comparison, heart-rate drift, pacing, load, air temperature
+- [x] New config `[report]`, defaults as in the spec; the temperature threshold reuses `[aerobic].hot_week_c`
+- [x] Rules that cannot decide say why (no heart rate, no GPS, too short, not running)
+- [x] The report is merged into the response of `GET /api/activities/{activity_id}`
+- [x] Frontend: one line per item, verdict first, rule and values expandable; watch in red `#b0281f`
+- [x] Seam 3 tests: for each rule, one synthetic activity that hits and one that misses; changing `[report]` thresholds changes the verdict
 
-## 结论（实施记录）
+## Outcome (implementation notes)
 
-- 模块 `analysis/src/running/report.py`：`report_context(d, detail)` 读库（逐秒稳态帧、4 周基线、当周 TRIMP 和 TSB），`run_report(detail, context) -> Report` 是纯函数。返回 `report: {items[], method{name, description, params}}`；每条 `rule, name, verdict, text, params`。`rule` 用英文 id（`training_type`、`aerobic`、`drift`、`pacing`、`load`、`heat`），另加中文 `name` 供前端显示（spec 只列了四个字段，`name` 是自加的）。
-- 报告不进 `SECTIONS`：它要读其他区块的输出（`summary`、`metrics`），所以在 `detail.py` 的 `activity_detail` 里最后算，挂在 `detail["report"]`。
-- 配置 `config.py` 新增 `Report` dataclass 和 `[report]` 段，9 个默认值同 spec。
-- **训练类型（自定细节）**：
-  - "30 秒平滑速度"复用 `[aerobic].smoothing_s`（30 s）和 `aerobic.steady_state` 算出的 `speed_smooth`。中位速度只算"在跑"的秒。
-  - 间歇的"段间有恢复"：两段快跑之间的平滑速度要跌到中位速度以下才算两段，否则合成一段。暂停（`dt_s = 0`）打断一段。
-  - 区间占比只算在跑、有心率的秒，用原始心率；"连续 15 分钟"用平滑心率判断，避免单秒抖动打断。
-  - 没有区间（没有心率或 LTHR）且不是间歇时为 unknown，并说明原因；间歇判断不需要心率。
-  - 训练类型本身没有好坏，verdict 一律 neutral。
-- **有氧能力对比（自定细节）**：基线 = 本次所在周的周一之前 `rolling_weeks`（4）周里，每周有效跑 ≥ `min_runs_per_week`（2）次的周中位数，再取中位数。和趋势图的滚动值不同，这里不要求紧挨的上一周本身有值。没有基线时为 unknown；本次不计入有氧能力时沿用 ticket 06 `metrics.unavailable.aerobic` 的原因。
-- **心率漂移**：直接用 ticket 06 的 `metrics.ef`，60 分钟和 5% 沿用 `longruns.MIN_DURATION_S`、`DECOUPLING_LIMIT_PCT`，不放进 `[report]`。不足 60 分钟为 neutral，只给 EF。
-- **配速分布（自定细节）**：跑的秒按累计距离对半分，比较两半的时间加权 GAP 配速。负分割和匀速都是 good，正分割是 watch。间歇跑不判（unknown）。
-- **负荷（自定细节）**：复用 `load._activity_trimp` 和 `load._series`。"跑前 TSB"取当天的点，"第二天 TSB"取次日的点；ATL/CTL 用当天的点，> `load.SPIKE_RATIO`（1.5）为 watch，否则 neutral。当周按周一到周日。
-- **气温**：≥ `hot_week_c` 为 watch，低于时也出一条 neutral（spec 只说了 watch 和没有数据不出现）。
-- 前端 `static/run.js` 的 `reportSection`（ticket 07 槽，放在概要之前）：每条一行 `<details>`，摘要行是"结论、规则名、一句话"，展开后显示规则 id 和 `params` 表；"怎么算的"显示 `method.description`。CSS 在 `style.css` 末尾 ticket 07 区块，只有 watch 用红色，unknown 用浅灰。
-- 测试 `analysis/tests/test_detail_report.py`（Seam 3，31 个）：间歇 3 段命中、2 段不命中，`interval_min_reps = 4` 后 3 段也不命中；节奏跑 20 分钟连续命中、分段不命中，`tempo_min_s = 480` 后命中；长距离、轻松、混合；没有心率时 unknown；有氧能力好、持平、留意三档，`aerobic_change = 0.05` 后变持平，没有基线和不计入时 unknown；漂移 > 5% watch、0% good、不足 60 分钟 neutral；配速负分割、匀速、正分割，`split_change = 0.04` 后变匀速，间歇不判；负荷首次一小时突增 watch、每天同量 neutral；气温 25 °C watch、15 °C neutral，`hot_week_c = 14` 后 watch，没有气温时不出现；骑车只给负荷。
-- 2026-11-04 用户决定：有氧能力基线放宽为前 4 周所有有效跑的中位数，不要求每周至少 2 次，也不先取周中位数；`params.baseline_weeks` 改为 `baseline_runs`。
+- Module `analysis/src/running/report.py`: `report_context(d, detail)` reads the database (per-second steady-state frame, 4-week baseline, the week's TRIMP and TSB); `run_report(detail, context) -> Report` is a pure function. Returns `report: {items[], method{name, description, params}}`; each item has `rule, name, verdict, text, params`. `rule` is an English id (`training_type`, `aerobic`, `drift`, `pacing`, `load`, `heat`), plus a Chinese `name` for the frontend to display (the spec lists only four fields; `name` is our addition).
+- The report does not go into `SECTIONS`: it reads the output of other sections (`summary`, `metrics`), so it is computed last in `activity_detail` in `detail.py` and attached as `detail["report"]`.
+- Config: `config.py` gains a `Report` dataclass and a `[report]` section, with the 9 defaults from the spec.
+- **Training type (our choice of details)**:
+  - "30-second smoothed speed" reuses `[aerobic].smoothing_s` (30 s) and the `speed_smooth` computed by `aerobic.steady_state`. The median speed counts only "running" seconds.
+  - "Recovery between reps" for intervals: the smoothed speed must drop below the median speed between two fast stretches for them to count as two reps, otherwise they merge into one. A pause (`dt_s = 0`) breaks a rep.
+  - Zone shares count only running seconds with heart rate, using raw heart rate; "15 continuous minutes" is judged on smoothed heart rate, so single-second jitter does not break it.
+  - Without zones (no heart rate or LTHR) and not intervals, it is unknown with the reason; the interval check does not need heart rate.
+  - Training type is neither good nor bad, so its verdict is always neutral.
+- **Aerobic fitness comparison (our choice of details)**: baseline = the median of the weekly medians over the `rolling_weeks` (4) weeks before the Monday of this run's week, counting only weeks with ≥ `min_runs_per_week` (2) valid runs. Unlike the trend chart's rolling value, the week right before does not itself need a value. Without a baseline it is unknown; when this run does not count towards aerobic fitness, the reason from ticket 06's `metrics.unavailable.aerobic` is reused.
+- **Heart-rate drift**: uses ticket 06's `metrics.ef` directly; 60 minutes and 5% reuse `longruns.MIN_DURATION_S` and `DECOUPLING_LIMIT_PCT` and are not in `[report]`. Under 60 minutes it is neutral, with EF only.
+- **Pacing (our choice of details)**: the running seconds are split in half by cumulative distance, and the time-weighted GAP pace of the two halves is compared. Negative split and even pace are both good; a positive split is watch. Interval runs are not judged (unknown).
+- **Load (our choice of details)**: reuses `load._activity_trimp` and `load._series`. "TSB before the run" takes the day's point, "TSB next day" takes the next day's point; ATL/CTL uses the day's point, > `load.SPIKE_RATIO` (1.5) is watch, otherwise neutral. The week is Monday to Sunday.
+- **Air temperature**: ≥ `hot_week_c` is watch; below it a neutral item is still shown (the spec only covers watch, and no item without data).
+- Frontend: `reportSection` in `static/run.js` (the ticket 07 slot, placed before the summary): one `<details>` per item, the summary line being "verdict, rule name, one sentence"; expanding shows the rule id and a `params` table; "怎么算的" (how it is computed) shows `method.description`. CSS is in the ticket 07 block at the end of `style.css`; only watch uses red, unknown uses light grey.
+- Tests `analysis/tests/test_detail_report.py` (Seam 3, 31 tests): intervals hit with 3 reps and miss with 2, and 3 reps miss after `interval_min_reps = 4`; tempo hits with 20 continuous minutes and misses when split, and hits after `tempo_min_s = 480`; long, easy, mixed; unknown without heart rate; aerobic fitness better, flat and watch, flat after `aerobic_change = 0.05`, unknown without a baseline and when not counting; drift > 5% watch, 0% good, under 60 minutes neutral; pacing negative split, even, positive split, even after `split_change = 0.04`, intervals not judged; load watch for a first one-hour spike, neutral for the same amount every day; air temperature 25 °C watch, 15 °C neutral, watch after `hot_week_c = 14`, absent without temperature; cycling gets load only.
+- 2026-11-04, the user's decision: the aerobic fitness baseline is relaxed to the median of all valid runs in the previous 4 weeks, with no minimum of 2 per week and no weekly medians first; `params.baseline_weeks` becomes `baseline_runs`.
