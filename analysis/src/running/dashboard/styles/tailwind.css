@@ -210,6 +210,9 @@ details.how .body pre { @apply m-0 font-mono text-xs whitespace-pre-wrap; }
 .a-band > section.band-volume { @apply border-l border-l-rule pl-7 pr-7; }
 .band-volume .stat-line { @apply gap-5.5 mt-3 mx-0 mb-2.5; }
 .band-volume .foot { @apply flex justify-between items-baseline gap-3 mt-1.5; }
+.vol-chart { @apply cursor-crosshair; }
+.vol-hi { fill: var(--rule); @apply opacity-0 pointer-events-none; }
+.vol-readout { @apply ml-0 mt-1 gap-3.5 text-[13px]; }
 /* race predictions column (ticket 14) */
 .band-predict { @apply col-3; }
 .a-band > section.band-predict { @apply border-l border-l-rule pl-7 pr-0; }
