@@ -1,0 +1,491 @@
+/* Dashboard styles, Tailwind CSS v4 source. Build static/style.css with
+   `uv run python scripts/build_css.py`; CI fails when the two differ.
+
+   Visual base from the dashboard prototype, variant A (commit 8013fab):
+   newsprint background, ink text, red only for warnings and risk (2026-11:
+   no longer for chart annotations, focus, selection or the route).
+   Colour by role (2026-11): one accent for the user's own headline data
+   (weekly bars, aerobic trend, route, current nav), one colour per metric
+   shared by the summary numbers and the per-second curves, a cool-to-warm
+   ramp for HR zones, green and red for report verdicts.
+
+   No preflight: the pages lean on browser defaults (list bullets, paragraph
+   and heading margins, button chrome), so only the theme and utilities
+   layers are imported, with no @source: markup never uses utility classes.
+   The semantic class names the JS builds stay; each
+   rule is spelled with @apply. The rules stay outside @layer, as before:
+   unlayered CSS beats any layer, so layering them would let an injected
+   or third-party sheet override them whatever its specificity. Plain declarations remain where no utility
+   says the same thing exactly (font: inherit, color-mix, dashed strokes). */
+
+@layer theme, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+/* Utility names map onto the :root tokens below; the JS reads the same
+   tokens as var(--ink-3), var(--form-neg) and so on. Only the project
+   palette, fonts, sizes and radii exist: Tailwind's defaults are cleared. */
+@theme inline {
+  --color-*: initial;
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-red: var(--red);
+  --color-red-wash: var(--red-wash);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-hr: var(--hr);
+  --color-pace: var(--pace);
+  --color-alt: var(--alt);
+  --color-cad: var(--cad);
+  --color-good: var(--good);
+  --color-good-wash: var(--good-wash);
+  --color-z1: var(--z1);
+  --color-z2: var(--z2);
+  --color-z3: var(--z3);
+  --color-z4: var(--z4);
+  --color-z5: var(--z5);
+  --color-fit: var(--fit);
+  --color-fat: var(--fat);
+  --color-form-pos: var(--form-pos);
+  --color-form-neg: var(--form-neg);
+  --color-temp: var(--temp);
+  --color-temp-hot: var(--temp-hot);
+  --color-hot-wash: var(--hot-wash);
+  --color-dot: var(--dot);
+  --color-white: #fff;
+
+  --font-*: initial;
+  --font-sans: var(--sans);
+  --font-serif: var(--serif);
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+  --text-*: initial;
+  --text-2xs: 11px;
+  --text-xs: 11.5px;
+  --text-label: 12.5px;
+  --text-sm: 13px;
+  --text-table: 14px;
+  --text-base: 15px;
+
+  --radius-*: initial;
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+}
+
+:root {
+  --paper: #f3efe6;
+  --paper-2: #e9e3d6;
+  --rule: #d2c9b7;
+  --rule-strong: #1c1a17;
+  --ink: #1c1a17;
+  --ink-2: #4a453d;
+  --ink-3: #6b6458;
+  --red: #b0281f;
+  --red-wash: #f3ddd5;
+  --accent: #1d5c78;
+  --accent-soft: #9fbccb;
+  --hr: #a1365a;
+  --pace: #1d5c78;
+  --alt: #86642a;
+  --cad: #5a4f94;
+  --good: #2f6a45;
+  --good-wash: #dce8da;
+  --z1: #a9b6bf;
+  --z2: #5b97a8;
+  --z3: #5f9550;
+  --z4: #d38b2c;
+  --z5: #b0281f;
+  /* training load (ticket 09) */
+  --fit: #1f3d63;
+  --fat: #a5641a;
+  --form-pos: #3f6b4f;
+  --form-neg: #8a6a4a; /* below-zero TSB is normal training, not a warning */
+  /* aerobic trend (ticket 12) */
+  --temp: #a39a8a;
+  --temp-hot: #c0703c;
+  --hot-wash: #f1dcc8;
+  --dot: #8f8676;
+  --sans: "IBM Plex Sans", "Noto Sans SC", system-ui, sans-serif;
+  --serif: "Noto Serif SC", "Songti SC", serif;
+}
+* { @apply box-border; }
+html { @apply bg-paper text-ink; }
+body { @apply m-0 font-sans text-base leading-[1.55] tabular-nums antialiased; }
+::selection { @apply bg-accent text-paper; }
+:focus-visible { @apply outline-2 outline-offset-2 outline-accent; }
+code { @apply font-mono text-[0.92em] bg-paper-2 py-px px-1.25 rounded-sm; }
+h2 { @apply font-serif font-semibold text-[19px] leading-[1.3] normal-nums m-0; }
+a { color: inherit; @apply decoration-rule underline-offset-3; }
+a:hover { @apply decoration-ink; }
+table { @apply border-collapse w-full text-table; }
+th { @apply text-left font-medium text-ink-3 text-label pt-1 px-2 pb-1.5 border-b border-b-rule; }
+td { @apply py-1.75 px-2 border-b border-b-rule; }
+
+/* shell */
+.topbar { @apply flex items-center gap-7 py-0 px-8 h-14 border-b-2 border-b-rule-strong; }
+.brand { @apply font-serif font-black text-[21px] leading-none tracking-[0.02em] normal-nums; }
+.sync { @apply ml-auto text-ink-3 text-sm flex gap-4 items-center; }
+.page { @apply max-w-[1320px] mx-auto pt-7 px-8 pb-30; }
+
+/* type */
+.headline { @apply font-serif font-black text-[30px] leading-[1.25] normal-nums mt-0 mx-0 mb-1.5 tracking-[0.01em] text-balance; }
+.dek { @apply text-ink-2 m-0 max-w-[62ch]; }
+.muted { @apply text-ink-3; }
+.loading { @apply my-8 mx-0 text-[1.05rem] text-ink-2; }
+.small { @apply text-sm; }
+.num { @apply font-sans font-semibold; }
+.big { @apply font-sans font-semibold text-[34px] leading-none normal-nums tracking-[-0.01em]; }
+
+/* status */
+.stat-line { @apply flex gap-8 mt-4.5 mx-0 mb-2.5 flex-wrap; }
+.stat-line div { @apply flex flex-col gap-1.5; }
+.stat-line span.l { @apply text-label text-ink-3; }
+/* home footer: data status, set apart from the sections above */
+.status-foot { @apply mt-14 pt-4.5 border-t border-t-rule-strong grid grid-cols-[auto_1fr] gap-x-10 gap-y-2.5 items-baseline; }
+.status-foot h2 { @apply text-base; }
+.status-foot dl { @apply flex flex-wrap gap-y-3 gap-x-10 m-0; }
+.status-foot dl div { @apply flex items-baseline gap-2.5; }
+.status-foot dt { @apply text-label text-ink-3; }
+.status-foot dd { @apply m-0 tabular-nums; }
+.status-foot p { @apply col-2 m-0; }
+@media (max-width: 720px) {
+  .status-foot { @apply grid-cols-[1fr]; }
+  .status-foot p { @apply col-1; }
+}
+
+/* warnings */
+.warn { @apply text-red mt-0 mx-0 mb-4.5 max-w-[70ch]; }
+.hint { @apply text-ink-2 mt-0 mx-0 mb-4.5 max-w-[70ch]; }
+
+/* empty state */
+.empty { @apply max-w-[640px] my-18 mx-0; }
+.empty ol { @apply pl-5 text-ink-2; }
+.empty li { @apply my-1.5 mx-0; }
+
+/* top band (variant A): load | weekly volume | predictions */
+.a-band { @apply grid grid-cols-[1.35fr_1fr_0.95fr] border-b border-b-rule-strong mb-8; }
+.a-band > section { @apply pt-1 px-7 pb-6 row-1; }
+.a-band > section + section { @apply border-l border-l-rule; }
+.a-band > section:first-child { @apply pl-0; }
+.a-band > section:last-child { @apply pr-0; }
+
+/* charts */
+.chart { @apply relative w-full; }
+.chart svg { @apply block w-full h-full overflow-visible; }
+.chart text { @apply font-sans font-normal text-[12px] leading-[normal] tabular-nums fill-ink-3; }
+
+/* "how is this calculated" */
+details.how { @apply text-sm text-ink-2; }
+details.how summary { @apply cursor-pointer text-ink-3 list-none underline decoration-rule underline-offset-3; }
+details.how summary::-webkit-details-marker { @apply hidden; }
+details.how[open] summary { @apply text-ink; }
+details.how .body { @apply mt-2 py-2.5 px-3 bg-paper-2 rounded-md max-w-[70ch]; }
+details.how .body p { @apply mt-0 mx-0 mb-1.5; }
+
+/* training-load column (ticket 09); chart notes come from svg.js */
+.band-load { @apply col-1; }
+.a-band > section.band-load { @apply pl-0 pr-7; }
+.headline.alert { @apply text-red; }
+.note { @apply absolute text-label leading-[1.4] text-ink-2; }
+.note b { @apply text-ink font-semibold block; }
+.note.alert b { @apply text-red; }
+.legend { @apply flex gap-4 text-sm text-ink-2 flex-wrap; }
+.legend i { @apply inline-block w-3.5 h-0 border-t-2 align-middle mr-1.5; }
+.legend i.bar { border: 0; @apply h-[9px] w-[9px]; }
+.load-foot { @apply flex justify-between items-start gap-3 mt-1.5; }
+/* weekly volume column (ticket 10) */
+.band-volume { @apply col-2; }
+.a-band > section.band-volume { @apply border-l border-l-rule pl-7 pr-7; }
+.band-volume .stat-line { @apply gap-5.5 mt-3 mx-0 mb-2.5; }
+.band-volume .foot { @apply flex justify-between items-baseline gap-3 mt-1.5; }
+/* race predictions column (ticket 14) */
+.band-predict { @apply col-3; }
+.a-band > section.band-predict { @apply border-l border-l-rule pl-7 pr-0; }
+.band-predict table.predict td { @apply py-1.25 px-1.5; }
+.band-predict table.predict td.main { @apply font-semibold; }
+.band-predict table.predict sup { @apply text-[10px] text-ink-3 ml-0.5; }
+.band-predict table.stale { @apply opacity-40; }
+.band-predict .basis { @apply mt-2 mx-0 mb-1; }
+.band-predict .foot { @apply relative mt-1.5; }
+
+/* aerobic trend, full width (ticket 12); crosshair readout from variant C */
+.hot-band { @apply fill-hot-wash; }
+.legend i.bar.hot { @apply bg-hot-wash w-3.5 h-2.5; }
+.aerobic { @apply mb-9; }
+.sec-head { @apply flex items-baseline gap-4 pb-2 border-b border-b-rule-strong mb-3.5 flex-wrap; }
+.sec-head .tools { @apply ml-auto flex gap-3 items-center relative; }
+.runs-search { @apply flex gap-1.5 items-center flex-wrap; }
+.runs-search input { font: inherit; @apply text-sm py-0.5 px-1.5 border border-rule bg-paper text-ink tabular-nums; }
+.runs-search input:focus { @apply outline-2 outline-accent-soft border-accent; }
+.runs-search button { font: inherit; @apply text-sm py-0.5 px-2.5 border border-accent bg-accent text-paper rounded-sm cursor-pointer; }
+.sec-head details.how .body { box-shadow: 0 6px 20px rgba(0,0,0,.12); @apply absolute right-0 z-3 w-[min(70ch,90vw)]; }
+.seg { @apply inline-flex border border-rule rounded-md overflow-hidden; }
+.seg button { font: inherit; border: 0; @apply bg-transparent py-0.75 px-2.5 text-sm cursor-pointer text-ink-2; }
+.seg button + button { @apply border-l border-l-rule; }
+.seg button[aria-pressed="true"] { @apply bg-ink text-paper; }
+.aerobic-top { @apply flex items-baseline gap-6 mb-3.5 flex-wrap; }
+.readout { @apply ml-auto text-sm text-ink-2 flex gap-4.5 min-h-5 flex-wrap; }
+.readout b { @apply text-ink font-semibold; }
+.aerobic-stack { @apply relative cursor-crosshair; }
+.temp-label { @apply mt-1.5 mr-0 mb-0.5 ml-12.5; }
+.xhair { stroke-dasharray: 2 3; @apply stroke-ink stroke-1 opacity-0 pointer-events-none; }
+.xhair-dot { @apply fill-paper stroke-ink stroke-[1.5] opacity-0 pointer-events-none; }
+.race-mark { stroke-dasharray: 4 3; @apply stroke-ink-2 stroke-[1.2]; }
+.legend i.race { border-top: 1.5px dashed var(--ink-2); }
+.aerobic .legend { @apply mt-2; }
+.legend i.dotk { border: 0; @apply w-[7px] h-[7px] rounded-[50%] bg-dot; }
+.legend i.dotk.open { border: 1.4px solid var(--dot); @apply bg-transparent w-2 h-2; }
+
+@media (max-width: 980px) {
+  .a-band { @apply grid-cols-[1fr]; }
+  .a-band > section { border-left: 0 !important; @apply row-auto col-1 pt-1 px-0 pb-6; }
+  .a-band > section.band-load { @apply pr-0; }
+  .page { @apply px-4.5; }
+  .topbar { @apply py-0 px-4.5 gap-3.5; }
+  .headline { @apply text-[24px]; }
+}
+
+/* lower row (variant A): long runs | recent races; long-run table (ticket 13) */
+.a-lower { @apply grid grid-cols-[1fr_1fr] gap-10 mt-9; }
+.a-lower > * { @apply min-w-0; }
+.lower-longruns { @apply col-1; }
+td.r, th.r { @apply text-right; }
+td.dec-high { @apply text-red font-semibold; }
+.lower-races { @apply col-2; }
+tr.soft td { @apply text-ink-3; }
+.lower-longruns .foot { @apply flex justify-between items-baseline gap-3 mt-1.5; }
+@media (max-width: 980px) {
+  .a-lower { @apply grid-cols-[1fr]; }
+  .a-lower > section { @apply col-1; }
+  table { @apply block overflow-x-auto; }
+}
+
+/* "changed since last read" (ticket 15): a dot after a headline number */
+.new-dot { @apply inline-block w-[7px] h-[7px] rounded-[50%] bg-accent my-0 -mr-3 ml-1.25 align-top; }
+.mark-read { font: inherit; background: none; @apply text-sm text-accent border border-accent rounded-sm py-0.75 px-2.5 cursor-pointer inline-flex items-center gap-1.5; }
+.mark-read .new-dot { @apply m-0 align-middle; }
+.mark-read:hover { background: color-mix(in srgb, var(--accent-soft) 30%, var(--paper)); }
+.mark-read[hidden] { @apply hidden; }
+
+/* run-detail ticket 01: top navigation and the activity list (#/runs) */
+a.brand { text-decoration: none; @apply text-ink; }
+.topnav { @apply flex gap-4.5 text-table; }
+.topnav a { text-decoration: none; @apply text-ink-3 py-1 px-0 border-b-2 border-b-transparent; }
+.topnav a:hover { @apply text-ink; }
+.topnav a[aria-current="page"] { @apply text-ink border-b-accent; }
+.runs .sec-head .headline { @apply m-0; }
+.runs select { font: inherit; @apply text-sm text-ink-2 bg-transparent border border-rule rounded-md py-0.75 px-1.5; }
+.runs .count { @apply mt-0 mx-0 mb-1.5; }
+.runs-table td.name { @apply max-w-[32ch] overflow-hidden text-ellipsis whitespace-nowrap; }
+.runs-table td a { text-decoration: none; }
+.runs-table td a:hover { text-decoration: underline; }
+.runs .foot { @apply flex justify-between items-baseline gap-3 mt-2.5 flex-wrap; }
+.pager { @apply flex gap-4 items-baseline; }
+
+/* run-detail ticket 02: activity detail page (#/run/<id>), summary */
+.run-head { @apply mb-4.5; }
+.run-head p { @apply mt-0 mx-0 mb-1; }
+.run-head .headline { @apply m-0; }
+.run section { @apply mb-7; }
+.run-summary .stat-line { @apply gap-7; }
+.run-summary .num { @apply tabular-nums; }
+.a-lower td a { text-decoration: none; }
+.a-lower td a:hover { text-decoration: underline; }
+
+/* run-detail ticket 05: route map, OpenStreetMap tiles under an SVG line */
+.route-map { @apply relative h-[420px] overflow-hidden bg-paper-2 border border-rule cursor-grab touch-none select-none; }
+.route-map.dragging { @apply cursor-grabbing; }
+.route-tiles img { @apply absolute left-0 top-0 w-64 h-64 max-w-none pointer-events-none; }
+.route-tiles img.missing { @apply invisible; }
+.route-overlay { @apply absolute left-0 top-0 pointer-events-none; }
+.route-casing { stroke-opacity: 0.85; stroke-linejoin: round; stroke-linecap: round; @apply fill-none stroke-white stroke-6; }
+.route-line { stroke-linejoin: round; stroke-linecap: round; @apply fill-none stroke-accent stroke-3; }
+.route-start { @apply fill-white stroke-good stroke-3; }
+.route-finish { @apply fill-ink stroke-white stroke-2; }
+.route-controls { @apply absolute top-2.5 right-2.5 flex flex-col gap-1; }
+.route-controls button { font: inherit; @apply text-sm min-w-[30px] h-7 py-0 px-1.5 border border-rule-strong bg-paper text-ink rounded-sm cursor-pointer; }
+.route-controls button:hover { @apply bg-paper-2; }
+.route-scale { @apply absolute left-2.5 bottom-2 flex items-end gap-1.5 text-[12px] text-ink; }
+.route-scalebar { border: 2px solid var(--ink); border-top: 0; background: rgb(255 255 255 / 0.6); @apply block h-1.5; }
+.route-attrib { background: rgb(255 255 255 / 0.8); @apply absolute right-0 bottom-0 py-px px-1.5 text-2xs text-ink-2; }
+.route-attrib a { color: inherit; }
+
+/* run-detail ticket 06: run metrics, HR zones as horizontal bars */
+.run-metrics .stat-line { @apply gap-7; }
+.run-metrics .num.high { @apply text-red; }
+.run-metrics .zones { @apply max-w-[640px]; }
+.run-metrics .zones p { @apply mt-2 mx-0 mb-1.5; }
+.run-metrics .zone { @apply grid grid-cols-[40px_84px_1fr_64px_40px] gap-2.5 items-center h-6; }
+.run-metrics .zone .z { @apply font-semibold whitespace-nowrap; }
+.run-metrics .zone .z::before { content: ""; @apply inline-block w-2 h-2 rounded-xs mr-1.25 align-[1px] bg-current; }
+.run-metrics .zone .z.z1::before { @apply bg-z1; }
+.run-metrics .zone .z.z2::before { @apply bg-z2; }
+.run-metrics .zone .z.z3::before { @apply bg-z3; }
+.run-metrics .zone .z.z4::before { @apply bg-z4; }
+.run-metrics .zone .z.z5::before { @apply bg-z5; }
+.run-metrics .zone .track { @apply h-2.5 bg-paper-2; }
+.run-metrics .zone .track i { @apply block h-full bg-ink-2; }
+.run-metrics .zone .track i.z1 { @apply bg-z1; }
+.run-metrics .zone .track i.z2 { @apply bg-z2; }
+.run-metrics .zone .track i.z3 { @apply bg-z3; }
+.run-metrics .zone .track i.z4 { @apply bg-z4; }
+.run-metrics .zone .track i.z5 { @apply bg-z5; }
+.run-metrics .zone .num { @apply text-right; }
+
+/* run-detail ticket 07: report, one row per rule, verdict first; red only for watch */
+.report-items { @apply list-none m-0 p-0 max-w-[80ch]; }
+.report-items li { @apply border-b border-b-rule py-1.5 px-0; }
+.report-items summary { @apply cursor-pointer list-none grid grid-cols-[5em_7em_1fr] gap-2.5; }
+.report-items summary::-webkit-details-marker { @apply hidden; }
+.report-items .verdict { justify-self: start; align-self: start; @apply font-semibold py-0 px-1.75 rounded-sm text-ink-3; }
+.report-items .verdict-good .verdict { @apply bg-good-wash text-good; }
+.report-items .verdict-watch .verdict { @apply bg-red-wash; }
+.report-items .text b { @apply font-semibold text-ink; }
+.report-items .rule-name { @apply text-ink-2; }
+.report-items .verdict-watch .verdict, .report-items .verdict-watch .text { @apply text-red; }
+.report-items .verdict-unknown .verdict, .report-items .verdict-unknown .text { @apply text-ink-3; }
+.report-items .params { @apply mt-1.5 mr-0 mb-1 ml-[5em] py-2 px-3 bg-paper-2 rounded-md; }
+.report-items .params p { @apply mt-0 mx-0 mb-1; }
+.report-items .params td { @apply pt-px pr-3 pb-px pl-0 tabular-nums; }
+
+/* colour by role: summary numbers in their series colour, run detail back link */
+.num.tone-hr { @apply text-hr; }
+.num.tone-pace { @apply text-pace; }
+.num.tone-alt { @apply text-alt; }
+.num.tone-cad { @apply text-cad; }
+.chart text.ser-label { @apply font-semibold; }
+.run > p.small:first-child a { text-decoration: none; @apply text-accent; }
+.run > p.small:first-child a:hover { text-decoration: underline; }
+
+/* 5K plan page (#/plan): pace keys share the HR-zone ramp, E cool to R hot */
+.plan-head { @apply mb-4.5; }
+.plan-nums { @apply flex flex-wrap gap-y-3.5 gap-x-10 mt-4.5 mx-0 mb-2.5; }
+.plan-num .big { @apply font-serif font-bold text-[30px] leading-[1.15] tabular-nums; }
+.plan-num .tone-goal { @apply text-accent; }
+.feas { @apply inline-block mt-1 py-0 px-1.75 rounded-sm text-label font-semibold; }
+.feas-good { @apply bg-good-wash text-good; }
+.feas-stretch { @apply bg-[#f6e6cc] text-[#8a5a12]; }
+.feas-far { @apply bg-red-wash text-red; }
+.plan-form { @apply flex flex-wrap gap-y-2 gap-x-4 items-center mt-0 mx-0 mb-4.5; }
+.plan-form select { font: inherit; @apply py-px px-1 border border-rule bg-paper text-ink; }
+.plan-days { @apply inline-flex gap-y-0.5 gap-x-2 items-center flex-wrap; }
+.plan-days label { @apply inline-flex gap-0.5 items-center cursor-pointer; }
+.plan-form input[type="checkbox"] { @apply p-0 accent-accent; }
+.plan-form input { font: inherit; @apply py-0.5 px-1.5 border border-rule bg-paper text-ink tabular-nums; }
+.plan-form button { font: inherit; @apply py-0.5 px-2.5 border border-accent bg-accent text-paper rounded-sm cursor-pointer; }
+.plan-h { @apply mt-7.5 mx-0 mb-2; }
+.plan-paces table, .plan-week table { @apply max-w-[980px]; }
+.pushed-tag { @apply inline-block mt-0.5 py-0 px-1.25 rounded-sm text-xs whitespace-nowrap bg-good-wash text-good; }
+.push-note { @apply border-l-3 border-l-good pl-2; }
+.pk { @apply inline-block min-w-[1.6em] text-center py-0 px-1 rounded-sm font-bold text-label text-white; }
+.pk-E { @apply bg-z2 text-ink; }
+.pk-M { @apply bg-z3 text-ink; }
+.pk-T { @apply bg-z4 text-ink; }
+.pk-I { @apply bg-z5; }
+.pk-R { @apply bg-cad; }
+.plan-week { @apply mt-4.5 mx-0 mb-0; }
+.plan-week h3 { @apply font-serif font-bold text-[17px] leading-[1.3] normal-nums mt-0 mx-0 mb-1; }
+.plan-week h3 .muted { @apply font-sans font-normal text-[13.5px] leading-[1.3] normal-nums; }
+.plan-week td.day { @apply w-[4em] text-ink-3; }
+.plan-week td.kind { @apply w-[5em]; }
+.plan-week td.r { @apply w-[6em]; }
+.plan-week tr.k-Q td { @apply bg-paper-2; }
+.plan-week tr.k-Q td.kind, .plan-week tr.k-race td.kind, .plan-week tr.k-parkrun td.kind { @apply font-semibold; }
+.plan-week tr.k-parkrun td { @apply bg-paper-2; }
+.plan-week tr.k-parkrun td:first-child { box-shadow: inset 3px 0 0 var(--z5); }
+.plan-week tr.k-race td { @apply bg-good-wash; }
+.plan-week tr.k-rest td { @apply text-ink-3; }
+.plan-rules ul { @apply max-w-[70ch] pl-[1.2em]; }
+.plan-rules li { @apply my-1 mx-0; }
+
+/* plan review (#/review): one card per run session, newest first */
+.review { @apply max-w-[980px]; }
+.review .plan-head { @apply grid grid-cols-[1fr_auto] gap-y-0 gap-x-4; }
+.review .plan-head .tools { align-self: end; @apply col-2 row-1 relative; }
+.review .plan-head .tools details.how .body { box-shadow: 0 6px 20px rgba(0,0,0,.12); @apply absolute right-0 z-3 w-[min(70ch,90vw)]; }
+.rv-pick { @apply mt-7 mx-0 mb-0; }
+.rv-pick select { @apply text-base py-0.75 px-1.5 ml-1.5 max-w-full; }
+.rv-card { @apply mt-3 mx-0 mb-0; }
+.rv-card h2 .wo { @apply font-normal text-ink-2; }
+.rv-tag { @apply text-sm font-semibold py-0 px-1.75 rounded-sm text-ink-3 bg-paper-2; }
+.rv-tag.v-good { @apply bg-good-wash text-good; }
+.rv-tag.v-watch, .rv-tag.st-missed { @apply bg-red-wash text-red; }
+.rv-card.st-missed h2, .rv-card.st-today h2 { @apply text-ink-3; }
+.rv-line { @apply mt-0 mx-0 mb-2.5; }
+.rv-table { @apply mt-0 mx-0 mb-2.5 tabular-nums; }
+.rv-table th, .rv-table td { @apply whitespace-nowrap; }
+.rv-table tr.rep-fast td:last-child, .rv-table tr.rep-slow td:last-child, .rv-table tr.rep-missing td:last-child { @apply text-red font-semibold; }
+.rv-table tr.rep-ok td:last-child { @apply text-good; }
+.rv-table tr.total td { @apply font-semibold; }
+.rv-notes { @apply list-none m-0 p-0; }
+.rv-notes li { @apply grid grid-cols-[4em_1fr] gap-2.5 py-1 px-0 border-b border-b-rule; }
+.rv-notes .verdict { justify-self: start; align-self: start; @apply font-semibold py-0 px-1.75 rounded-sm text-ink-3; }
+.rv-notes .verdict-good .verdict { @apply bg-good-wash text-good; }
+.rv-notes .verdict-watch .verdict { @apply bg-red-wash text-red; }
+.rv-notes .verdict-watch .text { @apply text-red; }
+.rv-next { @apply mt-9 mx-0 mb-0; }
+
+/* Auckland parkrun courses (#/parkruns): summary table, then one card per course */
+.parkruns { @apply max-w-[980px]; }
+.parkruns .plan-head { @apply grid grid-cols-[1fr_auto] gap-y-0 gap-x-4; }
+.parkruns .plan-head > :not(.tools) { @apply col-1; }
+.parkruns .plan-head .tools { align-self: end; @apply col-2 row-1 relative; }
+.parkruns .plan-head .tools details.how .body { box-shadow: 0 6px 20px rgba(0,0,0,.12); @apply absolute right-0 z-3 w-[min(70ch,90vw)]; }
+.pr-summary table th, .pr-summary table td { @apply whitespace-nowrap; }
+.pr-tag { @apply text-label font-semibold py-0 px-1.75 rounded-sm whitespace-nowrap align-middle; }
+.pr-flat { @apply bg-good-wash text-good; }
+.pr-rolling { @apply bg-paper-2 text-ink-2; }
+.pr-hilly { background: color-mix(in srgb, var(--alt) 18%, var(--paper)); @apply text-alt; }
+.pr-steep { @apply bg-alt text-paper; }
+.pr-pick { @apply mt-8 mx-0 mb-0 scroll-mt-4; }
+.pr-pick select { @apply text-base py-0.75 px-1.5; }
+.pr-course { @apply mt-3 mx-0 mb-0; }
+.pr-course h3 { @apply text-table font-semibold mt-3.5 mx-0 mb-1; }
+.pr-body { @apply grid grid-cols-[minmax(0,300px)_minmax(0,1fr)] gap-y-0 gap-x-8; }
+.pr-splits tfoot td { border-bottom: 0; @apply font-semibold; }
+.pr-strategy, .pr-notes { @apply pl-[1.2em] my-1 mx-0 max-w-[70ch]; }
+.pr-strategy li, .pr-notes li { @apply my-1 mx-0; }
+@media (max-width: 760px) {
+  .pr-body { @apply grid-cols-[1fr]; }
+  .parkruns .plan-head { @apply block; }
+}
+
+/* home "本周" strip (week.js): the plan's current week above the status band */
+.week-strip { @apply grid grid-cols-[auto_1fr_auto_minmax(16em,auto)] gap-y-1.5 gap-x-8 items-center pt-1 px-0 pb-4.5 mb-6 border-b border-b-rule-strong; }
+.week-strip > .loading, .week-strip > .warn { @apply col-span-full m-0; }
+.ws-title h2 { @apply font-serif font-bold text-[20px] leading-[1.25] normal-nums m-0; }
+.ws-days { @apply flex gap-0 list-none m-0 p-0; }
+.ws-day { @apply py-0.5 px-4 border-l border-l-rule min-w-[6.5em]; }
+.ws-day:first-child { border-left: 0; @apply pl-0; }
+.ws-kind { @apply font-semibold; }
+.ws-st { @apply inline-block mt-0.5 py-0 px-1.5 rounded-sm bg-paper-2 text-ink-3; }
+.ws-day.st-done .ws-st { @apply bg-good-wash text-good; }
+.ws-day.st-missed .ws-st { @apply bg-red-wash text-red; }
+.ws-day.st-today .ws-st { @apply bg-accent text-paper; }
+.ws-sum b { @apply text-[22px]; }
+.ws-side { justify-self: end; @apply text-right; }
+.ws-next { @apply mt-0 mx-0 mb-1; }
+.ws-empty { @apply m-0 col-[2/-1]; }
+.ws-empty a { @apply ml-2; }
+.ws-links { @apply flex gap-4 justify-end; }
+@media (max-width: 1100px) {
+  .week-strip { @apply grid-cols-[auto_1fr_auto]; }
+  .ws-side { justify-self: start; @apply col-span-full text-left; }
+  .ws-links { @apply justify-start; }
+}
+
+/* plan weeks fold (plan.js): this week and next open, today's row marked */
+.plan-week summary { @apply cursor-pointer list-outside ml-[1.1em]; }
+.plan-week summary h3 { @apply inline; }
+.plan-week:not([open]) { @apply mt-1.5; }
+.plan-week[open] summary { @apply mb-1; }
+.wk-tag { @apply inline-block ml-2 py-0 px-1.5 rounded-sm font-sans font-semibold text-label leading-[1.6] normal-nums bg-accent text-paper align-[2px]; }
+.plan-week tr.today td { background: color-mix(in srgb, var(--accent-soft) 35%, var(--paper)); }
+.plan-week tr.today td.day { @apply text-ink font-semibold; }
+.today-tag { @apply block w-max mt-0.5 py-0 px-1.25 rounded-sm text-xs font-semibold bg-accent text-paper; }
