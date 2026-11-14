@@ -290,8 +290,8 @@ function notes(wrap, svg, weeks, g, hotC) {
     for (const q of placed) if (Math.abs(ty - q) < 62) ty = q + 62;
     ty = Math.min(ty, MAIN.h - MAIN.b - 50);
     placed.push(ty);
-    svg.append(s("circle", { cx: px, cy: py, r: 4.5, fill: "none", stroke: "var(--red)", "stroke-width": 1.5 }));
-    svg.append(s("polyline", { points: `${px + 5},${py} ${W - M.r + 6},${ty + 8} ${W - M.r + 12},${ty + 8}`, fill: "none", stroke: "var(--red)", "stroke-width": 1 }));
+    svg.append(s("circle", { cx: px, cy: py, r: 4.5, fill: "none", stroke: "var(--ink-2)", "stroke-width": 1.5 }));
+    svg.append(s("polyline", { points: `${px + 5},${py} ${W - M.r + 6},${ty + 8} ${W - M.r + 12},${ty + 8}`, fill: "none", stroke: "var(--ink-2)", "stroke-width": 1 }));
     const note = h("div", { class: "note", style: `left:${((W - M.r + 16) / W) * 100}%;top:${(ty / MAIN.h) * 100}%;width:${((M.r - 18) / W) * 100}%` });
     note.append(n.node);
     wrap.append(note);

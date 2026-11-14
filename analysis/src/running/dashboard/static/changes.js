@@ -1,10 +1,10 @@
-// "Changed since last read" red dots (ticket 15).
+// "Changed since last read" dots (ticket 15).
 //
 // The browser's localStorage holds the last *read* value of each headline
 // number, as the text shown on the page (so rounding noise never counts as a
 // change). Nothing is written on the server.
 //
-// - A number whose shown text differs from its read value gets a red dot.
+// - A number whose shown text differs from its read value gets a dot.
 // - A number with no read value yet (first open, or a newly added number) gets
 //   no dot; its current text is stored as the read value straight away.
 // - "全部标为已读" stores every current value as read and clears all dots.
@@ -89,7 +89,7 @@ function pageTracker() {
 }
 
 /** Register a headline number shown in `el` under `key`; `shown` is its text.
- *  Appends a red dot to `el` when the number changed since the last read.
+ *  Appends a dot to `el` when the number changed since the last read.
  *  Returns `el`. */
 export function watch(el, key, shown) {
   const r = pageTracker().observe(key, shown);

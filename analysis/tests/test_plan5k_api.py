@@ -55,7 +55,8 @@ def test_the_current_level_comes_from_the_best_recent_race(data_dir, analysis_db
     # Weeks 1-4 train at the current VDOT, weeks 5-8 one higher.
     assert body["weeks"][0]["vdot"] == pytest.approx(body["current"]["vdot"], abs=0.05)
     assert body["weeks"][4]["vdot"] == pytest.approx(body["current"]["vdot"] + 1, abs=0.05)
-    assert all("races.csv" not in w and "起步" not in w for w in body["warnings"])
+    assert all("races.csv" not in w for w in body["warnings"])
+    assert all("起步" not in n for n in body["notes"])
 
 
 def test_a_typed_5k_time_overrides_races_csv(data_dir, client_factory):
@@ -72,7 +73,8 @@ def test_without_a_race_the_level_is_assumed_and_says_so(data_dir, client_factor
 
     assert body["current"]["source"] == "assumed"
     assert any("races.csv" in w for w in body["warnings"])
-    assert any("30 km" in w for w in body["warnings"])  # no recent running either
+    assert any("30 km" in n for n in body["notes"])  # no recent running either
+    assert all("30 km" not in w for w in body["warnings"])  # guidance, not a warning
     assert body["base_km"] == 30
 
 

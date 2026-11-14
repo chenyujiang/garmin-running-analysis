@@ -113,7 +113,7 @@ const SER_M = { l: 56, r: 16 };
 const SER_PANEL = { h: 120, t: 10, b: 8, axis: 22 };
 const SER_BANDS = [
   ["pause", "暂停", "var(--ink-3)", 0.22],
-  ["walking", "走路", "var(--red)", 0.08],
+  ["walking", "走路", "var(--alt)", 0.12],
   ["steady", "稳态", "var(--dot)", 0.1],
 ];
 

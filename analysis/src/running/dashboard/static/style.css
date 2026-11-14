@@ -1,5 +1,6 @@
 /* Visual base from the dashboard prototype, variant A (commit 8013fab):
-   newsprint background, ink text, red only for annotations and warnings.
+   newsprint background, ink text, red only for warnings and risk (2026-11:
+   no longer for chart annotations, focus, selection or the route).
    Colour by role (2026-11): one accent for the user's own headline data
    (weekly bars, aerobic trend, route, current nav), one colour per metric
    shared by the summary numbers and the per-second curves, a cool-to-warm
@@ -33,8 +34,8 @@
 * { box-sizing: border-box; }
 html { background: var(--paper); color: var(--ink); }
 body { margin: 0; font: 15px/1.55 var(--sans); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
-::selection { background: var(--red); color: var(--paper); }
-:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+::selection { background: var(--accent); color: var(--paper); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.92em; background: var(--paper-2); padding: 1px 5px; border-radius: 3px; }
 
 /* shell */
@@ -68,6 +69,7 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 
 /* warnings */
 .warn { color: var(--red); margin: 0 0 18px; max-width: 70ch; }
+.hint { color: var(--ink-2); margin: 0 0 18px; max-width: 70ch; }
 
 /* empty state */
 .empty { max-width: 640px; margin: 72px 0; }
@@ -100,13 +102,14 @@ details.how .body p { margin: 0 0 6px; }
   --fit: #1f3d63;
   --fat: #a5641a;
   --form-pos: #3f6b4f;
-  --form-neg: #b0281f;
+  --form-neg: #8a6a4a; /* below-zero TSB is normal training, not a warning */
 }
 .band-load { grid-column: 1; }
 .a-band > section.band-load { padding-left: 0; padding-right: 28px; }
 .headline.alert { color: var(--red); }
 .note { position: absolute; font-size: 12.5px; line-height: 1.4; color: var(--ink-2); }
-.note b { color: var(--red); font-weight: 600; display: block; }
+.note b { color: var(--ink); font-weight: 600; display: block; }
+.note.alert b { color: var(--red); }
 .legend { display: flex; gap: 16px; font-size: 13px; color: var(--ink-2); flex-wrap: wrap; }
 .legend i { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
 .legend i.bar { height: 9px; border: 0; width: 9px; }
@@ -149,8 +152,8 @@ details.how .body p { margin: 0 0 6px; }
 .temp-label { margin: 6px 0 2px 50px; }
 .xhair { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0; pointer-events: none; }
 .xhair-dot { fill: var(--paper); stroke: var(--ink); stroke-width: 1.5; opacity: 0; pointer-events: none; }
-.race-mark { stroke: var(--red); stroke-width: 1.2; stroke-dasharray: 4 3; }
-.legend i.race { border-top: 1.5px dashed var(--red); }
+.race-mark { stroke: var(--ink-2); stroke-width: 1.2; stroke-dasharray: 4 3; }
+.legend i.race { border-top: 1.5px dashed var(--ink-2); }
 .aerobic .legend { margin-top: 8px; }
 .legend i.dotk { width: 7px; height: 7px; border: 0; border-radius: 50%; background: var(--dot); }
 .legend i.dotk.open { background: transparent; border: 1.4px solid var(--dot); width: 8px; height: 8px; }
@@ -183,10 +186,10 @@ tr.soft td { color: var(--ink-3); }
 }
 
 /* "changed since last read" (ticket 15): red dot after a headline number */
-.new-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--red); margin: 0 -12px 0 5px; vertical-align: top; }
-.mark-read { font: inherit; font-size: 13px; color: var(--red); background: none; border: 1px solid var(--red); border-radius: 3px; padding: 3px 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.new-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin: 0 -12px 0 5px; vertical-align: top; }
+.mark-read { font: inherit; font-size: 13px; color: var(--accent); background: none; border: 1px solid var(--accent); border-radius: 3px; padding: 3px 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
 .mark-read .new-dot { margin: 0; vertical-align: middle; }
-.mark-read:hover { background: var(--red-wash); }
+.mark-read:hover { background: color-mix(in srgb, var(--accent-soft) 30%, var(--paper)); }
 .mark-read[hidden] { display: none; }
 
 /* run-detail ticket 01: top navigation and the activity list (#/runs) */
@@ -223,7 +226,7 @@ a.brand { text-decoration: none; color: var(--ink); }
 .route-tiles img.missing { visibility: hidden; }
 .route-overlay { position: absolute; left: 0; top: 0; pointer-events: none; }
 .route-casing { fill: none; stroke: #fff; stroke-opacity: 0.85; stroke-width: 6; stroke-linejoin: round; stroke-linecap: round; }
-.route-line { fill: none; stroke: var(--red); stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+.route-line { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
 .route-start { fill: #fff; stroke: var(--good); stroke-width: 3; }
 .route-finish { fill: var(--ink); stroke: #fff; stroke-width: 2; }
 .route-controls { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; }
@@ -359,8 +362,8 @@ a.brand { text-decoration: none; color: var(--ink); }
 .pr-tag { font-size: 12.5px; font-weight: 600; padding: 0 7px; border-radius: 3px; white-space: nowrap; vertical-align: middle; }
 .pr-flat { background: var(--good-wash); color: var(--good); }
 .pr-rolling { background: var(--paper-2); color: var(--ink-2); }
-.pr-hilly { background: #efe2c6; color: var(--alt); }
-.pr-steep { background: var(--red-wash); color: var(--red); }
+.pr-hilly { background: color-mix(in srgb, var(--alt) 18%, var(--paper)); color: var(--alt); }
+.pr-steep { background: var(--alt); color: var(--paper); }
 .pr-pick { margin: 32px 0 0; scroll-margin-top: 16px; }
 .pr-pick select { font-size: 15px; padding: 3px 6px; }
 .pr-course { margin: 12px 0 0; }
