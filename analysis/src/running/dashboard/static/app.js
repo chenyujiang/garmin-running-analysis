@@ -126,7 +126,6 @@ function overview(s) {
       stat("最近一次同步", s.last_sync_utc ? fmtDateTime(s.last_sync_utc) : "未知"),
       stat("最近一次活动", s.latest_activity_local ? fmtDate(s.latest_activity_local) : "—"),
     ),
-    dataDirNote(s),
   );
 }
 
@@ -134,6 +133,8 @@ function stat(label, value) {
   return h("div", {}, h("dt", {}, label), h("dd", { class: "num" }, value));
 }
 
+// Only on the empty page, where it tells where the data is expected; the footer
+// of a working dashboard leaves the local path out.
 function dataDirNote(s) {
   return h("p", { class: "small muted" },
     "数据目录：", h("code", {}, s.data_dir), "（由 ", h("code", {}, "RUNNING_DATA_DIR"), " 指定）");

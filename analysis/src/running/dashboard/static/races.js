@@ -31,11 +31,23 @@ async function load(section) {
   section.replaceChildren(head(), ...render(v));
 }
 
+/** No races.csv yet: one short line; how to add it folds away. */
+function missingHint() {
+  return [
+    h("p", { class: "small muted" }, "还没有比赛记录。"),
+    h("details", { class: "how" },
+      h("summary", {}, "怎么添加"),
+      h("div", { class: "body" },
+        h("p", {}, "在数据目录新建 ", h("code", {}, "races.csv"), "，第一行写列名，每场比赛一行："),
+        h("pre", {}, "date,activity_id,distance_m,time_s,all_out,note\n2026-03-01,,5000,1260,yes,parkrun"))),
+  ];
+}
+
 const pace = (s) => `${Math.floor(Math.round(s) / 60)}:${String(Math.round(s) % 60).padStart(2, "0")}`;
 
 function render(v) {
   // A missing races.csv is normal until the first race: grey hint, not an error.
-  if (v.races_error?.kind === "missing") return [h("p", { class: "small muted" }, v.races_error.message)];
+  if (v.races_error?.kind === "missing") return missingHint();
   if (v.races_error) return [h("p", { class: "warn small" }, v.races_error.message)];
   if (!v.races.length) return [h("p", { class: "small muted" }, "races.csv 里还没有比赛。")];
   return [
