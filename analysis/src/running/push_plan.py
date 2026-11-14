@@ -26,6 +26,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -138,11 +139,27 @@ def push_status(plan: Plan5k, state: dict[str, Any] | None) -> PushStatus | None
     }
 
 
-def save_state(path: Path, state: dict[str, Any]) -> None:
+# On Windows, replacing a file that another process holds open for a moment
+# (a virus scanner or the search indexer reading the file just written) fails
+# with PermissionError; the hold clears within a fraction of a second.
+REPLACE_TRIES = 6
+REPLACE_WAIT_S = 0.05
+
+
+def save_state(
+    path: Path, state: dict[str, Any], sleep: Callable[[float], None] = time.sleep
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     part = path.with_suffix(".json.part")
     part.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    part.replace(path)
+    for attempt in range(1, REPLACE_TRIES + 1):
+        try:
+            part.replace(path)
+            return
+        except PermissionError:
+            if attempt == REPLACE_TRIES:
+                raise
+            sleep(REPLACE_WAIT_S * attempt)  # 0.05 s, 0.1 s, ... up to 0.75 s in all
 
 
 def cooldown_path(state_dir: Path) -> Path:

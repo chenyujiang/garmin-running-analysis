@@ -9,11 +9,19 @@ import os
 import subprocess
 import sys
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from synthetic import insert_activity
 
-from running.push_plan import STATE_FILE, main, script_path, week_one_start
+from running.push_plan import (
+    REPLACE_TRIES,
+    STATE_FILE,
+    main,
+    save_state,
+    script_path,
+    week_one_start,
+)
 
 TODAY = "2026-11-08"
 HEADER = "date,activity_id,distance_m,time_s,all_out,note\n"
@@ -215,6 +223,40 @@ def test_an_expired_cooldown_does_not_block(data):
     cooldown(data).write_text(json.dumps(marker), encoding="utf-8")
 
     assert main([*ARGS, "--apply"], runner=fake_runner(FakeGarmin())) == 0
+
+
+def held_open(monkeypatch, times):
+    """Path.replace fails `times` times, as when a scanner holds the file."""
+    real, calls = Path.replace, []
+
+    def replace(self, target):
+        calls.append(target)
+        if len(calls) <= times:
+            raise PermissionError(5, "Access is denied")
+        return real(self, target)
+
+    monkeypatch.setattr(Path, "replace", replace)
+    return calls
+
+
+def test_saving_the_state_retries_while_the_file_is_held(tmp_path, monkeypatch):
+    calls, waits = held_open(monkeypatch, 2), []
+    path = tmp_path / "state" / STATE_FILE
+
+    save_state(path, {"n": 1}, sleep=waits.append)
+
+    assert json.loads(path.read_text(encoding="utf-8")) == {"n": 1}
+    assert len(calls) == 3 and len(waits) == 2
+    assert not path.with_suffix(".json.part").exists()
+
+
+def test_saving_the_state_gives_up_when_the_file_stays_held(tmp_path, monkeypatch):
+    held_open(monkeypatch, REPLACE_TRIES)
+    waits = []
+
+    with pytest.raises(PermissionError):
+        save_state(tmp_path / STATE_FILE, {"n": 1}, sleep=waits.append)
+    assert len(waits) == REPLACE_TRIES - 1
 
 
 @pytest.mark.parametrize(
