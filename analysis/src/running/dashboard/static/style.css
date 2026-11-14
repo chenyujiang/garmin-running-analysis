@@ -373,3 +373,37 @@ a.brand { text-decoration: none; color: var(--ink); }
   .pr-body { grid-template-columns: 1fr; }
   .parkruns .plan-head { display: block; }
 }
+
+/* home "本周" strip (week.js): the plan's current week above the status band */
+.week-strip { display: grid; grid-template-columns: auto 1fr auto minmax(16em, auto); gap: 6px 32px; align-items: center; padding: 4px 0 18px; margin-bottom: 24px; border-bottom: 1px solid var(--rule-strong); }
+.week-strip > .loading, .week-strip > .warn { grid-column: 1 / -1; margin: 0; }
+.ws-title h2 { font: 700 20px/1.25 var(--serif); margin: 0; }
+.ws-days { display: flex; gap: 0; list-style: none; margin: 0; padding: 0; }
+.ws-day { padding: 2px 16px; border-left: 1px solid var(--rule); min-width: 6.5em; }
+.ws-day:first-child { border-left: 0; padding-left: 0; }
+.ws-kind { font-weight: 600; }
+.ws-st { display: inline-block; margin-top: 2px; padding: 0 6px; border-radius: 3px; background: var(--paper-2); color: var(--ink-3); }
+.ws-day.st-done .ws-st { background: var(--good-wash); color: var(--good); }
+.ws-day.st-missed .ws-st { background: var(--red-wash); color: var(--red); }
+.ws-day.st-today .ws-st { background: var(--accent); color: var(--paper); }
+.ws-sum b { font-size: 22px; }
+.ws-side { justify-self: end; text-align: right; }
+.ws-next { margin: 0 0 4px; }
+.ws-empty { margin: 0; grid-column: 2 / -1; }
+.ws-empty a { margin-left: 8px; }
+.ws-links { display: flex; gap: 16px; justify-content: flex-end; }
+@media (max-width: 1100px) {
+  .week-strip { grid-template-columns: auto 1fr auto; }
+  .ws-side { grid-column: 1 / -1; justify-self: start; text-align: left; }
+  .ws-links { justify-content: flex-start; }
+}
+
+/* plan weeks fold (plan.js): this week and next open, today's row marked */
+.plan-week summary { cursor: pointer; list-style-position: outside; margin-left: 1.1em; }
+.plan-week summary h3 { display: inline; }
+.plan-week:not([open]) { margin-top: 6px; }
+.plan-week[open] summary { margin-bottom: 4px; }
+.wk-tag { display: inline-block; margin-left: 8px; padding: 0 6px; border-radius: 3px; font: 600 12.5px/1.6 var(--sans, inherit); background: var(--accent); color: var(--paper); vertical-align: 2px; }
+.plan-week tr.today td { background: color-mix(in srgb, var(--accent-soft) 35%, var(--paper)); }
+.plan-week tr.today td.day { color: var(--ink); font-weight: 600; }
+.today-tag { display: block; width: max-content; margin-top: 2px; padding: 0 5px; border-radius: 3px; font-size: 11.5px; font-weight: 600; background: var(--accent); color: var(--paper); }

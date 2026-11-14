@@ -21,6 +21,7 @@ import { reviewPage } from "./review.js";
 import { runPage } from "./run.js";
 import { runsPage } from "./runs.js";
 import { volumeSection } from "./volume.js";
+import { weekSection } from "./week.js";
 
 const main = document.getElementById("main");
 const syncLine = document.getElementById("sync-line");
@@ -113,7 +114,7 @@ function lower() {
 }
 
 function summary(s) {
-  return h("div", {}, band(), aerobicSection(), lower(), overview(s));
+  return h("div", {}, weekSection(), band(), aerobicSection(), lower(), overview(s));
 }
 
 function overview(s) {
