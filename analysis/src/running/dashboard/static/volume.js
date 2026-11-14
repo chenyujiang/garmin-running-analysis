@@ -3,7 +3,7 @@
 // and a "how is this calculated" note.
 
 import { watch } from "./changes.js";
-import { h } from "./dom.js";
+import { chartKeys, h } from "./dom.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -79,7 +79,16 @@ function svg(tag, attrs = {}, text) {
   return el;
 }
 
-/** Hand-written SVG bars, one per week, oldest left. Unfinished week lighter. */
+const HINT = "鼠标移到图上，或选中图后按 ← →，读出那一周的数值";
+const shortDay = (iso) => { const [, mo, d] = iso.split("-"); return `${Number(mo)}.${Number(d)}`; };
+const addDays = (iso, n) => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/** Hand-written SVG bars, one per week, oldest left. Unfinished week lighter.
+ *  Hover or ← → on the focused chart moves a highlight and reads that week out. */
 function barChart(weeks) {
   const W = 380, H = 190, m = { t: 14, r: 8, b: 26, l: 30 };
   const iw = W - m.l - m.r, ih = H - m.t - m.b;
@@ -89,8 +98,9 @@ function barChart(weeks) {
   const sy = (k) => m.t + ih - (k / top) * ih;
   const slot = iw / weeks.length, bw = slot * 0.72;
 
-  const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none", role: "img",
-    "aria-label": "近 12 周周跑量" });
+  const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none", "aria-hidden": "true" });
+  const hi = svg("rect", { class: "vol-hi", x: 0, y: m.t, width: slot, height: ih });
+  root.append(hi);
   for (let k = 0; k <= top; k += step) {
     const y = sy(k);
     root.append(svg("line", { x1: m.l, x2: W - m.r, y1: y, y2: y, stroke: "var(--rule)", "stroke-width": 1 }));
@@ -100,10 +110,8 @@ function barChart(weeks) {
     const x = m.l + i * slot + (slot - bw) / 2;
     const k = w.distance_m / 1000;
     if (k > 0) {
-      const bar = svg("rect", { x, y: sy(k), width: bw, height: sy(0) - sy(k),
-        fill: w.complete ? "var(--accent)" : "var(--accent-soft)" });
-      bar.append(svg("title", {}, `${w.week_start} 起一周：${km(w.distance_m)} km，${w.runs} 次跑步${w.complete ? "" : "（未完）"}`));
-      root.append(bar);
+      root.append(svg("rect", { x, y: sy(k), width: bw, height: sy(0) - sy(k),
+        fill: w.complete ? "var(--accent)" : "var(--accent-soft)" }));
     }
     if ((weeks.length - 1 - i) % 3 === 0) {  // every third week, ending at this week
       const [, mo, d] = w.week_start.split("-");
@@ -111,5 +119,28 @@ function barChart(weeks) {
         `${Number(mo)}/${Number(d)}`));
     }
   });
-  return h("div", { class: "chart", style: `aspect-ratio:${W}/${H}` }, root);
+
+  const chart = h("div", { class: "chart vol-chart", style: `aspect-ratio:${W}/${H}` }, root);
+  const readout = h("p", { class: "readout vol-readout", "aria-live": "polite" }, h("span", { class: "muted" }, HINT));
+  const idle = readout.innerHTML;
+  const show = (i) => {
+    const w = weeks[i];
+    hi.setAttribute("x", m.l + i * slot);
+    hi.style.opacity = 1;
+    readout.replaceChildren(
+      h("span", {}, h("b", {}, `${shortDay(w.week_start)}–${shortDay(addDays(w.week_start, 6))}`), w.complete ? "" : "（本周未完）"),
+      h("span", {}, h("b", {}, km(w.distance_m)), " km"),
+      h("span", {}, h("b", {}, String(w.runs)), " 次跑步"),
+    );
+  };
+  const hide = () => { hi.style.opacity = 0; readout.innerHTML = idle; };
+  const go = chartKeys(chart, weeks.length, "近 12 周周跑量柱状图，按 ← → 逐周查看", show, hide);
+  chart.addEventListener("mousemove", (e) => {
+    const box = root.getBoundingClientRect();
+    const vx = ((e.clientX - box.left) / box.width) * W;
+    if (vx < m.l || vx > W - m.r) return hide();
+    go(Math.floor((vx - m.l) / slot));
+  });
+  chart.addEventListener("mouseleave", hide);
+  return h("div", {}, chart, readout);
 }

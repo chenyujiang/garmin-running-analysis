@@ -464,6 +464,20 @@ details.how .body pre {
   justify-content: space-between;
   gap: calc(var(--spacing) * 3);
 }
+.vol-chart {
+  cursor: crosshair;
+}
+.vol-hi {
+  fill: var(--rule);
+  pointer-events: none;
+  opacity: 0%;
+}
+.vol-readout {
+  margin-top: var(--spacing);
+  margin-left: 0px;
+  gap: calc(var(--spacing) * 3.5);
+  font-size: 13px;
+}
 .band-predict {
   grid-column: 3;
 }
