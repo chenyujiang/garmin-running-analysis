@@ -5,7 +5,7 @@
 // weeks as light bands behind both. Crosshair readout as in variant C.
 // Empty weeks stay empty: no dot, and both the line and the bars break there.
 
-import { h } from "./dom.js";
+import { chartKeys, h } from "./dom.js";
 import { svgEl as s } from "./svg.js";
 
 const RANGES = [["6m", "半年"], ["1y", "1 年"], ["2y", "2 年"], ["all", "全部"]];
@@ -110,7 +110,7 @@ function render(A, races = []) {
   const hasHot = weeks.some((w) => w.hot);
   const main = mainChart(weeks, g, ref, raceWeeks(weeks, races), hotC);
   const readout = h("div", { class: "readout", "aria-live": "polite" },
-    h("span", { class: "muted" }, "鼠标移到图上，读出那一周的数值"));
+    h("span", { class: "muted" }, "鼠标移到图上，或选中图后按 ← →，读出那一周的数值"));
   const stack = h("div", { class: "aerobic-stack" }, main);
   if (hasTemp) {
     stack.append(
@@ -331,12 +331,16 @@ function wireCrosshair(stack, readout, weeks, g, ref) {
   const idle = readout.innerHTML;
   const lines = () => stack.querySelectorAll(".xhair");
   const dot = () => stack.querySelector(".xhair-dot");
+  const go = chartKeys(stack, g.n, "每周有氧配速图，按 ← → 逐周查看", show, hide);
   stack.addEventListener("mousemove", (e) => {
     const box = stack.querySelector("svg").getBoundingClientRect();
     const vx = ((e.clientX - box.left) / box.width) * W;
     if (vx < M.l - 6 || vx > W - M.r + 6) return hide();
-    const i = Math.round(((vx - M.l) / g.iw) * (g.n - 1));
-    const w = weeks[Math.max(0, Math.min(g.n - 1, i))];
+    go(Math.round(((vx - M.l) / g.iw) * (g.n - 1)));
+  });
+  stack.addEventListener("mouseleave", hide);
+  function show(i) {
+    const w = weeks[i];
     const x = g.sx(w.x);
     for (const ln of lines()) { ln.setAttribute("x1", x); ln.setAttribute("x2", x); ln.style.opacity = 1; }
     const p = w.rolling_pace_s_per_km ?? w.pace_s_per_km;
@@ -350,8 +354,7 @@ function wireCrosshair(stack, readout, weeks, g, ref) {
       h("span", {}, "气温 ", h("b", {}, w.temperature_c == null ? "—" : `${Math.round(w.temperature_c)}°C`), w.hot ? "（高温周）" : ""),
     );
     readout.title = `心率 ${ref} bpm 时的配速`;
-  });
-  stack.addEventListener("mouseleave", hide);
+  }
   function hide() {
     for (const ln of lines()) ln.style.opacity = 0;
     dot().style.opacity = 0;

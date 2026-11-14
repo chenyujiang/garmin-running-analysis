@@ -4,7 +4,7 @@
 // Each section is one renderer `(detail) => Node | null` in RENDERERS, in page
 // order, with its code in its own block below.
 
-import { h, fmtDate, fmtDur, fmtPace, pad } from "./dom.js";
+import { chartKeys, h, fmtDate, fmtDur, fmtPace, pad } from "./dom.js";
 import { routeMap } from "./routemap.js";
 import { typeName } from "./runs.js";
 import { frame, niceStep, svgEl, ticks, xAxis, yGrid } from "./svg.js";
@@ -162,7 +162,7 @@ function seriesSection(v) {
   const shown = panels.filter((p) => Array.isArray(s[p.key]) && s[p.key].length);
   const missing = panels.filter((p) => !shown.includes(p));
   const readout = h("div", { class: "readout", "aria-live": "polite" },
-    h("span", { class: "muted" }, "鼠标移到图上，读出那一刻的数值"));
+    h("span", { class: "muted" }, "鼠标移到图上，或选中图后按 ← →，读出那一刻的数值"));
   const stack = h("div", { class: "series-stack" });
   shown.forEach((p, i) => stack.append(serPanel(s, p, sx, dur, i === shown.length - 1)));
   if (shown.length) serCrosshair(stack, readout, s, shown, sx);
@@ -246,6 +246,9 @@ function serPath(s, values, sx, sy) {
 function serCrosshair(stack, readout, s, shown, sx) {
   const idle = readout.innerHTML;
   const n = s.t_s.length;
+  // A key press moves 1% of the run (Shift: 10%), not one of thousands of points.
+  const go = chartKeys(stack, n, "逐秒曲线，按 ← → 沿时间查看", show, hide,
+    { start: 0, step: Math.max(1, Math.round(n / 100)) });
   stack.addEventListener("mousemove", (e) => {
     const box = stack.querySelector("svg").getBoundingClientRect();
     const vx = ((e.clientX - box.left) / box.width) * SER_W;
@@ -253,7 +256,10 @@ function serCrosshair(stack, readout, s, shown, sx) {
     // Nearest bucket by time (t_s is sorted).
     let lo = 0, hi = n - 1;
     while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (sx(s.t_s[mid]) < vx) lo = mid; else hi = mid; }
-    const i = Math.abs(sx(s.t_s[lo]) - vx) <= Math.abs(sx(s.t_s[hi]) - vx) ? lo : hi;
+    go(Math.abs(sx(s.t_s[lo]) - vx) <= Math.abs(sx(s.t_s[hi]) - vx) ? lo : hi);
+  });
+  stack.addEventListener("mouseleave", hide);
+  function show(i) {
     const x = sx(s.t_s[i]);
     stack.querySelectorAll(".chart").forEach((wrap, k) => {
       const p = shown[k], val = s[p.key][i];
@@ -272,8 +278,7 @@ function serCrosshair(stack, readout, s, shown, sx) {
       cell("步频", s.cadence_spm, (x) => `${Math.round(x)} spm`),
       cell("步幅", s.stride_m, (x) => `${x.toFixed(2)} m`),
     ].filter(Boolean));
-  });
-  stack.addEventListener("mouseleave", hide);
+  }
   function hide() {
     for (const el of stack.querySelectorAll(".xhair, .xhair-dot")) el.style.opacity = 0;
     readout.innerHTML = idle;

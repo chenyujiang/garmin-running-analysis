@@ -38,3 +38,26 @@ export function fmtDateTime(isoUtc) {
 export function fmtDate(isoLocal) {
   return isoLocal.slice(0, 10);
 }
+
+/** Keyboard cursor for a hover chart. The element takes focus; ← → move
+ *  `step` points (Shift: ten steps), Home / End jump to the ends, Esc clears.
+ *  `show(i)` draws point i, `hide()` clears it; focus starts at `start`. Returns
+ *  `go(i)`, which the mouse handler calls so mouse and keys share one cursor. */
+export function chartKeys(el, n, label, show, hide, { start = n - 1, step = 1 } = {}) {
+  let at = null;
+  el.tabIndex = 0;
+  el.setAttribute("role", "group");
+  el.setAttribute("aria-label", label);
+  const go = (i) => { at = Math.max(0, Math.min(n - 1, i)); show(at); };
+  el.addEventListener("focus", () => go(at ?? start));
+  el.addEventListener("blur", hide);
+  el.addEventListener("keydown", (e) => {
+    const d = e.shiftKey ? 10 * step : step;
+    const to = { ArrowLeft: (at ?? start) - d, ArrowRight: (at ?? start) + d, Home: 0, End: n - 1 }[e.key];
+    if (to != null) go(to);
+    else if (e.key === "Escape") hide();
+    else return;
+    e.preventDefault();
+  });
+  return go;
+}
