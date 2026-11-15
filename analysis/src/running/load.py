@@ -65,6 +65,11 @@ def physiology_on(config: Config, day: date) -> Physiology | None:
     return max(eligible, key=lambda p: p.effective_from) if eligible else None
 
 
+def zone_floors(config: Config, phys: Physiology) -> list[float]:
+    """The Z2, Z3, Z4 and Z5 floors in bpm: `zones.lthr_pct` of the LTHR."""
+    return [phys.lthr * p / 100.0 for p in config.zones.lthr_pct]
+
+
 class LoadPoint(TypedDict):
     date: str
     trimp: float

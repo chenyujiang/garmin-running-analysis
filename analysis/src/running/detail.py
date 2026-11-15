@@ -667,7 +667,7 @@ def _hr_zones(d: DetailInputs, phys: load.Physiology | None) -> tuple[dict | Non
         return None, "没有逐秒心率" if d.activity["avg_hr_bpm"] else load.NO_HR
     if phys is None:
         return None, load.NO_PHYSIOLOGY
-    floors = [phys.lthr * p / 100.0 for p in d.config.zones.lthr_pct]
+    floors = load.zone_floors(d.config, phys)
     bounds = [None, *floors]
     total = float(hr["dt_s"].sum())
     zones = []

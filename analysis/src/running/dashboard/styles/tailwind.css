@@ -297,6 +297,10 @@ a.brand { text-decoration: none; @apply text-ink; }
 .runs-table td.name { @apply max-w-[32ch] overflow-hidden text-ellipsis whitespace-nowrap; }
 .runs-table td a { text-decoration: none; }
 .runs-table td a:hover { text-decoration: underline; }
+/* Run kind (issue #66): a quiet tag, and a weak ink bar on quality and race rows. Never red, accent or caution. */
+.runs-table td.type { @apply whitespace-nowrap; }
+.kind-tag { @apply ml-1.5 py-0 px-1.25 rounded-sm text-label text-ink-3 bg-paper-2 whitespace-nowrap; }
+.runs-table tr.kind-quality td:first-child, .runs-table tr.kind-race td:first-child { box-shadow: inset 2px 0 0 var(--dot); }
 .runs .foot { @apply flex justify-between items-baseline gap-3 mt-2.5 flex-wrap; }
 .pager { @apply flex gap-4 items-baseline; }
 

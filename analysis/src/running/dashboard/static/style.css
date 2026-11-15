@@ -860,6 +860,22 @@ a.brand {
 .runs-table td a:hover {
   text-decoration: underline;
 }
+.runs-table td.type {
+  white-space: nowrap;
+}
+.kind-tag {
+  margin-left: calc(var(--spacing) * 1.5);
+  border-radius: 3px;
+  background-color: var(--paper-2);
+  padding-inline: calc(var(--spacing) * 1.25);
+  padding-block: 0px;
+  font-size: 12.5px;
+  white-space: nowrap;
+  color: var(--ink-3);
+}
+.runs-table tr.kind-quality td:first-child, .runs-table tr.kind-race td:first-child {
+  box-shadow: inset 2px 0 0 var(--dot);
+}
 .runs .foot {
   margin-top: calc(var(--spacing) * 2.5);
   display: flex;
