@@ -14,6 +14,7 @@ const mdShort = (iso) => `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))}
 /** viewBox size of the load and TSB charts. The charts span the home band's
  *  full width (1280 px page minus 2 x 32 px padding) and keep their aspect
  *  ratio, so at full width they are 190 and 78 px tall with 12 px labels. */
+// Mirrors `.page { max-w-[1280px] px-8 }` in styles/tailwind.css: 1280 - 2 x 32.
 export const LOAD_CHART = { width: 1216, height: 190, tsbHeight: 78 };
 
 /** The chart size for the layout: below the 980 px breakpoint the band is one
@@ -107,6 +108,7 @@ function charts(L) {
     const p = pts.find((q) => q.date === L.spike_since);
     if (p) notes.push({ x: p.x, v: p.atl, node: h("span", {}, h("b", {}, `${md(p.date)}起`), "ATL/CTL 超过 1.5。") });
   }
+  // Mirrors the `@media (max-width: 980px)` breakpoint in styles/tailwind.css.
   const size = loadChartSize(matchMedia("(max-width: 980px)").matches);
   const loadChart = chart({
     width: size.width, height: size.height, x0: 0, x1, y0: 0, y1, yTicks: ticks(0, y1, step),

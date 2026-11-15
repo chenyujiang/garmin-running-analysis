@@ -32,10 +32,11 @@ async function load(section) {
   section.replaceChildren(head(), ...render(v));
 }
 
-/** No races.csv yet: one short line; how to add it folds away. */
-function missingHint(empty) {
+/** No races.csv yet: one short line (saying whether parkruns follow, per
+ *  `hasRows`); how to add the file folds away. */
+function missingHint(hasRows) {
   return [
-    h("p", { class: "small muted" }, empty ? "还没有比赛记录。" : "还没有 races.csv，下面只有 parkrun。"),
+    h("p", { class: "small muted" }, hasRows ? "还没有 races.csv，下面只有 parkrun。" : "还没有比赛或 parkrun 记录。"),
     h("details", { class: "how" },
       h("summary", {}, "怎么添加"),
       h("div", { class: "body" },
@@ -51,10 +52,10 @@ function render(v) {
   // A missing races.csv is normal until the first race: grey hint, not an error.
   // Either way the parkruns below are still listed.
   const notice =
-    v.races_error?.kind === "missing" ? missingHint(empty)
+    v.races_error?.kind === "missing" ? missingHint(!empty)
     : v.races_error ? [h("p", { class: "warn small" }, v.races_error.message)]
     : [];
-  if (empty) return v.races_error ? notice : [h("p", { class: "small muted" }, "races.csv 和 parkrun 里都还没有比赛。")];
+  if (empty) return v.races_error ? notice : [h("p", { class: "small muted" }, "races.csv 里还没有比赛，也还没有 parkrun。")];
   return [
     ...notice,
     h("table", {},

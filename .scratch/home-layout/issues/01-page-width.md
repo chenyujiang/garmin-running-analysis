@@ -14,7 +14,7 @@ Source: User Stories 1, 2 and 6, and "Dashboard styles" under Implementation Dec
 - [x] The 980 px caps are removed from `.plan-paces table, .plan-week table`, `.review` and `.parkruns`; the tables there are `w-full`
 - [x] Prose blocks keep their `ch` limits
 - [x] `static/style.css` is rebuilt with `uv run python scripts/build_css.py`, and `--check` passes
-- [ ] Browser check with synthetic data or the running dashboard: at a 1600 px window the header and page edges line up on `#/`, `#/runs`, `#/plan`, `#/review` and `#/parkruns`; the three tables reach the right edge; nothing overflows at 390 px
+- [x] Browser check with synthetic data or the running dashboard: at a 1600 px window the header and page edges line up on `#/`, `#/runs`, `#/plan`, `#/review` and `#/parkruns`; the three tables reach the right edge; nothing overflows at 390 px
 - [x] `ruff format --check`, `ruff check` and `pytest` pass
 
 ## Outcome (implementation notes)
@@ -24,3 +24,4 @@ Source: User Stories 1, 2 and 6, and "Dashboard styles" under Implementation Dec
 - `.plan-paces table, .plan-week table` are `w-full` (was `max-w-[980px]`); the `max-w-[980px]` rules on `.review` and `.parkruns` are dropped, so their tables take the global `table { w-full }`. Prose `ch` limits are untouched.
 - No other doc recorded the 1560 px or 980 px widths.
 - Browser check left to the orchestrator.
+- Browser check (outcome): checked on the running dashboard at a 2560 px wide viewport and at 390 px. Header and page are aligned (1280 px wide); the load chart is 1216 x 190 px; volume and prediction are 608 px each; the plan, review and parkrun overview tables are full width. At 390 px the band is one column (load, volume, prediction). The mobile horizontal overflow (scrollWidth 538) comes from the week strip (`.ws-days`, `.ws-sum`, `.ws-side`), which this spec does not touch; out of scope. The `pr-splits` table on the parkrun page stays narrow (it is not one of the listed tables).

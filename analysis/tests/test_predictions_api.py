@@ -400,3 +400,17 @@ def test_the_race_list_method_names_both_sources(data_dir, client_factory):
     assert "parkrun" in text
     assert "周六" in text
     assert "activity_id" in text
+    # GLOSSARY: a parkrun is not a 比赛 (that word means a races.csv race).
+    assert "比赛和 parkrun" in text
+
+
+def test_both_methods_state_the_same_parkrun_rule(data_dir, client_factory):
+    races = get(client_factory, "/api/races")["method"]
+    predictions = get(client_factory, "/api/predictions")["method"]
+
+    keys = ("parkrun_weekday", "parkrun_m", "parkrun_hours")
+    assert {k: races["params"][k] for k in keys} == {k: predictions["params"][k] for k in keys}
+    assert races["params"]["sources"] == ["races", "parkrun"]
+    rule = "周六当地 7–9 点开始、跑的距离 4.8–5.4 km 的跑步，用时只算跑的秒"
+    assert rule in races["description"]
+    assert rule in predictions["description"]

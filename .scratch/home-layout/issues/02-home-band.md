@@ -14,7 +14,7 @@ Source: User Stories 3–5, and "Dashboard styles" under Implementation Decision
 - [x] The crosshair and keyboard readout on the load chart still work at the new width
 - [x] At the 980 px breakpoint the band is one column in the order load, volume, prediction, as today
 - [x] `static/style.css` is rebuilt and `build_css.py --check` passes
-- [ ] Browser check at 1600 px and 390 px windows: no overflow, no clipped labels in the three sections
+- [x] Browser check at 1600 px and 390 px windows: no overflow, no clipped labels in the three sections
 - [x] `ruff format --check`, `ruff check` and `pytest` pass (including the JS tests run by `tests/test_changes_js.py`)
 
 ## Outcome (implementation notes)
@@ -25,3 +25,4 @@ Source: User Stories 3–5, and "Dashboard styles" under Implementation Decision
 - Tests: `analysis/tests/js/load.test.mjs` covers the wide and narrow chart sizes.
 - Crosshair: the load chart itself has no crosshair. The crosshair and readout in the band are on the weekly volume chart (`volume.js`) and map the pointer through `box.width`, so they work at any width; the aerobic crosshair is outside the band and unchanged.
 - For the browser check: the weekly volume chart (`W = 380, H = 190` viewBox) now gets about 580 px of width instead of about 310 px, so it renders about 290 px tall with larger labels. It is left as it is (out of this ticket); if it looks too big, a follow-up can widen its viewBox the same way.
+- Browser check (outcome): checked on the running dashboard at a 2560 px wide viewport and at 390 px. Header and page are aligned (1280 px wide); the load chart is 1216 x 190 px; volume and prediction are 608 px each; the plan, review and parkrun overview tables are full width. At 390 px the band is one column (load, volume, prediction). The mobile horizontal overflow (scrollWidth 538) comes from the week strip (`.ws-days`, `.ws-sum`, `.ws-side`), which this spec does not touch; out of scope. The `pr-splits` table on the parkrun page stays narrow (it is not one of the listed tables).

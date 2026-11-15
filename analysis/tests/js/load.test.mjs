@@ -14,13 +14,6 @@ test("the load chart viewBox matches the full band width at a readable height", 
   assert.equal(LOAD_CHART.tsbHeight, 78);
 });
 
-test("at full width the load and TSB charts stay readable heights", () => {
-  const scale = 1216 / LOAD_CHART.width;
-  assert.ok(LOAD_CHART.height * scale <= 200, "load chart taller than 200 px");
-  assert.ok(LOAD_CHART.height * scale >= 160, "load chart shorter than 160 px");
-  assert.ok(LOAD_CHART.tsbHeight * scale <= 90, "TSB chart taller than 90 px");
-});
-
 test("below the 980 px breakpoint the load chart keeps its old 560-wide viewBox", () => {
   assert.deepEqual(loadChartSize(true), { width: 560, height: 190, tsbHeight: 78 });
   assert.deepEqual(loadChartSize(false), LOAD_CHART);

@@ -113,4 +113,6 @@ Verify only through external behaviour, as in previous phases.
 
 ## Deviations during implementation (accepted)
 
-(none yet)
+- `aerobic.js` race markers keep only rows with `source == "races"`, so the aerobic chart is unchanged by the parkruns now in `/api/races`.
+- `load.js` keeps the 560-wide viewBox below 980 px. The breakpoint is read with `matchMedia` when the chart renders, so resizing the window across 980 px applies after a reload.
+- `method.params` of the race list gains `sources` and the parkrun rule params (`parkrun_weekday`, `parkrun_m`, `parkrun_hours`).
