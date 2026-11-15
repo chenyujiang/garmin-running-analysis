@@ -95,8 +95,9 @@ function empty(s) {
   );
 }
 
-// Top status band, prototype variant A: load | weekly volume | predictions.
-// Each column is its own module and places itself with a grid-column rule.
+// Top status band, prototype variant A: load across the full width, then
+// weekly volume | predictions 50/50.
+// Each section is its own module and places itself with grid rules.
 function band() {
   return h("div", { class: "a-band" },
     loadSection(),

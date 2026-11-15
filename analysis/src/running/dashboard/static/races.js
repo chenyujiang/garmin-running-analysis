@@ -1,4 +1,5 @@
-// Recent races table (ticket 14), lower row column 2. Reads GET /api/races.
+// Recent races table (ticket 14), lower row column 2. Reads GET /api/races:
+// races.csv merged with parkruns detected in the analysis database.
 
 import { h, fmtDate } from "./dom.js";
 import { fmtDistance, fmtTime } from "./predictions.js";
@@ -14,7 +15,7 @@ export function racesSection() {
 }
 
 function head() {
-  return h("div", { class: "sec-head" }, h("h2", {}, TITLE), h("span", { class: "muted small" }, "来自 races.csv"));
+  return h("div", { class: "sec-head" }, h("h2", {}, TITLE), h("span", { class: "muted small" }, "races.csv + parkrun"));
 }
 
 async function load(section) {
@@ -31,10 +32,11 @@ async function load(section) {
   section.replaceChildren(head(), ...render(v));
 }
 
-/** No races.csv yet: one short line; how to add it folds away. */
-function missingHint() {
+/** No races.csv yet: one short line (saying whether parkruns follow, per
+ *  `hasRows`); how to add the file folds away. */
+function missingHint(hasRows) {
   return [
-    h("p", { class: "small muted" }, "还没有比赛记录。"),
+    h("p", { class: "small muted" }, hasRows ? "还没有 races.csv，下面只有 parkrun。" : "还没有比赛或 parkrun 记录。"),
     h("details", { class: "how" },
       h("summary", {}, "怎么添加"),
       h("div", { class: "body" },
@@ -46,11 +48,16 @@ function missingHint() {
 const pace = (s) => `${Math.floor(Math.round(s) / 60)}:${String(Math.round(s) % 60).padStart(2, "0")}`;
 
 function render(v) {
+  const empty = !v.races.length;
   // A missing races.csv is normal until the first race: grey hint, not an error.
-  if (v.races_error?.kind === "missing") return missingHint();
-  if (v.races_error) return [h("p", { class: "warn small" }, v.races_error.message)];
-  if (!v.races.length) return [h("p", { class: "small muted" }, "races.csv 里还没有比赛。")];
+  // Either way the parkruns below are still listed.
+  const notice =
+    v.races_error?.kind === "missing" ? missingHint(!empty)
+    : v.races_error ? [h("p", { class: "warn small" }, v.races_error.message)]
+    : [];
+  if (empty) return v.races_error ? notice : [h("p", { class: "small muted" }, "races.csv 里还没有比赛，也还没有 parkrun。")];
   return [
+    ...notice,
     h("table", {},
       h("thead", {}, h("tr", {},
         h("th", {}, "日期"),

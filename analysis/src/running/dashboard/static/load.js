@@ -11,6 +11,18 @@ const signed = (x) => (Math.round(x) > 0 ? "+" : Math.round(x) < 0 ? "−" : "")
 const md = (iso) => `${Number(iso.slice(5, 7))} 月 ${Number(iso.slice(8, 10))} 日`;
 const mdShort = (iso) => `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))}`;
 
+/** viewBox size of the load and TSB charts. The charts span the home band's
+ *  full width (1280 px page minus 2 x 32 px padding) and keep their aspect
+ *  ratio, so at full width they are 190 and 78 px tall with 12 px labels. */
+// Mirrors `.page { max-w-[1280px] px-8 }` in styles/tailwind.css: 1280 - 2 x 32.
+export const LOAD_CHART = { width: 1216, height: 190, tsbHeight: 78 };
+
+/** The chart size for the layout: below the 980 px breakpoint the band is one
+ *  narrow column, and the old 560-wide viewBox keeps the labels readable. */
+export function loadChartSize(narrow) {
+  return narrow ? { ...LOAD_CHART, width: 560 } : LOAD_CHART;
+}
+
 function tsbWord(tsb) {
   if (tsb < -25) return ["疲劳累积", "TSB 低于 −25，这几天安排轻松跑或休息。"];
   if (tsb < -10) return ["正在训练", "TSB 在常见的训练区间，可以按计划继续。"];
@@ -18,7 +30,7 @@ function tsbWord(tsb) {
   return ["恢复充分", "疲劳已经消退，适合安排质量课或比赛。"];
 }
 
-/** The section element (band column 1); it fills itself once the data arrives.
+/** The section element (band row 1, full width); it fills itself once the data arrives.
  *  `?today=YYYY-MM-DD` on the page URL shows the load as of that day. */
 export function loadSection() {
   const sec = h("section", { class: "band-load" }, h("h2", {}, "训练负荷"),
@@ -96,8 +108,10 @@ function charts(L) {
     const p = pts.find((q) => q.date === L.spike_since);
     if (p) notes.push({ x: p.x, v: p.atl, node: h("span", {}, h("b", {}, `${md(p.date)}起`), "ATL/CTL 超过 1.5。") });
   }
+  // Mirrors the `@media (max-width: 980px)` breakpoint in styles/tailwind.css.
+  const size = loadChartSize(matchMedia("(max-width: 980px)").matches);
   const loadChart = chart({
-    width: 560, height: 190, x0: 0, x1, y0: 0, y1, yTicks: ticks(0, y1, step),
+    width: size.width, height: size.height, x0: 0, x1, y0: 0, y1, yTicks: ticks(0, y1, step),
     m: { r: notes.length ? 150 : 16, l: 34 }, label: "近 12 周 CTL 与 ATL", xTicks,
     series: [
       { data: pts.map((p) => ({ x: p.x, v: p.ctl })), color: "var(--fit)", w: 2.2 },
@@ -109,7 +123,7 @@ function charts(L) {
   const lo = Math.min(-10, ...pts.map((p) => p.tsb)), hi = Math.max(10, ...pts.map((p) => p.tsb));
   const tStep = niceStep(hi - lo, 3);
   const tsbChart = chart({
-    width: 560, height: 78, x0: 0, x1,
+    width: size.width, height: size.tsbHeight, x0: 0, x1,
     y0: Math.floor(lo / tStep) * tStep, y1: Math.ceil(hi / tStep) * tStep,
     yTicks: [Math.floor(lo / tStep) * tStep, 0], zero: true,
     yFmt: (v) => (v === 0 ? "0" : signed(v)),

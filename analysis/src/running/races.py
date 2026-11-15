@@ -9,6 +9,10 @@ columns `date, activity_id, distance_m, time_s, all_out, note`:
   drive predictions;
 - `note` free text.
 
+The race list (`race_list`) merges the past `races.csv` races with every
+parkrun (`parkruns`) up to today; a parkrun whose `activity_id` is in
+`races.csv` is dropped. Each row says its `source`.
+
 Predictions (5K, 10K, half, marathon):
 
 - Basis: the all-out race with the highest VDOT among those dated within the
@@ -32,6 +36,8 @@ Predictions (5K, 10K, half, marathon):
 
 import csv
 import math
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal, TypedDict
@@ -67,6 +73,8 @@ VICKERS_MIN_RATIO = 1.5
 PARKRUN_WEEKDAY = 6  # ISO weekday, Saturday
 PARKRUN_M = (4800.0, 5400.0)  # run-only distance of a parkrun activity
 PARKRUN_HOURS = (7, 9)  # local start hour, inclusive
+# Where a listed race comes from: a races.csv row or a detected parkrun.
+RaceSource = Literal["races", "parkrun"]
 TRUE = {"yes", "y", "true", "t", "1", "是", "全力"}
 FALSE = {"no", "n", "false", "f", "0", "否", ""}
 DISTANCES = (
@@ -93,11 +101,15 @@ class RacesError(TypedDict):
     message: str
 
 
+class ListedRace(Race):
+    source: RaceSource
+
+
 class RaceList(TypedDict):
     today: str
     file: str
     races_error: RacesError | None
-    races: list[Race]  # up to today, newest first
+    races: list[ListedRace]  # races.csv + parkruns up to today, newest first
     method: Method
 
 
@@ -130,7 +142,7 @@ class Predictions(TypedDict):
     stale: bool
     races_error: RacesError | None
     basis: Basis | None
-    basis_source: Literal["races", "parkrun"] | None
+    basis_source: RaceSource | None
     last_race_date: str | None
     window_start: str
     riegel_k: float | None
@@ -267,26 +279,75 @@ def months_before(d: date, months: int) -> date:
     raise AssertionError("unreachable")
 
 
+@contextmanager
+def _analysis_db(root: Path) -> Iterator[AnalysisDb | None]:
+    """The analysis database (None if it does not exist yet), closed on exit."""
+    db = open_analysis_db(root)
+    try:
+        yield db
+    finally:
+        if db is not None:
+            db.close()
+
+
+def _parkrun_rule() -> str:
+    """How a parkrun is recognised, for the method texts."""
+    return (
+        f"周六当地 {PARKRUN_HOURS[0]}–{PARKRUN_HOURS[1]} 点开始、"
+        f"跑的距离 {PARKRUN_M[0] / 1000:g}–{PARKRUN_M[1] / 1000:g} km 的跑步，用时只算跑的秒"
+    )
+
+
+def _parkrun_params() -> dict[str, object]:
+    """The parkrun rule as method params."""
+    return {
+        "parkrun_weekday": PARKRUN_WEEKDAY,
+        "parkrun_m": list(PARKRUN_M),
+        "parkrun_hours": list(PARKRUN_HOURS),
+    }
+
+
 def race_list(today: date | None = None, root: Path | None = None) -> RaceList:
+    """Past races from `races.csv` merged with every parkrun up to today,
+    newest first; on the same date `races.csv` first. A parkrun with the
+    `activity_id` of a `races.csv` row is dropped."""
     inputs = section_inputs(today, root)
-    today, root = inputs.today, inputs.root
+    today, root, config = inputs.today, inputs.root, inputs.config
     races, error = read_races(root)
-    past = [r for r in races if r["date"] <= today.isoformat()]
-    past.sort(key=lambda r: r["date"], reverse=True)
+    listed: list[ListedRace] = [
+        {**r, "source": "races"} for r in races if r["date"] <= today.isoformat()
+    ]
+    with _analysis_db(root) as db:
+        found = parkruns(db, config.run_walk, date.min, today)
+    ids = {r["activity_id"] for r in listed if r["activity_id"] is not None}
+    listed += [{**r, "source": "parkrun"} for r in found if r["activity_id"] not in ids]
+    # Stable sorts: same date keeps races.csv (listed first) ahead of parkruns.
+    listed.sort(key=lambda r: r["source"] != "races")
+    listed.sort(key=lambda r: r["date"], reverse=True)
     return {
         "today": today.isoformat(),
         "file": str(root / RACES_FILE),
         "races_error": error,
-        "races": past,
+        "races": listed,
         "method": {
             "name": "比赛清单",
             "description": (
-                f"读数据目录里手工维护的 {RACES_FILE}，列为 {', '.join(COLUMNS)}。"
-                "只列今天及以前的比赛，最新的在前。配速 = time_s ÷ distance_m；"
+                f"两个来源：数据目录里手工维护的 {RACES_FILE}（列为 {', '.join(COLUMNS)}），"
+                f"加上分析库里认出的 parkrun：{_parkrun_rule()}，"
+                "备注记为 parkrun，当作全力比赛。"
+                f"同一个 activity_id 两边都有时只留 {RACES_FILE} 那一行；"
+                "没有 activity_id 的行不去重。"
+                f"只列今天及以前的比赛和 parkrun，最新的在前，同一天 {RACES_FILE} 在前。"
+                "配速 = time_s ÷ distance_m；"
                 "VDOT 按 Daniels & Gilbert（Oxygen Power，1979）的公式算。"
                 "只有 all_out 为 yes 的比赛用于成绩预测。"
             ),
-            "params": {"file": RACES_FILE, "columns": list(COLUMNS)},
+            "params": {
+                "file": RACES_FILE,
+                "columns": list(COLUMNS),
+                "sources": ["races", "parkrun"],
+                **_parkrun_params(),
+            },
         },
     }
 
@@ -332,18 +393,14 @@ def race_predictions(today: date | None = None, root: Path | None = None) -> Pre
     all_out = [r for r in races if r["all_out"] and r["date"] <= today.isoformat()]
     recent = [r for r in all_out if r["date"] >= window_start.isoformat()]
 
-    db = open_analysis_db(root)
-    try:
+    with _analysis_db(root) as db:
         weekly_km = _weekly_km(db, config, today)
         garmin = _garmin(db, today)
-        source: Literal["races", "parkrun"] | None = "races" if recent else None
+        source: RaceSource | None = "races" if recent else None
         if not recent:
             recent = parkruns(db, config.run_walk, window_start, today)
             if recent:
                 source, all_out = "parkrun", all_out + recent
-    finally:
-        if db is not None:
-            db.close()
     last = max((r["date"] for r in all_out), default=None)
     best = max(recent, key=lambda r: r["vdot"], default=None)
     miles = km_to_miles(weekly_km)
@@ -433,9 +490,8 @@ def _method(config: Config) -> Method:
         "description": (
             f"依据：最近 {WINDOW_MONTHS} 个月内 all_out 为 yes 的比赛里 VDOT 最高的一场；"
             f"races.csv 里 {WINDOW_MONTHS} 个月内没有全力比赛时（包括没有 races.csv），"
-            f"改用这段时间里的 parkrun：周六当地 {PARKRUN_HOURS[0]}–{PARKRUN_HOURS[1]} 点开始、"
-            f"跑的距离 {PARKRUN_M[0] / 1000:g}–{PARKRUN_M[1] / 1000:g} km 的跑步，"
-            "用时只算跑的秒，当作全力比赛；parkrun 也没有就标为过期，不给预测值。"
+            f"改用这段时间里的 parkrun：{_parkrun_rule()}，"
+            "当作全力比赛；parkrun 也没有就标为过期，不给预测值。"
             "VDOT 用 Daniels & Gilbert（Oxygen Power，1979）的公式："
             "VO2 = −4.60 + 0.182258·v + 0.000104·v²（v 单位 m/min），"
             "%max = 0.8 + 0.1894393·e^(−0.012778·t) + 0.2989558·e^(−0.1932605·t)（t 单位 min），"
@@ -458,9 +514,7 @@ def _method(config: Config) -> Method:
         ),
         "params": {
             "window_months": WINDOW_MONTHS,
-            "parkrun_weekday": PARKRUN_WEEKDAY,
-            "parkrun_m": list(PARKRUN_M),
-            "parkrun_hours": list(PARKRUN_HOURS),
+            **_parkrun_params(),
             "riegel_k_default": RIEGEL_K,
             "riegel_k_range": [RIEGEL_K_MIN, RIEGEL_K_MAX],
             "volume_weeks": VOLUME_WEEKS,
