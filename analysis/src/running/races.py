@@ -9,6 +9,10 @@ columns `date, activity_id, distance_m, time_s, all_out, note`:
   drive predictions;
 - `note` free text.
 
+The race list (`race_list`) merges the past `races.csv` races with every
+parkrun (`parkruns`) up to today; a parkrun whose `activity_id` is in
+`races.csv` is dropped. Each row says its `source`.
+
 Predictions (5K, 10K, half, marathon):
 
 - Basis: the all-out race with the highest VDOT among those dated within the
@@ -93,11 +97,15 @@ class RacesError(TypedDict):
     message: str
 
 
+class ListedRace(Race):
+    source: Literal["races", "parkrun"]
+
+
 class RaceList(TypedDict):
     today: str
     file: str
     races_error: RacesError | None
-    races: list[Race]  # up to today, newest first
+    races: list[ListedRace]  # races.csv + parkruns up to today, newest first
     method: Method
 
 
@@ -268,25 +276,54 @@ def months_before(d: date, months: int) -> date:
 
 
 def race_list(today: date | None = None, root: Path | None = None) -> RaceList:
+    """Past races from `races.csv` merged with every parkrun up to today,
+    newest first; on the same date `races.csv` first. A parkrun with the
+    `activity_id` of a `races.csv` row is dropped."""
     inputs = section_inputs(today, root)
-    today, root = inputs.today, inputs.root
+    today, root, config = inputs.today, inputs.root, inputs.config
     races, error = read_races(root)
-    past = [r for r in races if r["date"] <= today.isoformat()]
-    past.sort(key=lambda r: r["date"], reverse=True)
+    listed: list[ListedRace] = [
+        {**r, "source": "races"} for r in races if r["date"] <= today.isoformat()
+    ]
+    db = open_analysis_db(root)
+    try:
+        found = parkruns(db, config.run_walk, date.min, today)
+    finally:
+        if db is not None:
+            db.close()
+    ids = {r["activity_id"] for r in listed if r["activity_id"] is not None}
+    listed += [{**r, "source": "parkrun"} for r in found if r["activity_id"] not in ids]
+    # Stable sorts: same date keeps races.csv (listed first) ahead of parkruns.
+    listed.sort(key=lambda r: r["source"] != "races")
+    listed.sort(key=lambda r: r["date"], reverse=True)
     return {
         "today": today.isoformat(),
         "file": str(root / RACES_FILE),
         "races_error": error,
-        "races": past,
+        "races": listed,
         "method": {
             "name": "比赛清单",
             "description": (
-                f"读数据目录里手工维护的 {RACES_FILE}，列为 {', '.join(COLUMNS)}。"
-                "只列今天及以前的比赛，最新的在前。配速 = time_s ÷ distance_m；"
+                f"两个来源：数据目录里手工维护的 {RACES_FILE}（列为 {', '.join(COLUMNS)}），"
+                "加上分析库里认出的 parkrun："
+                f"周六当地 {PARKRUN_HOURS[0]}–{PARKRUN_HOURS[1]} 点开始、"
+                f"跑的距离 {PARKRUN_M[0] / 1000:g}–{PARKRUN_M[1] / 1000:g} km 的跑步，"
+                "用时只算跑的秒，备注记为 parkrun，当作全力比赛。"
+                f"同一个 activity_id 两边都有时只留 {RACES_FILE} 那一行；"
+                "没有 activity_id 的行不去重。"
+                f"只列今天及以前的比赛，最新的在前，同一天 {RACES_FILE} 在前。"
+                "配速 = time_s ÷ distance_m；"
                 "VDOT 按 Daniels & Gilbert（Oxygen Power，1979）的公式算。"
                 "只有 all_out 为 yes 的比赛用于成绩预测。"
             ),
-            "params": {"file": RACES_FILE, "columns": list(COLUMNS)},
+            "params": {
+                "file": RACES_FILE,
+                "columns": list(COLUMNS),
+                "sources": ["races", "parkrun"],
+                "parkrun_weekday": PARKRUN_WEEKDAY,
+                "parkrun_m": list(PARKRUN_M),
+                "parkrun_hours": list(PARKRUN_HOURS),
+            },
         },
     }
 

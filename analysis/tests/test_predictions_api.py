@@ -246,6 +246,7 @@ def test_the_race_list_is_newest_first_with_pace_and_vdot(data_dir, client_facto
         "note": "parkrun",
         "pace_s_per_km": pytest.approx(240.0),
         "vdot": pytest.approx(49.806, abs=0.001),
+        "source": "races",
     }
     assert body["races"][0]["all_out"] is False
     assert body["races"][0]["activity_id"] is None
@@ -307,3 +308,95 @@ def test_a_recent_race_in_races_csv_wins_over_parkrun(data_dir, analysis_db, cli
 
     assert body["basis_source"] == "races"
     assert body["basis"]["distance_m"] == 10000
+
+
+# --- recent races: races.csv merged with parkruns ----------------------------
+
+
+def test_without_races_csv_the_race_list_shows_parkruns(data_dir, analysis_db, client_factory):
+    # Saturdays 2026-10-24 and 2025-03-01 (older than the prediction window);
+    # the Wednesday run is no parkrun.
+    insert_activity(analysis_db, 1, "2026-10-24T08:00:00", distance_m=5040, duration_s=1250)
+    insert_activity(analysis_db, 2, "2025-03-01T08:00:00", distance_m=4980, duration_s=1300)
+    insert_activity(analysis_db, 3, "2026-10-21T08:00:00", distance_m=5000, duration_s=1150)
+    analysis_db.commit()
+
+    body = get(client_factory, "/api/races")
+
+    assert body["races_error"]["kind"] == "missing"
+    assert [(r["date"], r["source"], r["note"]) for r in body["races"]] == [
+        ("2026-10-24", "parkrun", "parkrun"),
+        ("2025-03-01", "parkrun", "parkrun"),
+    ]
+    assert all(r["all_out"] for r in body["races"])
+    assert body["races"][0]["activity_id"] == 1
+
+
+def test_races_csv_and_parkruns_are_merged_newest_first(data_dir, analysis_db, client_factory):
+    insert_activity(analysis_db, 1, "2026-10-24T08:00:00", distance_m=5040, duration_s=1250)
+    insert_activity(analysis_db, 2, "2026-10-10T08:00:00", distance_m=4980, duration_s=1300)
+    analysis_db.commit()
+    write_races(
+        data_dir,
+        "2026-10-10,,10000,2700,yes,city 10K",
+        "2026-10-18,,21097.5,6300,yes,half",
+        "2026-11-07,,5000,1200,yes,after today",
+    )
+
+    races = get(client_factory, "/api/races")["races"]
+
+    assert [(r["date"], r["source"]) for r in races] == [
+        ("2026-10-24", "parkrun"),
+        ("2026-10-18", "races"),
+        ("2026-10-10", "races"),
+        ("2026-10-10", "parkrun"),
+    ]
+
+
+def test_a_race_in_races_csv_that_is_also_a_parkrun_appears_once(
+    data_dir, analysis_db, client_factory
+):
+    insert_activity(analysis_db, 1, "2026-10-24T08:00:00", distance_m=5040, duration_s=1250)
+    analysis_db.commit()
+    write_races(data_dir, "2026-10-24,1,5000,1245,yes,PB at home parkrun")
+
+    races = get(client_factory, "/api/races")["races"]
+
+    assert [(r["source"], r["note"], r["time_s"]) for r in races] == [
+        ("races", "PB at home parkrun", 1245.0)
+    ]
+
+
+def test_an_invalid_races_csv_is_reported_and_parkruns_are_still_listed(
+    data_dir, analysis_db, client_factory
+):
+    insert_activity(analysis_db, 1, "2026-10-24T08:00:00", distance_m=5040, duration_s=1250)
+    analysis_db.commit()
+    write_races(data_dir, "2026-10-01,,5000,20 min,yes,")
+
+    body = get(client_factory, "/api/races")
+
+    assert body["races_error"]["kind"] == "invalid"
+    assert "第 2 行" in body["races_error"]["message"]
+    assert [r["source"] for r in body["races"]] == ["parkrun"]
+
+
+def test_without_an_analysis_database_the_list_is_races_csv(data_dir, client_factory):
+    write_races(data_dir, "2026-10-24,,5000,1250,yes,", "2026-10-03,,10000,2600,no,")
+
+    body = get(client_factory, "/api/races")
+
+    assert body["races_error"] is None
+    assert [(r["date"], r["source"]) for r in body["races"]] == [
+        ("2026-10-24", "races"),
+        ("2026-10-03", "races"),
+    ]
+
+
+def test_the_race_list_method_names_both_sources(data_dir, client_factory):
+    text = get(client_factory, "/api/races")["method"]["description"]
+
+    assert "races.csv" in text
+    assert "parkrun" in text
+    assert "周六" in text
+    assert "activity_id" in text

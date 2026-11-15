@@ -83,12 +83,13 @@ async function fill(body, howSlot, title, range) {
 }
 
 /** Race dates from races.csv (ticket 14) for the red dashed markers; the
- *  chart still draws if races.csv is missing or broken. */
+ *  chart still draws if races.csv is missing or broken. The race list also
+ *  holds parkruns; only races.csv rows are marked, as before. */
 async function fetchRaces(today) {
   try {
     const r = await fetch(today ? `api/races?today=${encodeURIComponent(today)}` : "api/races");
     if (!r.ok) return [];
-    return (await r.json()).races ?? [];
+    return ((await r.json()).races ?? []).filter((race) => race.source === "races");
   } catch {
     return [];
   }
