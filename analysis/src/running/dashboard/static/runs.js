@@ -1,7 +1,9 @@
 // Activity list page, #/runs (run-detail ticket 01). Reads GET /api/activities.
 // Prototype variant A table. Running types only. Search, filters and page
 // live in the hash query (#/runs?q=parkrun&from=2026-01-01&to=2026-06-30&
-// min_km=10&page=2), so a search can be bookmarked.
+// min_km=10&kind=quality&page=2), so a search can be bookmarked. Each row
+// carries its run kind (issue #66): a tag in the type column, and a weak left
+// bar on quality and race rows.
 
 import { h, fmtDate, fmtDur, fmtPace } from "./dom.js";
 
@@ -26,12 +28,27 @@ const TYPE_NAMES = {
   open_water_swimming: "公开水域游泳",
 };
 
+// Run kinds (分类, GLOSSARY "Run kind") in the API's order
+// (`method.params.run_kinds`).
+export const KIND_NAMES = {
+  race: "比赛",
+  parkrun: "parkrun",
+  quality: "质量课",
+  long: "长距离",
+  easy: "轻松",
+  mixed: "混合",
+};
+const MARKED_KINDS = new Set(["quality", "race"]);
+
 /** Garmin type key shown in Chinese when known, else as is. */
 export function typeName(key) {
   return TYPE_NAMES[key] ?? key;
 }
 
 const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s ?? "");
+
+/** A name, date or run-kind filter is set (the minimum distance is a view setting). */
+const filtered = (f) => Boolean(f.q || f.from || f.to || f.kind);
 
 /** Filters from the hash query; anything invalid falls back to the default. */
 function readQuery(query) {
@@ -42,6 +59,7 @@ function readQuery(query) {
     from: isDate(query.get("from")) ? query.get("from") : null,
     to: isDate(query.get("to")) ? query.get("to") : null,
     min_km: Number.isFinite(km) && km > 0 ? km : null,
+    kind: Object.hasOwn(KIND_NAMES, query.get("kind") ?? "") ? query.get("kind") : null,
     page: Number.isInteger(page) && page >= 1 ? page : 1,
   };
 }
@@ -52,6 +70,7 @@ function hashFor(f) {
   if (f.from) q.set("from", f.from);
   if (f.to) q.set("to", f.to);
   if (f.min_km != null) q.set("min_km", String(f.min_km));
+  if (f.kind) q.set("kind", f.kind);
   if (f.page > 1) q.set("page", String(f.page));
   const s = q.toString();
   return s ? `#/runs?${s}` : "#/runs";
@@ -68,7 +87,7 @@ export function runsPage(query) {
 function head(f) {
   return h("div", { class: "sec-head" },
     h("h1", { class: "headline" }, "全部跑步"),
-    h("div", { class: "tools" }, searchForm(f), distanceSelect(f)),
+    h("div", { class: "tools" }, searchForm(f), kindSelect(f), distanceSelect(f)),
   );
 }
 
@@ -81,7 +100,7 @@ function searchForm(f) {
   const form = h("form", { class: "runs-search", role: "search" },
     text, from, h("span", { class: "muted" }, "–"), to,
     h("button", { type: "submit" }, "搜索"),
-    f.q || f.from || f.to ? h("a", { href: hashFor({ min_km: f.min_km, page: 1 }), class: "small" }, "清除") : null,
+    filtered(f) ? h("a", { href: hashFor({ min_km: f.min_km, page: 1 }), class: "small" }, "清除") : null,
   );
   form.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -90,6 +109,21 @@ function searchForm(f) {
     });
   });
   return form;
+}
+
+function kindSelect(f) {
+  const select = h("select", { "aria-label": "分类" },
+    h("option", { value: "" }, "全部分类"),
+    ...Object.entries(KIND_NAMES).map(([key, label]) => {
+      const o = h("option", { value: key }, label);
+      if (key === f.kind) o.selected = true;
+      return o;
+    }),
+  );
+  select.addEventListener("change", () => {
+    location.hash = hashFor({ ...f, kind: select.value || null, page: 1 });
+  });
+  return select;
 }
 
 function distanceSelect(f) {
@@ -114,6 +148,7 @@ async function load(section, f) {
   if (f.q) q.set("q", f.q);
   if (f.from) q.set("date_from", f.from);
   if (f.to) q.set("date_to", f.to);
+  if (f.kind) q.set("kind", f.kind);
   let v;
   try {
     const r = await fetch(`api/activities?${q}`);
@@ -132,7 +167,7 @@ function render(v, f) {
     return [h("p", { class: "small muted" }, msg), pager(v, f), how(v.method)];
   }
   return [
-    h("p", { class: "small muted count" }, `${f.q || f.from || f.to ? "找到" : "共"} ${v.total} 次跑步`),
+    h("p", { class: "small muted count" }, `${filtered(f) ? "找到" : "共"} ${v.total} 次跑步`),
     table(v.activities),
     h("div", { class: "foot" }, pager(v, f), how(v.method)),
   ];
@@ -155,9 +190,11 @@ function table(rows) {
 
 function row(a) {
   const link = (text) => h("a", { href: `#/run/${a.activity_id}` }, text);
-  return h("tr", {},
+  const kind = a.run_kind ? KIND_NAMES[a.run_kind] : null;
+  return h("tr", MARKED_KINDS.has(a.run_kind) ? { class: `kind-${a.run_kind}` } : {},
     h("td", {}, link(`${fmtDate(a.start_time_local)} ${a.start_time_local.slice(11, 16)}`)),
-    h("td", {}, typeName(a.activity_type)),
+    h("td", { class: "type" }, typeName(a.activity_type),
+      kind ? h("span", { class: "kind-tag" }, kind) : null),
     h("td", { class: "name" }, link(a.activity_name || "（未命名）")),
     h("td", { class: "r" }, a.distance_m == null ? "—" : `${(a.distance_m / 1000).toFixed(2)} km`),
     h("td", { class: "r" }, a.duration_s == null ? "—" : fmtDur(a.duration_s)),

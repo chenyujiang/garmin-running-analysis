@@ -9,6 +9,8 @@ Spec (run-detail), "running/activities.py".
   `%` and `_` match themselves.
 - `date_from` / `date_to` keep activities whose local start date lies in the
   range, both ends included.
+- `run_kind` per running row (`running.runkind`); `kind` keeps the running
+  activities of that kind.
 - Order: `start_time_local` descending, then `activity_id` descending.
 - `total` counts every activity that passes the filters, for paging.
 """
@@ -17,8 +19,9 @@ from datetime import date
 from pathlib import Path
 from typing import Literal, TypedDict
 
-from running.config import RunWalk
+from running.config import Config, RunWalk
 from running.db import AnalysisDb, open_analysis_db
+from running.runkind import RUN_KIND_NOTE, RUN_KINDS, RunKind, run_kinds
 from running.runwalk import RUNNING_TYPES, running_summaries
 from running.section import Method, section_inputs
 
@@ -36,6 +39,7 @@ class ActivityRow(TypedDict):
     duration_s: float | None
     running_pace_s_per_km: float | None  # running types only, walking left out
     avg_hr_bpm: float | None
+    run_kind: RunKind | None  # running types only (`running.runkind`)
 
 
 class ActivityList(TypedDict):
@@ -45,6 +49,7 @@ class ActivityList(TypedDict):
     query: str | None
     date_from: str | None
     date_to: str | None
+    kind: RunKind | None  # run-kind filter: only running activities of that kind
     page: int
     page_size: int
     total: int  # activities passing the filters
@@ -56,6 +61,7 @@ class Filters(TypedDict, total=False):
     query: str | None
     date_from: date | None
     date_to: date | None
+    kind: RunKind | None
 
 
 def _like(text: str) -> str:
@@ -90,22 +96,35 @@ def _where(
 
 def _page_rows(
     db: AnalysisDb,
+    config: Config,
+    root: Path,
     type_filter: TypeFilter,
     min_distance_m: float | None,
     page: int,
     page_size: int,
     filters: Filters,
-) -> tuple[int, list[dict]]:
-    where, params = _where(type_filter, min_distance_m, filters)
-    total = int(db.query(f"SELECT count(*) FROM a.activities{where}", params).item())
-    rows = db.query(
+) -> tuple[int, list[dict], dict[int, RunKind | None] | None]:
+    """Total, the page's rows, and their run kinds when computed here.
+    Without a run-kind filter: the page from SQL, kinds None. With one: every
+    running activity passing the other filters gets its kind (cached per run,
+    see `running.runkind`), then the matching ones are paged."""
+    kind = filters.get("kind")
+    where, params = _where("running" if kind else type_filter, min_distance_m, filters)
+    select = (
         "SELECT activity_id, activity_type, activity_name, start_time_local,"
         " distance_m, duration_s, avg_hr_bpm"
         f" FROM a.activities{where}"
-        " ORDER BY start_time_local DESC, activity_id DESC LIMIT ? OFFSET ?",
-        [*params, page_size, (page - 1) * page_size],
+        " ORDER BY start_time_local DESC, activity_id DESC"
     )
-    return total, rows.to_dicts()
+    first = (page - 1) * page_size
+    if kind:
+        rows = db.query(select, params).to_dicts()
+        kinds = run_kinds(db, config, root, rows)
+        rows = [r for r in rows if kinds[r["activity_id"]] == kind]
+        return len(rows), rows[first : first + page_size], kinds
+    total = int(db.query(f"SELECT count(*) FROM a.activities{where}", params).item())
+    rows = db.query(f"{select} LIMIT ? OFFSET ?", [*params, page_size, first])
+    return total, rows.to_dicts(), None
 
 
 def _running_paces(db: AnalysisDb, rows: list[dict], settings: RunWalk) -> dict[int, float]:
@@ -128,17 +147,30 @@ def activity_list(
     query: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    kind: RunKind | None = None,
 ) -> ActivityList:
-    filters: Filters = {"query": query, "date_from": date_from, "date_to": date_to}
+    filters: Filters = {"query": query, "date_from": date_from, "date_to": date_to, "kind": kind}
     inputs = section_inputs(None, root)
     has_data, total, rows, paces = False, 0, [], {}
+    kinds: dict[int, RunKind | None] | None = {}
     db = open_analysis_db(inputs.root)
     if db is not None:
         with db:
             if "activities" in db.tables():
                 has_data = bool(db.query("SELECT count(*) FROM a.activities").item())
-                total, rows = _page_rows(db, type_filter, min_distance_m, page, page_size, filters)
+                total, rows, kinds = _page_rows(
+                    db,
+                    inputs.config,
+                    inputs.root,
+                    type_filter,
+                    min_distance_m,
+                    page,
+                    page_size,
+                    filters,
+                )
                 paces = _running_paces(db, rows, inputs.config.run_walk)
+                if kinds is None:
+                    kinds = run_kinds(db, inputs.config, inputs.root, rows)
     return {
         "has_data": has_data,
         "type_filter": type_filter,
@@ -146,10 +178,18 @@ def activity_list(
         "query": (query or "").strip() or None,
         "date_from": None if date_from is None else date_from.isoformat(),
         "date_to": None if date_to is None else date_to.isoformat(),
+        "kind": kind,
         "page": page,
         "page_size": page_size,
         "total": total,
-        "activities": [{**r, "running_pace_s_per_km": paces.get(r["activity_id"])} for r in rows],
+        "activities": [
+            {
+                **r,
+                "running_pace_s_per_km": paces.get(r["activity_id"]),
+                "run_kind": kinds.get(r["activity_id"]),
+            }
+            for r in rows
+        ],
         "method": _method(inputs.config.run_walk),
     }
 
@@ -165,9 +205,11 @@ def _method(settings: RunWalk) -> Method:
             f"短于 {settings.min_walk_s} 秒的走路仍算跑，"
             f"采样间隔超过 {settings.pause_gap_s} 秒算暂停，不计时间和距离。"
             "没有步频数据的活动用 Garmin 的总距离和总时长。非跑步类活动不给跑步配速。"
+            f"{RUN_KIND_NOTE}"
         ),
         "params": {
             "running_types": sorted(RUNNING_TYPES),
+            "run_kinds": list(RUN_KINDS),
             "cadence_spm": settings.cadence_spm,
             "smoothing_s": settings.smoothing_s,
             "min_walk_s": settings.min_walk_s,

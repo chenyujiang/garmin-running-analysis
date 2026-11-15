@@ -19,7 +19,6 @@ import heapq
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date
 from functools import cached_property
 from pathlib import Path
 from typing import TypedDict
@@ -667,7 +666,7 @@ def _hr_zones(d: DetailInputs, phys: load.Physiology | None) -> tuple[dict | Non
         return None, "没有逐秒心率" if d.activity["avg_hr_bpm"] else load.NO_HR
     if phys is None:
         return None, load.NO_PHYSIOLOGY
-    floors = [phys.lthr * p / 100.0 for p in d.config.zones.lthr_pct]
+    floors = load.zone_floors(d.config, phys)
     bounds = [None, *floors]
     total = float(hr["dt_s"].sum())
     zones = []
@@ -792,7 +791,7 @@ def _metrics(d: DetailInputs) -> dict:
         unavailable["decoupling"] = why or (
             f"不足 {longruns.MIN_DURATION_S // 60} 分钟，只给 EF，不算 decoupling"
         )
-    phys = load.physiology_on(d.config, date.fromisoformat(d.activity["start_time_local"][:10]))
+    phys = load.physiology_on(d.config, load.local_day(d.activity))
     zones, why = _hr_zones(d, phys)
     if why:
         unavailable["zones"] = why

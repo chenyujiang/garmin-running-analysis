@@ -30,6 +30,7 @@ from running.plan5k import Plan5k, plan_5k
 from running.plan_review import PlanReview, plan_review
 from running.push_plan import STATE_FILE, PushStatus, load_state, push_status
 from running.races import Predictions, RaceList, race_list, race_predictions
+from running.runkind import RunKind, all_run_kinds
 from running.runwalk import running_summaries
 from running.section import section_inputs
 from running.status import DataStatus, data_status
@@ -88,6 +89,7 @@ def create_app(*, serve: bool = False) -> FastAPI:
         q: str | None = Query(None, max_length=100),
         date_from: date | None = None,
         date_to: date | None = None,
+        kind: RunKind | None = None,
     ) -> ActivityList:
         min_m = None if min_km is None else min_km * 1000.0
         return activity_list(
@@ -98,6 +100,7 @@ def create_app(*, serve: bool = False) -> FastAPI:
             query=q,
             date_from=date_from,
             date_to=date_to,
+            kind=kind,
         )
 
     @app.get("/api/activities/{activity_id}")
@@ -194,7 +197,7 @@ def main() -> None:
 
 def _warm_caches(root: Path, stop: threading.Event) -> None:
     """Fill the per-process caches (heart-rate seconds, aerobic per-run
-    results, long-run EF, run-walk record totals) once at startup, so the
+    results, long-run EF, run-walk record totals, run kinds) once at startup, so the
     first page load does not pay for the full scans of `records`. A failure
     here only means a cold first request; the endpoint reports the error itself."""
     for warm in (
@@ -204,6 +207,7 @@ def _warm_caches(root: Path, stop: threading.Event) -> None:
         weekly_volume,
         long_runs,
         _warm_run_summaries,
+        _warm_run_kinds,
     ):
         if stop.is_set():
             return
@@ -222,3 +226,15 @@ def _warm_run_summaries(root: Path) -> None:
         return
     with db:
         running_summaries(db, inputs.config.run_walk)
+
+
+def _warm_run_kinds(root: Path) -> None:
+    """The run kind of every run, so filtering the activity list by kind does
+    not read every run's records on first use."""
+    inputs = section_inputs(None, root)
+    db = open_analysis_db(inputs.root)
+    if db is None:
+        return
+    with db:
+        if "activities" in db.tables():
+            all_run_kinds(db, inputs.config, inputs.root)

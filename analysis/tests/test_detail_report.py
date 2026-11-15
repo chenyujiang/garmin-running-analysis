@@ -164,6 +164,56 @@ def test_without_heart_rate_only_intervals_can_be_told(analysis_db, client_facto
     assert "也不是间歇跑" in t["text"]
 
 
+INTERVAL_PARAMS = {
+    "interval_reps": 0,
+    "median_speed_mps": 3.0,
+    "interval_speed_ratio": 0.1,
+    "interval_min_s": 60,
+    "interval_min_reps": 3,
+}
+
+
+def test_the_training_type_item_is_pinned_for_a_tempo_run(analysis_db, client_factory):
+    # The whole item (type, why, params) as given before the rule was shared
+    # with the activity list's run kind.
+    add_hr_run(
+        analysis_db,
+        1,
+        START_LOCAL,
+        [steady(600, hr=140.0), steady(1200, hr=158.0), steady(300, hr=140.0)],
+    )
+
+    t = item(get_report(client_factory, 1), "training_type")
+
+    assert t["verdict"] == "neutral"
+    assert t["text"] == "节奏跑：Z3–Z4 占跑的时间 57%，最长连续 20 分钟。"
+    assert t["params"] == {
+        "type": "tempo",
+        **INTERVAL_PARAMS,
+        "duration_s": 2100.0,
+        "running_hr_s": 2100.0,
+        "z1_z2_share": pytest.approx(900 / 2100),
+        "z3_z4_share": pytest.approx(1200 / 2100),
+        "longest_z3_z4_s": 1187.0,
+        "zone_share_basis": "running_hr_s",
+        "tempo_share": 0.5,
+        "tempo_min_s": 900,
+        "long_easy_share": 0.7,
+        "long_min_s": 3600,
+        "easy_share": 0.8,
+    }
+
+
+def test_the_training_type_item_is_pinned_without_heart_rate(analysis_db, client_factory):
+    add_hr_run(analysis_db, 1, START_LOCAL, [steady(1800, hr=None)])
+
+    t = item(get_report(client_factory, 1), "training_type")
+
+    assert t["verdict"] == "unknown"
+    assert t["text"] == "不判训练类型：没有心率，也不是间歇跑。"
+    assert t["params"] == {**INTERVAL_PARAMS, "duration_s": 1800.0}
+
+
 # --- aerobic value against the recent median ----------------------------------
 
 
