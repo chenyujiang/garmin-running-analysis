@@ -311,27 +311,15 @@ td {
 .a-band {
   margin-bottom: calc(var(--spacing) * 8);
   display: grid;
-  grid-template-columns: 1.35fr 1fr 0.95fr;
+  grid-template-columns: 1fr 1fr;
   border-bottom-style: var(--tw-border-style);
   border-bottom-width: 1px;
   border-bottom-color: var(--rule-strong);
 }
 .a-band > section {
-  grid-row: 1;
   padding-inline: calc(var(--spacing) * 7);
   padding-top: var(--spacing);
   padding-bottom: calc(var(--spacing) * 6);
-}
-.a-band > section + section {
-  border-left-style: var(--tw-border-style);
-  border-left-width: 1px;
-  border-left-color: var(--rule);
-}
-.a-band > section:first-child {
-  padding-left: 0px;
-}
-.a-band > section:last-child {
-  padding-right: 0px;
 }
 .chart {
   position: relative;
@@ -392,11 +380,15 @@ details.how .body pre {
   white-space: pre-wrap;
 }
 .band-load {
-  grid-column: 1;
+  grid-column: 1/-1;
+  grid-row: 1;
 }
 .a-band > section.band-load {
-  padding-right: calc(var(--spacing) * 7);
-  padding-left: 0px;
+  margin-bottom: calc(var(--spacing) * 5);
+  border-bottom-style: var(--tw-border-style);
+  border-bottom-width: 1px;
+  border-bottom-color: var(--rule);
+  padding-inline: 0px;
 }
 .headline.alert {
   color: var(--red);
@@ -446,14 +438,12 @@ details.how .body pre {
   gap: calc(var(--spacing) * 3);
 }
 .band-volume {
-  grid-column: 2;
+  grid-column: 1;
+  grid-row: 2;
 }
 .a-band > section.band-volume {
-  border-left-style: var(--tw-border-style);
-  border-left-width: 1px;
-  border-left-color: var(--rule);
   padding-right: calc(var(--spacing) * 7);
-  padding-left: calc(var(--spacing) * 7);
+  padding-left: 0px;
 }
 .band-volume .stat-line {
   margin-inline: 0px;
@@ -483,7 +473,8 @@ details.how .body pre {
   font-size: 13px;
 }
 .band-predict {
-  grid-column: 3;
+  grid-column: 2;
+  grid-row: 2;
 }
 .a-band > section.band-predict {
   border-left-style: var(--tw-border-style);
@@ -709,7 +700,9 @@ details.how .body pre {
     padding-bottom: calc(var(--spacing) * 6);
   }
   .a-band > section.band-load {
-    padding-right: 0px;
+    margin-bottom: 0px;
+    border-bottom-style: var(--tw-border-style);
+    border-bottom-width: 0px;
   }
   .page {
     padding-inline: calc(var(--spacing) * 4.5);
