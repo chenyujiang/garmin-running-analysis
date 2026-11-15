@@ -105,7 +105,9 @@ date,activity_id,distance_m,time_s,all_out,note
 2026-04-12,21234567890,21097.5,5880,yes,city half marathon
 ```
 
-`activity_id` may be empty; `all_out` is `yes` or `no` (also `true`/`false`, `1`/`0`, `y`/`n`, `是`/`否`). Only all-out races from the last 6 months drive the predictions. The dashboard says when the file is missing or malformed.
+`activity_id` may be empty; `all_out` is `yes` or `no` (also `true`/`false`, `1`/`0`, `y`/`n`, `是`/`否`). Only all-out races from the last 6 months drive the predictions; without one, the parkruns of those 6 months stand in. The dashboard says when the file is missing or malformed.
+
+The home page's recent races (`GET /api/races`) merge the past `races.csv` races with the parkruns found in `running.sqlite` (Saturday runs starting 7 to 9 am local with 4.8 to 5.4 km of running, timed by running seconds only), newest first, 10 rows. Each row says its source (`source`: `races` or `parkrun`); a parkrun whose `activity_id` is in `races.csv` is listed once, as the `races.csv` row. Parkruns are listed even when `races.csv` is missing or malformed. The aerobic chart marks only the `races.csv` races.
 
 `runsync sync` reads the Personal API key from `secrets/personal_api.key` (the bare key on one line; generate it at https://connect.garmin.com/app/settings/personalApiToken). It downloads every activity's detail JSON and FIT into `raw/personal_api/activities/` and daily summaries into `raw/personal_api/daily_summaries/`, loading each file into `running.sqlite` straight away. Rerun it after an interruption to resume. Later runs fetch only new activities and refetch details from the last 7 days. It then fetches garminconnect metrics (race predictor and others) into `raw/garminconnect/` if `runsync login` has stored a token in `secrets/garminconnect/`; without a token that source is skipped. A source that is rate limited stops at once and is skipped for 24 hours (marker in `state/`, delete it to retry sooner); a rejected key or token ends with how to replace it.
 
