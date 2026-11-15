@@ -1,5 +1,6 @@
 .env
-.claude/
+.claude/*
+!.claude/settings.json
 .scratch/running-analysis/trial/data/
 __pycache__/
 importer/target/
