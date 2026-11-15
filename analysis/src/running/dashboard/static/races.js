@@ -5,7 +5,17 @@ import { h, fmtDate } from "./dom.js";
 import { fmtDistance, fmtTime } from "./predictions.js";
 
 const TITLE = "最近比赛";
-const LIMIT = 10;
+export const LIMIT = 10;
+
+/** The rows the table shows, from `races` sorted newest first: the newest
+ *  races.csv races are always kept (up to LIMIT), and the newest parkruns fill
+ *  the rest, so weekly parkruns do not push the hand-listed races out. */
+export function shownRaces(races) {
+  const listed = races.filter((r) => r.source === "races").slice(0, LIMIT);
+  const parkruns = races.filter((r) => r.source !== "races").slice(0, LIMIT - listed.length);
+  const keep = new Set([...listed, ...parkruns]);
+  return races.filter((r) => keep.has(r));
+}
 
 /** The section element; it fills itself once the data arrives. */
 export function racesSection() {
@@ -67,7 +77,7 @@ function render(v) {
         h("th", { class: "r" }, "VDOT"),
         h("th", {}, "备注"),
       )),
-      h("tbody", {}, ...v.races.slice(0, LIMIT).map((r) => h("tr", { class: r.all_out ? "" : "soft" },
+      h("tbody", {}, ...shownRaces(v.races).map((r) => h("tr", { class: r.all_out ? "" : "soft" },
         h("td", {}, r.activity_id == null ? fmtDate(r.date) : h("a", { href: `#/run/${r.activity_id}` }, fmtDate(r.date))),
         h("td", {}, fmtDistance(r.distance_m)),
         h("td", { class: "r" }, fmtTime(r.time_s)),
