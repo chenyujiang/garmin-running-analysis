@@ -133,10 +133,12 @@ th { @apply text-left font-medium text-ink-3 text-label pt-1 px-2 pb-1.5 border-
 td { @apply py-1.75 px-2 border-b border-b-rule; }
 
 /* shell */
-.topbar { @apply flex items-center gap-7 py-0 px-8 h-14 border-b-2 border-b-rule-strong; }
+/* the bar's rule spans the window; its content box matches .page so the brand lines up with the content */
+.topbar { @apply border-b-2 border-b-rule-strong; }
+.topbar-in { @apply flex items-center gap-7 max-w-[1280px] mx-auto py-0 px-8 h-14; }
 .brand { @apply font-serif font-black text-[21px] leading-none tracking-[0.02em] normal-nums; }
 .sync { @apply ml-auto text-ink-3 text-sm flex gap-4 items-center; }
-.page { @apply max-w-[1560px] mx-auto pt-7 px-8 pb-30; }
+.page { @apply max-w-[1280px] mx-auto pt-7 px-8 pb-30; }
 
 /* type */
 .headline { @apply font-serif font-black text-[30px] leading-[1.25] normal-nums mt-0 mx-0 mb-1.5 tracking-[0.01em] text-balance; }
@@ -258,7 +260,7 @@ details.how .body pre { @apply m-0 font-mono text-xs whitespace-pre-wrap; }
   .a-band > section { border-left: 0 !important; @apply row-auto col-1 pt-1 px-0 pb-6; }
   .a-band > section.band-load { @apply pr-0; }
   .page { @apply px-4.5; }
-  .topbar { @apply py-0 px-4.5 gap-3.5; }
+  .topbar-in { @apply py-0 px-4.5 gap-3.5; }
   .headline { @apply text-[24px]; }
 }
 
@@ -396,7 +398,7 @@ a.brand { text-decoration: none; @apply text-ink; }
 .plan-form input { font: inherit; @apply py-0.5 px-1.5 border border-rule bg-paper text-ink tabular-nums; }
 .plan-form button { font: inherit; @apply py-0.5 px-2.5 border border-accent bg-accent text-paper rounded-sm cursor-pointer; }
 .plan-h { @apply mt-7.5 mx-0 mb-2; }
-.plan-paces table, .plan-week table { @apply max-w-[980px]; }
+.plan-paces table, .plan-week table { @apply w-full; }
 .pushed-tag { @apply inline-block mt-0.5 py-0 px-1.25 rounded-sm text-xs whitespace-nowrap bg-good-wash text-good; }
 .push-note { @apply border-l-3 border-l-good pl-2; }
 .pk { @apply inline-block min-w-[1.6em] text-center py-0 px-1 rounded-sm font-bold text-label text-white; }
@@ -421,7 +423,6 @@ a.brand { text-decoration: none; @apply text-ink; }
 .plan-rules li { @apply my-1 mx-0; }
 
 /* plan review (#/review): one card per run session, newest first */
-.review { @apply max-w-[980px]; }
 .review .plan-head { @apply grid grid-cols-[1fr_auto] gap-y-0 gap-x-4; }
 .review .plan-head .tools { align-self: end; @apply col-2 row-1 relative; }
 .review .plan-head .tools details.how .body { box-shadow: 0 6px 20px rgba(0,0,0,.12); @apply absolute right-0 z-3 w-[min(70ch,90vw)]; }
@@ -449,7 +450,6 @@ a.brand { text-decoration: none; @apply text-ink; }
 .rv-next { @apply mt-9 mx-0 mb-0; }
 
 /* Auckland parkrun courses (#/parkruns): summary table, then one card per course */
-.parkruns { @apply max-w-[980px]; }
 .parkruns .plan-head { @apply grid grid-cols-[1fr_auto] gap-y-0 gap-x-4; }
 .parkruns .plan-head > :not(.tools) { @apply col-1; }
 .parkruns .plan-head .tools { align-self: end; @apply col-2 row-1 relative; }

@@ -4,15 +4,23 @@
 
 **Blocked by:** none
 
-**Status:** open
+**Status:** done
 
 Source: User Stories 1, 2 and 6, and "Dashboard styles" under Implementation Decisions, in the [implementation spec](../spec.md).
 
-- [ ] `.page` uses `max-w-[1280px]`
-- [ ] The header's brand, navigation and sync line sit in a box with the same `max-w-[1280px] mx-auto` and horizontal padding as `.page` (add an inner wrapper in `index.html` if needed); the bottom rule may span the window
-- [ ] At the 980 px breakpoint both keep the smaller padding they have today
-- [ ] The 980 px caps are removed from `.plan-paces table, .plan-week table`, `.review` and `.parkruns`; the tables there are `w-full`
-- [ ] Prose blocks keep their `ch` limits
-- [ ] `static/style.css` is rebuilt with `uv run python scripts/build_css.py`, and `--check` passes
+- [x] `.page` uses `max-w-[1280px]`
+- [x] The header's brand, navigation and sync line sit in a box with the same `max-w-[1280px] mx-auto` and horizontal padding as `.page` (add an inner wrapper in `index.html` if needed); the bottom rule may span the window
+- [x] At the 980 px breakpoint both keep the smaller padding they have today
+- [x] The 980 px caps are removed from `.plan-paces table, .plan-week table`, `.review` and `.parkruns`; the tables there are `w-full`
+- [x] Prose blocks keep their `ch` limits
+- [x] `static/style.css` is rebuilt with `uv run python scripts/build_css.py`, and `--check` passes
 - [ ] Browser check with synthetic data or the running dashboard: at a 1600 px window the header and page edges line up on `#/`, `#/runs`, `#/plan`, `#/review` and `#/parkruns`; the three tables reach the right edge; nothing overflows at 390 px
-- [ ] `ruff format --check`, `ruff check` and `pytest` pass
+- [x] `ruff format --check`, `ruff check` and `pytest` pass
+
+## Outcome (implementation notes)
+
+- `index.html`: `<header class="topbar">` now wraps brand, nav and sync line in `<div class="topbar-in">`. `.topbar` keeps only the bottom rule (spans the window); `.topbar-in` carries the flex layout, `max-w-[1280px] mx-auto`, `px-8` and `h-14`. At 980 px `.topbar-in` gets `px-4.5 gap-3.5`, as `.page` gets `px-4.5`.
+- `.page`: `max-w-[1280px]`.
+- `.plan-paces table, .plan-week table` are `w-full` (was `max-w-[980px]`); the `max-w-[980px]` rules on `.review` and `.parkruns` are dropped, so their tables take the global `table { w-full }`. Prose `ch` limits are untouched.
+- No other doc recorded the 1560 px or 980 px widths.
+- Browser check left to the orchestrator.
