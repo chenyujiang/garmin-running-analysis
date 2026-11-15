@@ -1,7 +1,7 @@
 # Home and page layout: implementation spec
 
 Label: ready-for-agent
-Status: open
+Status: done
 
 Source: the user's request on 2026-11-15 and their answers (page width 1280 px; option A for recent races: merge `races.csv` with parkruns and mark parkrun rows "parkrun"; every other part of the dashboard stays as it is). Terms are in `GLOSSARY.md` at the root, product background in `PRODUCT.md`.
 
