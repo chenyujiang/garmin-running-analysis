@@ -128,13 +128,17 @@ td {
   padding-block: calc(var(--spacing) * 1.75);
 }
 .topbar {
-  display: flex;
-  height: calc(var(--spacing) * 14);
-  align-items: center;
-  gap: calc(var(--spacing) * 7);
   border-bottom-style: var(--tw-border-style);
   border-bottom-width: 2px;
   border-bottom-color: var(--rule-strong);
+}
+.topbar-in {
+  margin-inline: auto;
+  display: flex;
+  height: calc(var(--spacing) * 14);
+  max-width: 1280px;
+  align-items: center;
+  gap: calc(var(--spacing) * 7);
   padding-inline: calc(var(--spacing) * 8);
   padding-block: 0px;
 }
@@ -159,7 +163,7 @@ td {
 }
 .page {
   margin-inline: auto;
-  max-width: 1560px;
+  max-width: 1280px;
   padding-inline: calc(var(--spacing) * 8);
   padding-top: calc(var(--spacing) * 7);
   padding-bottom: calc(var(--spacing) * 30);
@@ -710,7 +714,7 @@ details.how .body pre {
   .page {
     padding-inline: calc(var(--spacing) * 4.5);
   }
-  .topbar {
+  .topbar-in {
     gap: calc(var(--spacing) * 3.5);
     padding-inline: calc(var(--spacing) * 4.5);
     padding-block: 0px;
@@ -1323,7 +1327,7 @@ a.brand {
   margin-bottom: calc(var(--spacing) * 2);
 }
 .plan-paces table, .plan-week table {
-  max-width: 980px;
+  width: 100%;
 }
 .pushed-tag {
   margin-top: calc(var(--spacing) * 0.5);
@@ -1434,9 +1438,6 @@ a.brand {
 .plan-rules li {
   margin-inline: 0px;
   margin-block: var(--spacing);
-}
-.review {
-  max-width: 980px;
 }
 .review .plan-head {
   display: grid;
@@ -1577,9 +1578,6 @@ a.brand {
   margin-inline: 0px;
   margin-top: calc(var(--spacing) * 9);
   margin-bottom: 0px;
-}
-.parkruns {
-  max-width: 980px;
 }
 .parkruns .plan-head {
   display: grid;
