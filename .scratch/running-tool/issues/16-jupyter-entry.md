@@ -1,22 +1,22 @@
-# 16: Jupyter 探索入口
+# 16: Jupyter exploration entry point
 
-**What to build:** 用户用 `uv run jupyter lab` 打开一个示例 notebook，调用和仪表盘同一套公开函数，查看有氧能力、负荷和周跑量，并在此基础上深入探索。
+**What to build:** The user opens an example notebook with `uv run jupyter lab`, calls the same public functions as the dashboard to look at aerobic fitness, load and weekly volume, and explores further from there.
 
-**Blocked by:** 11（有氧能力的计算与接口）
+**Blocked by:** 11 (aerobic fitness computation and interface)
 
 **Status:** done
 
-来源：[实施 spec](../spec.md)，User Stories 47、48。
+Source: User Stories 47 and 48 in the [implementation spec](../spec.md).
 
-- [x] `jupyterlab` 在 Python 项目的 dev 依赖组里
-- [x] 示例 notebook 只调用分析包的公开函数，不复制计算逻辑
-- [x] 提交时 `nbstripout` 清掉输出，确认 git 里的 notebook 不含个人数据
-- [x] README 写明怎么启动 Jupyter，以及在 VS Code 里怎么选内核
+- [x] `jupyterlab` is in the Python project's dev dependency group
+- [x] The example notebook only calls the analysis package's public functions and copies no computation logic
+- [x] `nbstripout` clears outputs on commit; confirm the notebook in git holds no personal data
+- [x] The README explains how to start Jupyter and how to pick the kernel in VS Code
 
-## 结论
+## Outcome
 
-- `jupyterlab` 和 `nbstripout` 在 ticket 02 时已放进 `analysis/pyproject.toml` 的 dev 组；`.gitattributes` 的 nbstripout 过滤器也已就位。
-- 示例 notebook：`analysis/notebooks/explore.ipynb`。依次看数据状态、周跑量（`weekly_volume`）、训练负荷（`training_load`）、有氧能力（`aerobic_trend`）、每次跑步表（`running_summaries`、`aerobic_runs`），最后用 `load_records` + `steady_state` 看单次路跑的逐秒稳态段和 EF。没有数据库时每一格也能跑完，只显示空表。
-- 测试 `analysis/tests/test_notebook.py`：用 `nbclient` 在临时 `RUNNING_DATA_DIR`（合成路跑）和"还没有数据库"两种情况下把 notebook 从头跑到尾，不能有报错；静态检查代码格只从 `running` 导入公开名字、不访问 `_` 开头的属性、不直接用 `duckdb`/`sqlite3`；提交的 notebook 没有输出、`execution_count` 为空。
-- README 的 Notebooks 一节写了 `uv run jupyter lab notebooks/explore.ipynb` 和 VS Code 选 `analysis\.venv` 内核的步骤。
-- notebook 不画图：分析包没有绘图依赖，表格用 polars 自带的 HTML 显示。以后要画图再决定加 altair 还是别的。
+- `jupyterlab` and `nbstripout` went into the dev group of `analysis/pyproject.toml` back in ticket 02; the nbstripout filter in `.gitattributes` was already in place too.
+- Example notebook: `analysis/notebooks/explore.ipynb`. In order it shows the data status, weekly volume (`weekly_volume`), training load (`training_load`), aerobic fitness (`aerobic_trend`) and the per-run tables (`running_summaries`, `aerobic_runs`), and finally uses `load_records` + `steady_state` to show the per-second steady segments and EF of one road run. Without a database every cell still runs and shows empty tables.
+- Test `analysis/tests/test_notebook.py`: `nbclient` runs the notebook end to end, with no errors, in a temporary `RUNNING_DATA_DIR` (synthetic road runs) and with no database yet. A static check makes sure the code cells import only public names from `running`, touch no attributes starting with `_`, and use neither `duckdb` nor `sqlite3` directly; the committed notebook has no outputs and empty `execution_count`s.
+- The README's Notebooks section gives `uv run jupyter lab notebooks/explore.ipynb` and the steps to pick the `analysis\.venv` kernel in VS Code.
+- The notebook draws no charts: the analysis package has no plotting dependency, and tables use polars' own HTML display. Whether to add altair or something else is decided when charts are needed.

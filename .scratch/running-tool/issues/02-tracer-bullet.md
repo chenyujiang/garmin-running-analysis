@@ -1,22 +1,22 @@
-# 02: Tracer bullet：从原始档案到仪表盘空状态
+# 02: Tracer bullet: from the raw archive to the empty dashboard
 
-**What to build:** 打通整条链路的最窄路径。导入 CLI 把原始档案里的活动详情 JSON 重建进分析库；分析包只读打开分析库；本机仪表盘显示两种状态："还没有数据"的空状态（列出 `runsync sync` 和 `runsync login` 的步骤，以及数据目录位置），或者"已有 N 个活动，最近一次同步时间"。这个 ticket 立起两个项目的骨架，后面的 ticket 都在上面加功能。
+**What to build:** The narrowest path through the whole chain. The import CLI rebuilds the activity detail JSON in the raw archive into the analysis database; the analysis package opens the analysis database read-only; the local dashboard shows one of two states: an empty "no data yet" state (listing the steps for `runsync sync` and `runsync login`, and where the data directory is), or "N activities, last synced at …". This ticket sets up the skeleton of both projects; later tickets add features on top.
 
-**Blocked by:** 01（实施前提：工具链与凭据就位）
+**Blocked by:** 01 (prerequisites: toolchain and credentials in place)
 
 **Status:** done
 
-来源：[实施 spec](../spec.md)，User Stories 1、2、6、8、27–29、31、48、60–63。
+Source: User Stories 1, 2, 6, 8, 27–29, 31, 48, 60–63 in the [implementation spec](../spec.md).
 
-- [x] 仓库根目录下有两个独立项目：Rust crate（二进制 `runsync`）和 uv 管理的 Python 项目（包 `running`，Python 3.14），不用任何 workspace
-- [x] 两边都按 `RUNNING_DATA_DIR` 找数据目录，默认 `%USERPROFILE%\running-data`，都读同一个 `config.toml`；文件缺失时给出明确错误
-- [x] 迁移用手写 SQL，编进二进制，用 `PRAGMA user_version` 记录版本，启动时在一个事务里执行；分析库开启 WAL
-- [x] `runsync rebuild` 删除分析库，从原始档案重建 `activities` 表（类型、`start_time_utc`、`start_time_local`、距离、时长、心率、爬升等，单位 SI），完全离线
-- [x] `runsync sync` 和 `runsync login` 的子命令已存在，暂时只提示"尚未实现"
-- [x] 分析包用 DuckDB 只读 `ATTACH` 分析库，用 polars 返回数据，不依赖 pandas
-- [x] FastAPI 只绑定 `127.0.0.1`，提供"数据状态"接口，并托管静态前端
-- [x] 前端是原生 ES modules，不用 node 构建；字体（Noto Serif SC、Noto Sans SC、IBM Plex Sans）本地托管；视觉基调按原型变体 A（新闻纸色底 `#f3efe6`、墨黑文字）；界面文字为中文
-- [x] Seam 1 测试：在手写的原始档案 fixture 上运行 `rebuild`，查询 SQLite 断言行数、单位、两个时间戳；迁移在空库和旧版本库上都能升到最新
-- [x] Seam 3 测试：用 `TestClient` 加合成的分析库，覆盖"没有分析库或库为空"和"有数据"两种返回
-- [x] `.gitignore` 加上 Rust 的 target 目录和 Python 的 `.venv`；配好 `nbstripout`；`rustfmt`、`clippy`、`ruff` 全部通过
-- [x] README 写明常用命令：构建、`rebuild`、启动仪表盘、跑两边的测试
+- [x] The repository root holds two independent projects: a Rust crate (binary `runsync`) and a uv-managed Python project (package `running`, Python 3.14), with no workspace of any kind
+- [x] Both find the data directory through `RUNNING_DATA_DIR`, default `%USERPROFILE%\running-data`, and both read the same `config.toml`; a missing file gives a clear error
+- [x] Migrations are hand-written SQL compiled into the binary, versioned with `PRAGMA user_version`, and run in one transaction at startup; the analysis database uses WAL
+- [x] `runsync rebuild` deletes the analysis database and rebuilds the `activities` table from the raw archive (type, `start_time_utc`, `start_time_local`, distance, duration, heart rate, elevation gain and so on, in SI units), fully offline
+- [x] The `runsync sync` and `runsync login` subcommands exist and for now only say "not implemented yet"
+- [x] The analysis package attaches the analysis database read-only through DuckDB `ATTACH` and returns data as polars, with no pandas dependency
+- [x] FastAPI binds only to `127.0.0.1`, serves a "data status" endpoint, and hosts the static frontend
+- [x] The frontend is plain ES modules with no node build; fonts (Noto Serif SC, Noto Sans SC, IBM Plex Sans) are hosted locally; the visual tone follows prototype variant A (newsprint background `#f3efe6`, ink-black text); the interface text is Chinese
+- [x] Seam 1 tests: run `rebuild` on a hand-written raw archive fixture and query SQLite to assert row counts, units and both timestamps; migrations bring both an empty database and an older-version database up to the latest
+- [x] Seam 3 tests: `TestClient` with a synthetic analysis database covers the "no analysis database or an empty one" and "has data" responses
+- [x] `.gitignore` covers Rust's target directory and Python's `.venv`; `nbstripout` is set up; `rustfmt`, `clippy` and `ruff` all pass
+- [x] The README lists the common commands: build, `rebuild`, start the dashboard, run both test suites

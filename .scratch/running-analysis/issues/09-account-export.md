@@ -1,4 +1,4 @@
-# 申请 Garmin 账号数据导出
+# Request a Garmin account data export
 
 Type: task
 Status: open
@@ -6,11 +6,11 @@ Blocked by: none
 
 ## Question
 
-在 Garmin 账号设置里申请一次完整的账号数据导出（Garmin 处理要几天）。导出包里的原始 FIT 和手表上的文件逐字节一致，可以作为 5 年历史的原始存档兜底；同时用来确认导出包里健康数据（HRV、睡眠、静息心率）的格式。这一点 [Garmin Connect 数据获取途径调研](01-garmin-data-access.md) 没能核实。
+Request one full account data export in the Garmin account settings (Garmin takes a few days to prepare it). The raw FIT files in the export are byte-for-byte the files on the watch, so they can serve as a fallback raw archive of the 5-year history. The export also shows the format of the health data (HRV, sleep, resting heart rate), which the [Garmin Connect data access survey](01-garmin-data-access.md) could not confirm.
 
-需要用户本人操作（HITL）。拿到导出包后在 Answer 里记录：包的存放位置、目录结构、FIT 文件数量和时间范围、健康数据的文件格式。
+The user must do this in person (HITL). Once the export arrives, record in the Answer: where the archive is kept, its directory layout, the number of FIT files and their date range, and the file format of the health data.
 
 ## Comments
 
-- 2026-10-23（来自 [项目骨架与依赖](11-project-skeleton.md)）：数据目录由环境变量 `RUNNING_DATA_DIR` 指定，默认 `%USERPROFILE%\running-data`。导出包解压到其中的 `raw/export/<导出日期>/`。
-- 2026-10-24：不阻塞任何 ticket，也不阻塞地图收尾。用户去 Garmin 网站申请导出，导出包到了之后再记录 Answer 并关闭这个 ticket。
+- 2026-10-23 (from [project skeleton and dependencies](11-project-skeleton.md)): the environment variable `RUNNING_DATA_DIR` sets the data directory, default `%USERPROFILE%\running-data`. The export is extracted to `raw/export/<export date>/` in it.
+- 2026-10-24: this blocks no ticket and does not block closing the map. The user requests the export on the Garmin website; once it arrives, record the Answer and close this ticket.

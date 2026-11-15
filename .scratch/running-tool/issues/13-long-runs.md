@@ -1,27 +1,27 @@
-# 13: 长距离表：EF 和 decoupling
+# 13: Long-run table: EF and decoupling
 
-**What to build:** 仪表盘下方有一张长距离表，列出 60 分钟以上的跑步，显示 EF 和 decoupling，decoupling 超过 5% 标红，用来判断长距离的耐力，旁边有"怎么算的"。
+**What to build:** A long-run table below the dashboard lists runs of 60 minutes or more with their EF and decoupling, marks decoupling above 5% in red to judge long-run endurance, and has a "how it is computed" note next to it.
 
-**Blocked by:** 11（有氧能力的计算与接口）
+**Blocked by:** 11 (aerobic fitness computation and interface)
 
 **Status:** done
 
-来源：[实施 spec](../spec.md)，User Stories 38、57、58；Implementation Decisions 里的"EF 与 decoupling"。
+Source: User Stories 38, 57 and 58, and "EF and decoupling" under Implementation Decisions, in the [implementation spec](../spec.md).
 
-- [x] EF = GAP 速度 ÷ 心率，只用稳态段
-- [x] decoupling 只对 ≥60 分钟的跑步计算，超过 5% 标出
-- [x] 长距离接口返回最近的长距离跑步，每行含日期、距离、时长、EF、decoupling，以及公式说明
-- [x] 前端表格按原型变体 A 的表格样式，超过 5% 的 decoupling 用红色
-- [x] Seam 3 测试：59 分钟的跑步不出现在表里；decoupling 的数值和 >5% 标志正确
+- [x] EF = GAP speed ÷ heart rate, steady segments only
+- [x] Decoupling is computed only for runs of ≥60 minutes and flagged above 5%
+- [x] The long-run endpoint returns the recent long runs, each row with date, distance, duration, EF and decoupling, plus a description of the formulas
+- [x] The frontend table uses prototype variant A's table style, with decoupling above 5% in red
+- [x] Seam 3 tests: a 59-minute run does not appear in the table; the decoupling value and the >5% flag are correct
 
-## 结论（实施记录）
+## Outcome (implementation notes)
 
-- 模块 `analysis/src/running/longruns.py`：`long_runs(today=None, limit=10, root=None)`；接口 `GET /api/long-runs?today=YYYY-MM-DD&limit=N`（limit 1–100，默认 10）。
-- 返回 `today, has_data, runs[], method{name, description, params}`。`runs[]` 按开始时间新到旧，只含 `today` 及以前：`activity_id, activity_type, start_time_local, distance_m, duration_s, steady_s, ef, ef_first, ef_second, decoupling_pct, decoupling_high`。
-- 长距离 = `RUNNING_TYPES` 里 `activities.duration_s >= 3600` 的活动（含跑步机和越野；没有海拔时坡度按 0）。
-- 稳态段：复用 `running.aerobic.steady_state`，但去掉"心率在 145 ± 15 内"这一条（`hr_band_bpm = inf`）。理由：decoupling 衡量的正是心率漂移，按参考心率筛掉漂高的秒数会把漂移藏起来。其余条件（热身、在跑、速度稳定、暂停后第一秒、步频锁定）照旧。（提交 2845fc1 曾改回带心率带；2026-11-04 用户决定去掉，`steady_state(..., hr_band=False)`。）
-- **EF 单位（自定）**：m/min ÷ bpm，按时间加权的平均 GAP 速度 ÷ 平均平滑心率。项目全用公制；Friel 的码/分口径 = 本值 ÷ 0.9144。GAP 用 Minetti 而非 NGP，数值不能与 TrainingPeaks 直接比。写在 `method.description` 和 `method.params.ef_unit`。
-- **decoupling 切分（自定）**：稳态秒按累计稳态时间对半分（`method.params.split`），`(EF₁ − EF₂) ÷ EF₁ × 100`。理由：EF 只用稳态段，按原始时间切会让热身和停顿全落在前半。
-- 稳态不足 `min_steady_s`（600 s）或没有心率：`ef`、`decoupling_pct` 为 null，`decoupling_high` 为 false。
-- 前端 `static/longruns.js`（`longRunsSection()`，`.a-lower` 第 1 列）；`app.js` 新增 `lower()` 行，最近比赛（ticket 15）放第 2 列。CSS 在 `style.css` 末尾 ticket 13 区块（`.a-lower`、`.sec-head`、表格）。
-- 测试 `analysis/tests/test_long_runs_api.py`（Seam 3，7 个）：59 分钟不出现、60 分钟出现且 EF = 1.2；formulas.md 算例 5.068% 标红；−5% 和 4% 不标红；排序、limit、today；非跑步类型排除；没有心率时为 null；没有库时 `has_data=false`。测试用 90 s 暂停隔开两半，让平滑窗口不跨两半。
+- Module `analysis/src/running/longruns.py`: `long_runs(today=None, limit=10, root=None)`; endpoint `GET /api/long-runs?today=YYYY-MM-DD&limit=N` (limit 1–100, default 10).
+- Returns `today, has_data, runs[], method{name, description, params}`. `runs[]` goes from newest to oldest start time and holds only runs on or before `today`: `activity_id, activity_type, start_time_local, distance_m, duration_s, steady_s, ef, ef_first, ef_second, decoupling_pct, decoupling_high`.
+- Long run = an activity in `RUNNING_TYPES` with `activities.duration_s >= 3600` (treadmill and trail included; without elevation the grade counts as 0).
+- Steady segments: reuse `running.aerobic.steady_state`, minus the "heart rate within 145 ± 15" condition (`hr_band_bpm = inf`). Reason: decoupling measures exactly the heart-rate drift, and filtering out the drifted-high seconds by a reference heart rate would hide the drift. The other conditions (warm-up, running, steady speed, first second after a pause, cadence lock) still apply. (Commit 2845fc1 had put the heart-rate band back; on 2026-11-04 the user decided to drop it: `steady_state(..., hr_band=False)`.)
+- **EF unit (our own choice)**: m/min ÷ bpm, the time-weighted mean GAP speed ÷ the mean smoothed heart rate. The project is metric throughout; Friel's yards-per-minute figure = this value ÷ 0.9144. GAP uses Minetti rather than NGP, so values cannot be compared with TrainingPeaks directly. Recorded in `method.description` and `method.params.ef_unit`.
+- **Decoupling split (our own choice)**: the steady seconds are split in half by cumulative steady time (`method.params.split`), `(EF₁ − EF₂) ÷ EF₁ × 100`. Reason: EF only uses steady segments, and splitting by raw time would put all the warm-up and stops in the first half.
+- Fewer than `min_steady_s` (600 s) of steady time, or no heart rate: `ef` and `decoupling_pct` are null and `decoupling_high` is false.
+- Frontend `static/longruns.js` (`longRunsSection()`, column 1 of `.a-lower`); `app.js` gains a `lower()` row, with recent races (ticket 15) in column 2. The CSS is in the ticket 13 block at the end of `style.css` (`.a-lower`, `.sec-head`, tables).
+- Tests `analysis/tests/test_long_runs_api.py` (Seam 3, 7 tests): 59 minutes does not appear, 60 minutes appears with EF = 1.2; the 5.068% example from formulas.md is marked red; −5% and 4% are not; ordering, limit, today; non-running types excluded; null without heart rate; `has_data=false` without a database. The tests separate the two halves with a 90 s pause so the smoothing window does not span them.

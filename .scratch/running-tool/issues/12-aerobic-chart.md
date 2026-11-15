@@ -1,27 +1,27 @@
-# 12: 有氧能力趋势图
+# 12: Aerobic fitness trend chart
 
-**What to build:** 仪表盘第二屏是全宽的有氧能力趋势图。纵轴是参考心率下的配速，越快越高；点表示每周中位数，线是 4 周滚动中位数；下面是每周平均温度副图。用户可以切换半年、1 年、2 年、全部；鼠标悬停时显示十字线，读出那一周的日期、配速和温度。旁边有"有氧能力怎么算的"。
+**What to build:** The dashboard's second screen is a full-width aerobic fitness trend chart. The vertical axis is pace at the reference heart rate, faster is higher; dots are weekly medians and the line is the 4-week rolling median; below it is a sub-chart of the weekly average temperature. The user can switch between six months, 1 year, 2 years and everything; on hover a crosshair reads out that week's dates, pace and temperature. A "how aerobic fitness is computed" note sits next to it.
 
-**Blocked by:** 11（有氧能力的计算与接口）
+**Blocked by:** 11 (aerobic fitness computation and interface)
 
 **Status:** done
 
-来源：[实施 spec](../spec.md)，User Stories 53–56、58；Implementation Decisions 里的"仪表盘"。
+Source: User Stories 53–56 and 58, and "Dashboard" under Implementation Decisions, in the [implementation spec](../spec.md).
 
-- [x] 手写 SVG，不引入图表库；主图和温度副图左边对齐
-- [x] 范围切换调用有氧能力接口的范围参数
-- [x] 数据不足的周点留空，线在空周处断开，不插值
-- [x] 十字线读数按原型变体 C 的做法
-- [x] 视觉按原型变体 A：每张图最多 2 条编辑式批注，数字用 tabular-nums
-- [x] 在浏览器里用合成数据检查四种范围和十字线读数
+- [x] Hand-written SVG, no chart library; the main chart and the temperature sub-chart are left-aligned
+- [x] Switching the range calls the aerobic endpoint's range parameter
+- [x] Weeks without enough data have no dot, and the line breaks at empty weeks without interpolation
+- [x] The crosshair readout follows prototype variant C
+- [x] The visuals follow prototype variant A: at most 2 editorial annotations per chart, numbers in tabular-nums
+- [x] Check all four ranges and the crosshair readout in the browser with synthetic data
 
-## 结论
+## Outcome
 
-- 接口不变：ticket 11 的 `GET /api/aerobic?range=&today=` 已给出所需全部字段，所以没有新增 Seam 3 测试；前端没有测试 seam，靠浏览器检查。
-- 代码在 `static/aerobic.js`（`aerobicSection()`），自己画 SVG，没改共享的 `svg.js`（它会跨空值连线）。主图和温度副图共用宽度和左右边距，绘图区对齐。
-- 纵轴倒置（越快越高），m:ss 刻度。点是周中位数，本周未完画空心点；滚动线在空周断开，孤立的滚动点画成短横线。
-- 默认范围 1 年；切换时带上页面的 `?today=` 重新请求，过期响应丢弃。
-- 两条批注：4 周滚动最快的那周；最热的那周（比中位温度高 5°C 以上才标，提示"温度未校正"）。
-- 十字线吸附到最近一周，读数：日期区间、周中位数、4 周滚动、有效跑步次数、温度。
-- 比赛标记暂不显示：还没有比赛接口。
-- 浏览器检查：140 周合成数据，四种范围和十字线读数都正常。
+- The endpoint is unchanged: ticket 11's `GET /api/aerobic?range=&today=` already gives every field needed, so there are no new Seam 3 tests; the frontend has no test seam and relies on a browser check.
+- The code is in `static/aerobic.js` (`aerobicSection()`) and draws its own SVG without touching the shared `svg.js` (which joins lines across nulls). The main chart and the temperature sub-chart share width and left/right margins, so their plot areas line up.
+- The vertical axis is inverted (faster is higher), with m:ss ticks. Dots are weekly medians; the unfinished current week is a hollow dot. The rolling line breaks at empty weeks, and an isolated rolling point is drawn as a short dash.
+- The default range is 1 year; switching re-requests with the page's `?today=`, and stale responses are dropped.
+- Two annotations: the week with the fastest 4-week rolling value; the hottest week (marked only when it is more than 5°C above the median temperature, with a note that temperature is not corrected).
+- The crosshair snaps to the nearest week and reads out: date range, weekly median, 4-week rolling value, number of valid runs, temperature.
+- Race markers are not shown yet: there is no races endpoint yet.
+- Browser check: 140 weeks of synthetic data; all four ranges and the crosshair readout work.

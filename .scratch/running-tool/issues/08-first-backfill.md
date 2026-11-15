@@ -1,25 +1,25 @@
-# 08: 第一次全量回填
+# 08: First full backfill
 
-**What to build:** 用真实数据完成第一次全量回填，让本机拥有 2021-08 起的全部历史，并确认导入 CLI 在真实数据上可用。历史部分来自账号数据导出包（`runsync import-export`，离线），导出日期之后的新数据由 `runsync sync` 补齐。这是 HITL ticket：命令由用户手动运行。
+**What to build:** Complete the first full backfill with real data, so this machine holds the whole history since 2021-08, and confirm the import CLI works on real data. The history comes from the account data export (`runsync import-export`, offline); `runsync sync` fills in new data after the export date. This is a HITL ticket: the user runs the commands by hand.
 
-**Blocked by:** 05（每日汇总同步），07（限流冷却与凭据失效处理），17（导入 Garmin 账号数据导出包）
+**Blocked by:** 05 (daily summary sync), 07 (rate-limit cooldown and expired credentials), 17 (import the Garmin account data export)
 
 **Status:** done
 
-来源：[实施 spec](../spec.md)，User Stories 9–11；Out of Scope 里的"数据质量与清洗"和"温度校正"。
+Source: User Stories 9–11, and "Data quality and cleaning" and "Temperature correction" under Out of Scope, in the [implementation spec](../spec.md).
 
-- [x] 运行 `runsync import-export <zip>`（包已复制进 `raw/export/`；仓库根目录的原件被 `*.zip` 忽略，用户可自行删除）
-- [x] 用户再运行 `runsync sync`，补导出日期之后的新数据（中断后再次运行即可续传）
-- [x] agent 只核对汇总信息：各表行数、活动日期范围、各活动类型的数量、跳过的非 activity FIT 数量、解析失败的 FIT 数量；不读取、不输出 GPS 坐标
-- [x] 如果遇到 429，按冷却规则处理，不重试
-- [x] 解析失败的 FIT 比例偏高时，评估是否换 `rustyfit`，结论记在本 ticket
-- [x] 回填完成后，在 `.scratch/running-tool/issues/` 新开两个 ticket："数据质量与清洗"和"温度校正"
-- [x] 确认 `raw/`（包括 `raw/export/`）已纳入用户的备份（用户 2026-10-31 确认）
+- [x] Run `runsync import-export <zip>` (the archive is copied into `raw/export/`; the original in the repository root is ignored by `*.zip` and the user may delete it)
+- [x] The user then runs `runsync sync` to fill in new data after the export date (if interrupted, running it again resumes)
+- [x] The agent checks only summary information: row counts per table, the activity date range, the count per activity type, the number of skipped non-activity FIT files and the number of FIT files that failed to parse; it reads and prints no GPS coordinates
+- [x] On a 429, follow the cooldown rule and do not retry
+- [x] If the share of FIT files failing to parse is high, assess switching to `rustyfit` and record the conclusion in this ticket
+- [x] After the backfill, open two new tickets in `.scratch/running-tool/issues/`: "Data quality and cleaning" and "Temperature correction"
+- [x] Confirm `raw/` (including `raw/export/`) is part of the user's backups (confirmed by the user on 2026-10-31)
 
-## 结论
+## Outcome
 
-- **import-export**（2026-10-31，经用户授权由 agent 运行）：包存到 `raw/export/2026-10-30/`。活动 1098 个；FIT 17770 个，其中 1096 个 activity FIT 载入，1 个对不上活动，16673 个非 activity 跳过，**0 个解析失败**，不需要换 `rustyfit`。每日汇总 1912 天（2021-08-06..2026-10-30），Garmin 指标 1909 天（2021-08-07..2026-10-30）。
-- **sync**（用户运行，2026-10-31）：`sync_runs` 两行，`personal_api` 和 `garminconnect` 都是 `ok`，共约 30 s，没有 429，没有冷却标记。新增 1 个活动（2026-10-31），每日汇总和 Garmin 指标补到 2026-10-31。导出包已覆盖的日子没有重新请求。
-- **最终行数**：`activities` 1099（running 1073、track_running 17、indoor_cardio 4、walking 2、strength_training 2、assistance 1），`records` 3363903，`laps` 11617，`daily_wellness` 1913，`garmin_metrics` 1910。活动日期 2021-08-06..2026-10-31。2 个活动没有逐秒记录（记入 18）。
-- **`config.toml`**：用户确认 `hr_max = 193`、`hr_rest = 55`、`lthr = 170`，`effective_from = 2021-08-01`。依据：单次最大心率在 2022、2025 两天到 193；Garmin 的静息心率不可用（只在白天戴表），改取每日最低心率的 10 分位；LTHR 取导出包里的 Garmin 设置，与 10K、半马平均心率一致。
-- 新开 [18 数据质量与清洗](18-data-quality.md)、[19 温度校正](19-temperature-correction.md)。
+- **import-export** (2026-10-31, run by the agent with the user's permission): the archive is stored in `raw/export/2026-10-30/`. 1098 activities; 17770 FIT files, of which 1096 activity FIT files were loaded, 1 matched no activity, 16673 non-activity files were skipped and **0 failed to parse**, so there is no need to switch to `rustyfit`. Daily summaries cover 1912 days (2021-08-06..2026-10-30) and Garmin metrics 1909 days (2021-08-07..2026-10-30).
+- **sync** (run by the user, 2026-10-31): two `sync_runs` rows, `personal_api` and `garminconnect` both `ok`, about 30 s in total, no 429 and no cooldown marker. 1 new activity (2026-10-31); daily summaries and Garmin metrics filled up to 2026-10-31. Days already covered by the export were not requested again.
+- **Final row counts**: `activities` 1099 (running 1073, track_running 17, indoor_cardio 4, walking 2, strength_training 2, assistance 1), `records` 3363903, `laps` 11617, `daily_wellness` 1913, `garmin_metrics` 1910. Activity dates 2021-08-06..2026-10-31. 2 activities have no per-second records (logged in 18).
+- **`config.toml`**: the user confirmed `hr_max = 193`, `hr_rest = 55`, `lthr = 170`, `effective_from = 2021-08-01`. Basis: the single-run maximum heart rate reached 193 on two days, in 2022 and 2025; Garmin's resting heart rate is unusable (the watch is only worn during the day), so the 10th percentile of the daily minimum heart rate is used instead; LTHR is the Garmin setting from the export, consistent with the average heart rate of the 10K and half-marathon races.
+- Opened [18 Data quality and cleaning](18-data-quality.md) and [19 Temperature correction](19-temperature-correction.md).

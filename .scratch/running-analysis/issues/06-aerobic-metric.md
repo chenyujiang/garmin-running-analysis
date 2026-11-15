@@ -1,4 +1,4 @@
-# 有氧能力指标的定义
+# Definition of the aerobic fitness metric
 
 Type: grilling
 Status: resolved
@@ -6,49 +6,49 @@ Blocked by: 02
 
 ## Question
 
-"有氧能力"在本项目里具体用哪个指标、怎么算？
+Which metric exactly does this project use for "aerobic fitness", and how is it computed?
 
-- 选哪种指标（Efficiency Factor、固定心率区间配速、aerobic decoupling，或组合）。
-- 哪些活动、哪些片段参与计算：只算轻松跑？截取稳定心率段？排除间歇和比赛？
-- 长期趋势按周还是按月聚合，怎么平滑。
+- Which kind of metric (Efficiency Factor, pace in a fixed heart-rate zone, aerobic decoupling, or a combination).
+- Which activities and which segments take part: easy runs only? Steady heart-rate segments? Exclude intervals and races?
+- Whether the long-term trend is aggregated by week or by month, and how it is smoothed.
 
 ## Answer
 
-2026-10-23 与用户逐条讨论后确定。算法依据见 [有氧能力、训练负荷、成绩预测的算法调研](02-analysis-methods.md)；术语见 `GLOSSARY.md`：**有氧能力**、**参考心率**、**稳态段**。
+Decided point by point with the user on 2026-10-23. The basis for the algorithms is in [Survey of methods for aerobic fitness, training load and race prediction](02-analysis-methods.md); terms are in `GLOSSARY.md`: **aerobic fitness**, **reference heart rate**, **steady-state segment**.
 
-**主指标**：参考心率下的 GAP 配速。
+**Main metric**: GAP pace at the reference heart rate.
 
-- 每次跑步，在稳态段上拟合直线 `GAP速度 ~ 心率`，取参考心率处的预测值，作为这次跑步的有氧能力值。
-- 参考心率固定为 **145 bpm**，约为 LTHR 170 的 85%，写在配置里。5 年里保持不变，否则趋势会断开。年龄造成的 HRmax 下降接受，不做校正。看过真实数据后，如果轻松跑心率的中位数明显偏离 145，再调整一次。
-- 展示时换算成配速，例如"145 bpm 下 5:30/km"。
+- For each run, fit a straight line `GAP speed ~ heart rate` on the steady-state segments and take the predicted value at the reference heart rate as that run's aerobic fitness value.
+- The reference heart rate is fixed at **145 bpm**, about 85% of an LTHR of 170, and set in the config. It stays the same across the 5 years, otherwise the trend breaks. The age-related decline of HRmax is accepted without correction. After looking at real data, adjust it once if the median easy-run heart rate is clearly off 145.
+- Displayed as a pace, e.g. "145 bpm 下 5:30/km" (5:30/km at 145 bpm).
 
-**辅助指标**：
+**Supporting metrics**:
 
-- EF（GAP 速度 ÷ 心率，只用稳态段）：和主指标一起计算、一起展示。
-- aerobic decoupling：只对 ≥60 分钟的稳态跑计算，单独列出，不并入主趋势。
+- EF (GAP speed ÷ heart rate, steady-state segments only): computed and shown together with the main metric.
+- Aerobic decoupling: computed only for steady runs of ≥60 minutes, listed separately, not merged into the main trend.
 
-**参与计算的活动**：
+**Activities that take part**:
 
-- 只算户外路跑，也就是 `running` 类型。
-- 排除跑步机（配速来自加速度计，不可靠）和越野跑（技术性地形上 GAP 公式不成立）。
-- 比赛和间歇跑不按活动整体排除，由稳态段筛选去处理。
+- Only outdoor road runs, i.e. the `running` type.
+- Treadmill runs (pace comes from the accelerometer, unreliable) and trail runs (the GAP formula does not hold on technical terrain) are excluded.
+- Races and interval runs are not excluded as whole activities; the steady-state segment filter handles them.
 
-**稳态段筛选**（阈值都是参数，看过真实数据后再调）：
+**Steady-state segment filter** (all thresholds are parameters, to be tuned after looking at real data):
 
-1. 去掉前 10 分钟（热身、心率滞后）。
-2. 心率和速度都做 30 秒滚动平滑。
-3. 只保留同时满足以下条件的秒：心率在参考心率 ±15 bpm 以内；60 秒内速度变化不超过 5%；没有暂停；心率和步频的差不小于 5（用户主要用手腕光电心率，这一条用来排除步频锁定）。
-4. 有效时长不足 10 分钟的跑步，不计入。
+1. Drop the first 10 minutes (warm-up, heart-rate lag).
+2. Apply a 30-second rolling smooth to both heart rate and speed.
+3. Keep only seconds that meet all of: heart rate within ±15 bpm of the reference heart rate; speed change of no more than 5% within 60 seconds; no pause; difference between heart rate and cadence of at least 5 (the user mainly uses wrist optical heart rate, and this rule excludes cadence lock).
+4. Runs with less than 10 minutes of valid time do not count.
 
-**坡度校正**：Minetti 2002 的 `Cr(i)` 公式，把实际速度换算成 GAP 速度。坡度用气压海拔计算：海拔先平滑，再按 30 秒的距离窗口算，限制在 ±15%。
+**Grade correction**: Minetti 2002's `Cr(i)` formula converts actual speed into GAP speed. Grade is computed from barometric altitude: altitude is smoothed first, then grade is computed over a 30-second distance window and clamped to ±15%.
 
-**温度**：第一版不校正。趋势图上同时显示每周的平均温度，用来解读。温度取 FIT 里手表的温度，受体温影响偏高，但能看出相对高低。等看到季节波动有多大，再决定要不要用 Open-Meteo 的历史气温做回归校正；那样需要把位置发给第三方。
+**Temperature**: no correction in the first version. The trend chart also shows each week's mean temperature, to help interpret it. Temperature comes from the watch in the FIT; body heat makes it read high, but relative highs and lows are visible. Once the size of the seasonal swing is known, decide whether to regress against Open-Meteo historical air temperature; that would mean sending the location to a third party.
 
-**聚合**：取每周有效跑步的中位数，有效跑步不到 2 次的周留空；再画一条 4 周滚动中位数的趋势线。按月的视图只是更粗一档的显示，不另外定义算法。
+**Aggregation**: the median of each week's valid runs; weeks with fewer than 2 valid runs stay empty; plus a 4-week rolling median trend line. The monthly view is just a coarser display, with no separate algorithm.
 
 ## Comments
 
-- 2026-10-23 补充（用户提出：跑完常会走一段，Garmin 的平均配速因此偏慢）：
-  - 每一秒按步频分成"跑"和"走"：10 秒平滑后的步频 ≥ 140 spm 算跑，低于算走；连续走不到 10 秒的仍算跑。FIT 的 `cadence` 是单脚步频，要乘 2 才是 spm。阈值 140 是参数。这个规则同样适用于长距离中途走路。
-  - 稳态段筛选增加一条：只用跑的秒。
-  - 每次活动的主配速改为**跑步配速**（跑的秒的距离 ÷ 跑的秒的时间），Garmin 的平均配速作参照保留。
+- 2026-10-23 addition (raised by the user: they often walk a stretch after running, which makes Garmin's average pace slower):
+  - Each second is classified as "run" or "walk" by cadence: 10-second smoothed cadence ≥ 140 spm is running, below is walking; walking stretches shorter than 10 seconds still count as running. FIT's `cadence` is single-foot cadence and must be multiplied by 2 to get spm. The threshold 140 is a parameter. The same rule applies to walking in the middle of long runs.
+  - The steady-state segment filter gains a rule: only running seconds are used.
+  - The main pace of each activity becomes the **running pace** (distance of running seconds ÷ time of running seconds); Garmin's average pace is kept as a reference.
