@@ -19,7 +19,6 @@ import heapq
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date
 from functools import cached_property
 from pathlib import Path
 from typing import TypedDict
@@ -792,7 +791,7 @@ def _metrics(d: DetailInputs) -> dict:
         unavailable["decoupling"] = why or (
             f"不足 {longruns.MIN_DURATION_S // 60} 分钟，只给 EF，不算 decoupling"
         )
-    phys = load.physiology_on(d.config, date.fromisoformat(d.activity["start_time_local"][:10]))
+    phys = load.physiology_on(d.config, load.local_day(d.activity))
     zones, why = _hr_zones(d, phys)
     if why:
         unavailable["zones"] = why

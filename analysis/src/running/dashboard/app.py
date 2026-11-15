@@ -30,7 +30,7 @@ from running.plan5k import Plan5k, plan_5k
 from running.plan_review import PlanReview, plan_review
 from running.push_plan import STATE_FILE, PushStatus, load_state, push_status
 from running.races import Predictions, RaceList, race_list, race_predictions
-from running.runkind import RunKind
+from running.runkind import RunKind, all_run_kinds
 from running.runwalk import running_summaries
 from running.section import section_inputs
 from running.status import DataStatus, data_status
@@ -231,4 +231,10 @@ def _warm_run_summaries(root: Path) -> None:
 def _warm_run_kinds(root: Path) -> None:
     """The run kind of every run, so filtering the activity list by kind does
     not read every run's records on first use."""
-    activity_list(kind="easy", root=root)
+    inputs = section_inputs(None, root)
+    db = open_analysis_db(inputs.root)
+    if db is None:
+        return
+    with db:
+        if "activities" in db.tables():
+            all_run_kinds(db, inputs.config, inputs.root)

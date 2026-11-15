@@ -22,6 +22,7 @@ Formula sources and the choice of recursion are recorded in
 """
 
 import math
+from collections.abc import Mapping
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal, NamedTuple, TypedDict
@@ -68,6 +69,17 @@ def physiology_on(config: Config, day: date) -> Physiology | None:
 def zone_floors(config: Config, phys: Physiology) -> list[float]:
     """The Z2, Z3, Z4 and Z5 floors in bpm: `zones.lthr_pct` of the LTHR."""
     return [phys.lthr * p / 100.0 for p in config.zones.lthr_pct]
+
+
+def zone_floors_on(config: Config, day: date) -> list[float] | None:
+    """`zone_floors` of the physiology in effect on `day`; None without one."""
+    phys = physiology_on(config, day)
+    return None if phys is None else zone_floors(config, phys)
+
+
+def local_day(activity: Mapping) -> date:
+    """The local start date of an activity row (its `start_time_local`)."""
+    return date.fromisoformat(activity["start_time_local"][:10])
 
 
 class LoadPoint(TypedDict):
@@ -280,7 +292,7 @@ def activity_trimp(db: AnalysisDb, config: Config, activity: dict) -> ActivityTr
             [config.load.max_sample_gap_s],
         )
         samples = [(r["hr"], r["seconds"]) for r in hr.iter_rows(named=True)] or None
-    day = date.fromisoformat(activity["start_time_local"][:10])
+    day = local_day(activity)
     return _trimp_of(activity, day, samples, config)
 
 

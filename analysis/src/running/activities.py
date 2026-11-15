@@ -103,10 +103,11 @@ def _page_rows(
     page: int,
     page_size: int,
     filters: Filters,
-) -> tuple[int, list[dict]]:
-    """Without a run-kind filter: the page from SQL. With one: every running
-    activity passing the other filters gets its kind (cached per run, see
-    `running.runkind`), then the matching ones are paged."""
+) -> tuple[int, list[dict], dict[int, RunKind | None] | None]:
+    """Total, the page's rows, and their run kinds when computed here.
+    Without a run-kind filter: the page from SQL, kinds None. With one: every
+    running activity passing the other filters gets its kind (cached per run,
+    see `running.runkind`), then the matching ones are paged."""
     kind = filters.get("kind")
     where, params = _where("running" if kind else type_filter, min_distance_m, filters)
     select = (
@@ -120,10 +121,10 @@ def _page_rows(
         rows = db.query(select, params).to_dicts()
         kinds = run_kinds(db, config, root, rows)
         rows = [r for r in rows if kinds[r["activity_id"]] == kind]
-        return len(rows), rows[first : first + page_size]
+        return len(rows), rows[first : first + page_size], kinds
     total = int(db.query(f"SELECT count(*) FROM a.activities{where}", params).item())
     rows = db.query(f"{select} LIMIT ? OFFSET ?", [*params, page_size, first])
-    return total, rows.to_dicts()
+    return total, rows.to_dicts(), None
 
 
 def _running_paces(db: AnalysisDb, rows: list[dict], settings: RunWalk) -> dict[int, float]:
@@ -150,13 +151,14 @@ def activity_list(
 ) -> ActivityList:
     filters: Filters = {"query": query, "date_from": date_from, "date_to": date_to, "kind": kind}
     inputs = section_inputs(None, root)
-    has_data, total, rows, paces, kinds = False, 0, [], {}, {}
+    has_data, total, rows, paces = False, 0, [], {}
+    kinds: dict[int, RunKind | None] | None = {}
     db = open_analysis_db(inputs.root)
     if db is not None:
         with db:
             if "activities" in db.tables():
                 has_data = bool(db.query("SELECT count(*) FROM a.activities").item())
-                total, rows = _page_rows(
+                total, rows, kinds = _page_rows(
                     db,
                     inputs.config,
                     inputs.root,
@@ -167,7 +169,8 @@ def activity_list(
                     filters,
                 )
                 paces = _running_paces(db, rows, inputs.config.run_walk)
-                kinds = run_kinds(db, inputs.config, inputs.root, rows)
+                if kinds is None:
+                    kinds = run_kinds(db, inputs.config, inputs.root, rows)
     return {
         "has_data": has_data,
         "type_filter": type_filter,

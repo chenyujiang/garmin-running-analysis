@@ -14,9 +14,11 @@ load, heat. The heat item is left out when there is no air temperature.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import TYPE_CHECKING, Literal, TypedDict
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 import polars as pl
 
@@ -31,12 +33,49 @@ if TYPE_CHECKING:
 Verdict = Literal["good", "neutral", "watch", "unknown"]
 LONG_RUN_S = longruns.MIN_DURATION_S  # "long" and the drift verdict start at 60 minutes
 
-TYPE_NAMES = {
-    "interval": "间歇跑",
-    "tempo": "节奏跑",
-    "long": "长距离",
-    "easy": "轻松跑",
-    "mixed": "混合",
+TrainingKind = Literal["interval", "tempo", "long", "easy", "mixed"]
+
+
+@dataclass(frozen=True)
+class TrainingKindInfo:
+    name: str  # shown in the report
+    quality: bool  # a quality session: the activity list's run kind `quality`
+    why: Callable[[Mapping[str, Any]], str]  # the report's reason, from `TrainingType.params`
+
+
+# Everything per training type in one place: the report's name and reason,
+# and whether the activity list counts it as quality (`running.runkind`).
+TRAINING_KINDS: dict[TrainingKind, TrainingKindInfo] = {
+    "interval": TrainingKindInfo(
+        "间歇跑",
+        True,
+        lambda p: (
+            f"{p['interval_reps']} 段比中位速度快 {p['interval_speed_ratio']:.0%} 以上、"
+            f"持续 {p['interval_min_s']} 秒以上的快跑，段间有恢复"
+        ),
+    ),
+    "tempo": TrainingKindInfo(
+        "节奏跑",
+        True,
+        lambda p: (
+            f"Z3–Z4 占跑的时间 {p['z3_z4_share']:.0%}，"
+            f"最长连续 {p['longest_z3_z4_s'] / 60:.0f} 分钟"
+        ),
+    ),
+    "long": TrainingKindInfo(
+        "长距离",
+        False,
+        lambda p: f"{p['duration_s'] / 60:.0f} 分钟，Z1–Z2 占跑的时间 {p['z1_z2_share']:.0%}",
+    ),
+    "easy": TrainingKindInfo("轻松跑", False, lambda p: f"Z1–Z2 占跑的时间 {p['z1_z2_share']:.0%}"),
+    "mixed": TrainingKindInfo(
+        "混合",
+        False,
+        lambda p: (
+            f"Z1–Z2 占跑的时间 {p['z1_z2_share']:.0%}，Z3–Z4 占 {p['z3_z4_share']:.0%}，"
+            "不属于以上任何一类"
+        ),
+    ),
 }
 
 
@@ -103,7 +142,7 @@ def report_context(d: DetailInputs, detail: dict) -> ReportContext:
         if not recs.is_empty()
         else pl.DataFrame()
     )
-    day = date.fromisoformat(d.activity["start_time_local"][:10])
+    day = load.local_day(d.activity)
     monday = day - timedelta(days=day.weekday())
     baseline = _baseline(d, monday) if d.is_running else None
     around = _load_around(d, day, monday) if detail["metrics"]["trimp"] is not None else None
@@ -237,8 +276,8 @@ def _zone_shares(floors: list[float] | None, frame: pl.DataFrame) -> dict | None
 
 @dataclass(frozen=True)
 class TrainingType:
-    kind: str | None  # a TYPE_NAMES key; None: not intervals and no HR zone shares
-    params: dict  # thresholds and measured values
+    kind: TrainingKind | None  # None: not intervals and no HR zone shares
+    params: Mapping[str, Any]  # thresholds and measured values (read-only)
 
 
 def training_type(
@@ -258,10 +297,10 @@ def training_type(
         "duration_s": duration_s,
     }
     if reps >= cfg.interval_min_reps:
-        return TrainingType("interval", params)
+        return TrainingType("interval", MappingProxyType(params))
     shares = _zone_shares(floors, frame)
     if shares is None:
-        return TrainingType(None, params)
+        return TrainingType(None, MappingProxyType(params))
     params.update(
         shares,
         # The shares are of running seconds with HR (`running_hr_s`).
@@ -274,12 +313,12 @@ def training_type(
     )
     easy, tempo = shares["z1_z2_share"], shares["z3_z4_share"]
     if tempo >= cfg.tempo_share and shares["longest_z3_z4_s"] >= cfg.tempo_min_s:
-        return TrainingType("tempo", params)
+        return TrainingType("tempo", MappingProxyType(params))
     if duration_s >= LONG_RUN_S and easy >= cfg.long_easy_share:
-        return TrainingType("long", params)
+        return TrainingType("long", MappingProxyType(params))
     if easy >= cfg.easy_share:
-        return TrainingType("easy", params)
-    return TrainingType("mixed", params)
+        return TrainingType("easy", MappingProxyType(params))
+    return TrainingType("mixed", MappingProxyType(params))
 
 
 def _training_type(detail: dict, ctx: ReportContext) -> ReportItem:
@@ -289,33 +328,14 @@ def _training_type(detail: dict, ctx: ReportContext) -> ReportItem:
         return _item(rule, name, "unknown", f"不判训练类型：{RUNNING_ONLY}。", {})
     if ctx.frame.is_empty():
         return _item(rule, name, "unknown", f"不判训练类型：{NO_RECORDS}。", {})
-    zones = detail["metrics"]["zones"]
-    floors = [z["low_bpm"] for z in zones["zones"][1:]] if zones is not None else None
+    floors = load.zone_floors_on(ctx.config, load.local_day(detail["activity"]))
     t = training_type(ctx.frame, floors, detail["summary"]["duration_s"] or 0.0, cfg)
-    p = t.params
+    p = dict(t.params)
     if t.kind is None:
         why = detail["metrics"]["unavailable"].get("zones", load.NO_HR)
         return _item(rule, name, "unknown", f"不判训练类型：{why}，也不是间歇跑。", p)
-    if t.kind == "interval":
-        why = (
-            f"{p['interval_reps']} 段比中位速度快 {cfg.interval_speed_ratio:.0%} 以上、"
-            f"持续 {cfg.interval_min_s} 秒以上的快跑，段间有恢复"
-        )
-    elif t.kind == "tempo":
-        why = (
-            f"Z3–Z4 占跑的时间 {p['z3_z4_share']:.0%}，"
-            f"最长连续 {p['longest_z3_z4_s'] / 60:.0f} 分钟"
-        )
-    elif t.kind == "long":
-        why = f"{p['duration_s'] / 60:.0f} 分钟，Z1–Z2 占跑的时间 {p['z1_z2_share']:.0%}"
-    elif t.kind == "easy":
-        why = f"Z1–Z2 占跑的时间 {p['z1_z2_share']:.0%}"
-    else:
-        why = (
-            f"Z1–Z2 占跑的时间 {p['z1_z2_share']:.0%}，Z3–Z4 占 {p['z3_z4_share']:.0%}，"
-            "不属于以上任何一类"
-        )
-    return _item(rule, name, "neutral", f"{TYPE_NAMES[t.kind]}：{why}。", {"type": t.kind, **p})
+    info = TRAINING_KINDS[t.kind]
+    return _item(rule, name, "neutral", f"{info.name}：{info.why(p)}。", {"type": t.kind, **p})
 
 
 def _aerobic_rule(detail: dict, ctx: ReportContext) -> ReportItem:

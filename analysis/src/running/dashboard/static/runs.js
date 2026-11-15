@@ -28,8 +28,9 @@ const TYPE_NAMES = {
   open_water_swimming: "公开水域游泳",
 };
 
-// Run kinds in the API's order (`method.params.run_kinds`).
-const KIND_NAMES = {
+// Run kinds (分类, GLOSSARY "Run kind") in the API's order
+// (`method.params.run_kinds`).
+export const KIND_NAMES = {
   race: "比赛",
   parkrun: "parkrun",
   quality: "质量课",
@@ -45,6 +46,9 @@ export function typeName(key) {
 }
 
 const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s ?? "");
+
+/** A name, date or run-kind filter is set (the minimum distance is a view setting). */
+const filtered = (f) => Boolean(f.q || f.from || f.to || f.kind);
 
 /** Filters from the hash query; anything invalid falls back to the default. */
 function readQuery(query) {
@@ -96,7 +100,7 @@ function searchForm(f) {
   const form = h("form", { class: "runs-search", role: "search" },
     text, from, h("span", { class: "muted" }, "–"), to,
     h("button", { type: "submit" }, "搜索"),
-    f.q || f.from || f.to ? h("a", { href: hashFor({ min_km: f.min_km, kind: f.kind, page: 1 }), class: "small" }, "清除") : null,
+    filtered(f) ? h("a", { href: hashFor({ min_km: f.min_km, page: 1 }), class: "small" }, "清除") : null,
   );
   form.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -108,8 +112,8 @@ function searchForm(f) {
 }
 
 function kindSelect(f) {
-  const select = h("select", { "aria-label": "跑步类型" },
-    h("option", { value: "" }, "全部类型"),
+  const select = h("select", { "aria-label": "分类" },
+    h("option", { value: "" }, "全部分类"),
     ...Object.entries(KIND_NAMES).map(([key, label]) => {
       const o = h("option", { value: key }, label);
       if (key === f.kind) o.selected = true;
@@ -163,7 +167,7 @@ function render(v, f) {
     return [h("p", { class: "small muted" }, msg), pager(v, f), how(v.method)];
   }
   return [
-    h("p", { class: "small muted count" }, `${f.q || f.from || f.to || f.kind ? "找到" : "共"} ${v.total} 次跑步`),
+    h("p", { class: "small muted count" }, `${filtered(f) ? "找到" : "共"} ${v.total} 次跑步`),
     table(v.activities),
     h("div", { class: "foot" }, pager(v, f), how(v.method)),
   ];

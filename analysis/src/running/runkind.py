@@ -9,9 +9,8 @@
   (no records, or no HR zones and not intervals).
 """
 
-from datetime import date
 from pathlib import Path
-from typing import Literal
+from typing import Literal, get_args
 
 import polars as pl
 
@@ -20,27 +19,20 @@ from running.aerobic import load_records, steady_state
 from running.config import Config
 from running.db import AnalysisDb
 from running.races import PARKRUN_HOURS, PARKRUN_M, parkruns, read_races
-from running.report import training_type
+from running.report import TRAINING_KINDS, TrainingType, training_type
 from running.runwalk import RUNNING_TYPES
 
 RunKind = Literal["race", "parkrun", "quality", "long", "easy", "mixed"]
-RUN_KINDS: tuple[str, ...] = ("race", "parkrun", "quality", "long", "easy", "mixed")
-_FROM_TRAINING: dict[str, RunKind] = {
-    "interval": "quality",
-    "tempo": "quality",
-    "long": "long",
-    "easy": "easy",
-    "mixed": "mixed",
-}
+RUN_KINDS: tuple[RunKind, ...] = get_args(RunKind)
 _BATCH = 50  # runs whose records are read at once
 
 # One sentence block for the activity list's method.
 RUN_KIND_NOTE = (
-    "类型按先后取第一个符合的：races.csv 里写了 activity_id 的是比赛；"
+    "分类按先后取第一个符合的：races.csv 里写了 activity_id 的是比赛；"
     f"周六当地 {PARKRUN_HOURS[0]}–{PARKRUN_HOURS[1]} 点开始、"
     f"跑的距离 {PARKRUN_M[0] / 1000:g}–{PARKRUN_M[1] / 1000:g} km 的是 parkrun；"
     "其余用详情页分析报告的训练类型：间歇跑和节奏跑算质量课，另有长距离、轻松跑、混合。"
-    "判不了训练类型（没有逐秒记录，或没有心率区间且不是间歇跑）的跑步和非跑步类活动不标类型。"
+    "判不了训练类型（没有逐秒记录，或没有心率区间且不是间歇跑）的跑步和非跑步类活动不标分类。"
 )
 
 # Training kinds by activity: each run depends only on its own records, so a
@@ -70,7 +62,7 @@ def run_kinds(
 def _parkrun_ids(db: AnalysisDb, config: Config, rows: list[dict]) -> set[int]:
     if not rows:
         return set()
-    days = [date.fromisoformat(r["start_time_local"][:10]) for r in rows]
+    days = [load.local_day(r) for r in rows]
     return {r["activity_id"] for r in parkruns(db, config.run_walk, min(days), max(days))}
 
 
@@ -109,8 +101,23 @@ def _training_kinds(db: AnalysisDb, config: Config, rows: list[dict]) -> dict[in
         if frame is None:
             out[r["activity_id"]] = None
             continue
-        phys = load.physiology_on(config, date.fromisoformat(r["start_time_local"][:10]))
-        floors = load.zone_floors(config, phys) if phys is not None else None
+        floors = load.zone_floors_on(config, load.local_day(r))
         t = training_type(frame, floors, r["duration_s"] or 0.0, config.report)
-        out[r["activity_id"]] = None if t.kind is None else _FROM_TRAINING[t.kind]
+        out[r["activity_id"]] = _from_training(t)
     return out
+
+
+def _from_training(t: TrainingType) -> RunKind | None:
+    """Interval and tempo runs are `quality`; the other types keep their name."""
+    if t.kind is None:
+        return None
+    return "quality" if TRAINING_KINDS[t.kind].quality else t.kind
+
+
+def all_run_kinds(db: AnalysisDb, config: Config, root: Path) -> dict[int, RunKind | None]:
+    """The run kind of every activity in the database. Fills the cache, so
+    the dashboard calls it at startup."""
+    rows = db.query(
+        "SELECT activity_id, activity_type, start_time_local, duration_s FROM a.activities"
+    ).to_dicts()
+    return run_kinds(db, config, root, rows)

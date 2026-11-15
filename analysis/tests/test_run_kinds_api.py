@@ -122,3 +122,24 @@ def test_a_broken_races_csv_leaves_the_training_types(data_dir, analysis_db, cli
     (data_dir / "races.csv").write_text("date,distance\n2026-10-20,5000\n", encoding="utf-8")
 
     assert kinds(get_activities(client_factory)) == {1: "quality"}
+
+
+def test_a_non_running_activity_has_no_run_kind(analysis_db, client_factory):
+    add_hr_run(analysis_db, 1, "2026-10-20T07:00:00", TEMPO, "cycling")
+
+    [ride] = get_activities(client_factory, type="all")["activities"]
+
+    assert ride["activity_type"] == "cycling"
+    assert ride["run_kind"] is None
+
+
+def test_a_changed_run_is_classified_again(analysis_db, client_factory):
+    add_hr_run(analysis_db, 1, "2026-10-20T07:00:00", [steady(1800, hr=140.0)])
+    analysis_db.commit()
+    assert kinds(get_activities(client_factory)) == {1: "easy"}
+
+    # A later import rewrites the run's records: the whole run now in Z3.
+    analysis_db.execute("UPDATE records SET heart_rate = 158 WHERE activity_id = 1")
+    analysis_db.commit()
+
+    assert kinds(get_activities(client_factory)) == {1: "quality"}
