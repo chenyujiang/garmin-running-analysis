@@ -1,7 +1,7 @@
 # Personal running analysis tool: implementation spec
 
 Label: ready-for-agent
-Status: open
+Status: done
 
 Source: the map [Personal running data analysis (Garmin)](../running-analysis/map.md) and the resolved tickets under it. The reasons and sources for each decision are given in each ticket's Answer; this spec only collects what to implement. Terms are in `GLOSSARY.md` at the root, product background in `PRODUCT.md`.
 
