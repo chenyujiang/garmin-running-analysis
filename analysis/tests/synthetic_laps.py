@@ -18,6 +18,9 @@ class Lap:
     elevation_gain_m: float | None = None
     elevation_loss_m: float | None = None
     elapsed_duration_s: float | None = None  # defaults to timer_duration_s
+    start_time_utc: str | None = None  # ISO with Z
+    end_time_utc: str | None = None
+    wkt_step_index: int | None = None  # workout step, FIT order
 
 
 def add_laps(conn: sqlite3.Connection, activity_id: int, laps: list[Lap]) -> None:
@@ -25,7 +28,8 @@ def add_laps(conn: sqlite3.Connection, activity_id: int, laps: list[Lap]) -> Non
     conn.executemany(
         "INSERT INTO laps (activity_id, lap_index, elapsed_duration_s, timer_duration_s,"
         " distance_m, avg_speed_mps, avg_hr_bpm, max_hr_bpm, avg_cadence,"
-        " elevation_gain_m, elevation_loss_m) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " elevation_gain_m, elevation_loss_m, start_time_utc, end_time_utc, wkt_step_index)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
             (
                 activity_id,
@@ -39,6 +43,9 @@ def add_laps(conn: sqlite3.Connection, activity_id: int, laps: list[Lap]) -> Non
                 lap.avg_cadence,
                 lap.elevation_gain_m,
                 lap.elevation_loss_m,
+                lap.start_time_utc,
+                lap.end_time_utc,
+                lap.wkt_step_index,
             )
             for i, lap in enumerate(laps)
         ],

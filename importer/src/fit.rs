@@ -44,6 +44,8 @@ pub struct Lap {
     pub avg_power_w: Option<f64>,
     pub elevation_gain_m: Option<f64>,
     pub elevation_loss_m: Option<f64>,
+    /// 0-based workout step, FIT order; `None` outside a structured workout.
+    pub wkt_step_index: Option<i64>,
 }
 
 /// The parts of one activity FIT file that go into the analysis database.
@@ -134,8 +136,9 @@ impl ActivityFit {
             "INSERT INTO laps (activity_id, lap_index, start_time_utc, end_time_utc,
                  elapsed_duration_s, timer_duration_s, distance_m, avg_speed_mps, max_speed_mps,
                  avg_hr_bpm, max_hr_bpm, avg_cadence, max_cadence, avg_power_w,
-                 elevation_gain_m, elevation_loss_m)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                 elevation_gain_m, elevation_loss_m, wkt_step_index)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
+                     ?17)",
         )?;
         for (i, l) in self.laps.iter().enumerate() {
             insert.execute(params![
@@ -155,6 +158,7 @@ impl ActivityFit {
                 l.avg_power_w,
                 l.elevation_gain_m,
                 l.elevation_loss_m,
+                l.wkt_step_index,
             ])?;
         }
         Ok(())
@@ -195,6 +199,7 @@ fn lap(msg: &FitDataRecord) -> Lap {
         avg_power_w: number(f, "avg_power"),
         elevation_gain_m: number(f, "total_ascent"),
         elevation_loss_m: number(f, "total_descent"),
+        wkt_step_index: number(f, "wkt_step_index").map(|n| n as i64),
     }
 }
 
