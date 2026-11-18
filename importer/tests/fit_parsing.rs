@@ -245,6 +245,41 @@ fn rebuild_stores_the_watch_laps_in_si_units() {
     );
 }
 
+/// One lap as a watch writes it for a run: with `sport = running`, the FIT
+/// profile names fields 17 and 18 `avg_running_cadence` and
+/// `max_running_cadence`.
+fn running_lap_fit() -> Vec<u8> {
+    FitWriter::new()
+        .message(MESG_FILE_ID, &file_id(START_1001))
+        .message(
+            MESG_LAP,
+            &[
+                field(253, UINT32, fit_time(START_1001 + 60)),
+                field(2, UINT32, fit_time(START_1001)),
+                field(25, ENUM, 1),   // sport = running
+                field(17, UINT8, 86), // avg_running_cadence, single foot
+                field(18, UINT8, 92), // max_running_cadence, single foot
+            ],
+        )
+        .finish()
+}
+
+#[test]
+fn rebuild_stores_the_cadence_of_running_laps() {
+    let dir = data_dir_from_fixture();
+    std::fs::write(fit_path(dir.path(), 1001), running_lap_fit()).unwrap();
+    rebuild_ok(dir.path());
+
+    let cadence = db(dir.path())
+        .query_row(
+            "SELECT avg_cadence, max_cadence FROM laps WHERE activity_id = 1001",
+            [],
+            |r| Ok((r.get::<_, Option<f64>>(0)?, r.get::<_, Option<f64>>(1)?)),
+        )
+        .unwrap();
+    assert_eq!(cadence, (Some(86.0), Some(92.0)));
+}
+
 #[test]
 fn rebuild_stores_each_laps_workout_step_and_null_outside_a_workout() {
     let dir = data_dir_from_fixture();

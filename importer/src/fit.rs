@@ -194,8 +194,9 @@ fn lap(msg: &FitDataRecord) -> Lap {
         max_speed_mps: number(f, "enhanced_max_speed").or_else(|| number(f, "max_speed")),
         avg_hr_bpm: number(f, "avg_heart_rate"),
         max_hr_bpm: number(f, "max_heart_rate"),
-        avg_cadence: number(f, "avg_cadence"),
-        max_cadence: number(f, "max_cadence"),
+        // A running lap names fields 17 and 18 `*_running_cadence`.
+        avg_cadence: number(f, "avg_cadence").or_else(|| number(f, "avg_running_cadence")),
+        max_cadence: number(f, "max_cadence").or_else(|| number(f, "max_running_cadence")),
         avg_power_w: number(f, "avg_power"),
         elevation_gain_m: number(f, "total_ascent"),
         elevation_loss_m: number(f, "total_descent"),
