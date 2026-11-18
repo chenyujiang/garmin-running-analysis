@@ -61,7 +61,8 @@ fn full_run_fit() -> Vec<u8> {
                 field(14, UINT16, 2600),       // max_speed, mm/s
                 field(15, UINT8, 142),         // avg_heart_rate
                 field(16, UINT8, 144),         // max_heart_rate
-                field(17, UINT8, 85),          // avg_cadence, single foot
+                field(25, ENUM, 1),            // sport = running, as the watch writes it
+                field(17, UINT8, 85),          // avg_running_cadence, single foot
                 field(21, UINT16, 3),          // total_ascent m
                 field(22, UINT16, 1),          // total_descent m
                 field(71, UINT16, step as i64), // wkt_step_index
