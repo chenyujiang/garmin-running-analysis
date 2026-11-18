@@ -3,7 +3,9 @@
     "allow": [
       "Bash(cargo build --release)",
       "Bash(importer/target/release/runsync.exe import-export *)",
-      "Bash(./target/release/runsync.exe import-export *)"
+      "Bash(./target/release/runsync.exe import-export *)",
+      "Bash(importer/target/release/runsync.exe sync)",
+      "Bash(./target/release/runsync.exe sync)"
     ]
   }
 }
