@@ -9,3 +9,4 @@
 0005_garmin_metrics.sql f9b12e5b1708c09a
 0006_export_packages.sql d4bc937f724c86f5
 0007_hourly_weather.sql cb0a9480dd9b28cf
+0008_laps_wkt_step_index.sql ab372542a2a94c56

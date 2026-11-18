@@ -9,10 +9,13 @@ and name match the rebuilt plan get steps.
 The run of a session is the longest running activity on its local date.
 
 What is judged, per kind of session:
-- Quality (warm-up, work parts, cool-down): the work reps are found in the
-  per-second records as stretches faster than halfway between the E pace and
-  the slowest work pace, then given to the plan's parts in order. Each rep's
-  pace is checked against its range. Warm-up and cool-down are reported but
+- Quality (warm-up, work parts, cool-down): when the watch ran the workout,
+  each lap carries its workout step (`laps.wkt_step_index`) and the reps are
+  the watch's own: consecutive laps of one work step make one rep (a 1.6 km
+  rep is two laps with auto lap at 1 km). Otherwise the work reps are found
+  in the per-second records as stretches faster than halfway between the E
+  pace and the slowest work pace, then given to the plan's parts in order.
+  Each rep's pace is checked against its range. Warm-up and cool-down are reported but
   never count against the session: they are the first thing cut when time
   is short.
 - parkrun / race: the fastest continuous 5 km of the run against the planned
@@ -21,7 +24,7 @@ What is judged, per kind of session:
 - Easy and long runs: distance against the plan, pace against the E range
   (faster is the only thing flagged).
 
-`review_session` is pure (planned steps plus per-second samples);
+`review_session` is pure (planned steps, per-second samples, laps);
 `plan_review` reads the state file and the database.
 """
 
@@ -30,7 +33,7 @@ from __future__ import annotations
 import bisect
 import re
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
@@ -70,6 +73,15 @@ class PartPlan(PacePlan):
     rest: str  # "1 min", "200 m", "" for one rep
 
 
+class FitSteps(TypedDict):
+    """Workout step indexes as the watch numbers them (`laps.wkt_step_index`)."""
+
+    warmup: int | None
+    parts: list[int]  # the work step of each part
+    cooldown: int | None
+    count: int  # steps in the workout
+
+
 class Planned(TypedDict):
     kind: Kind
     warmup: PacePlan | None
@@ -77,6 +89,7 @@ class Planned(TypedDict):
     cooldown: PacePlan | None
     target_s: float | None  # parkrun / race: planned 5 km time
     km: float  # planned distance, recoveries by time not counted
+    fit_steps: FitSteps
 
 
 class Rep(TypedDict):
@@ -135,6 +148,7 @@ class Actual(TypedDict):
     warmup_m: float | None
     cooldown_m: float | None
     reps: list[Rep]
+    rep_source: Literal["laps", "records"] | None  # where the quality reps come from
     effort: Effort | None
 
 
@@ -199,36 +213,51 @@ def _rest_text(step: dict[str, Any] | None) -> str:
 
 
 def planned_steps(name: str, workout: dict[str, Any]) -> Planned:
-    """The plan of one session from the Garmin workout JSON it was pushed as."""
+    """The plan of one session from the Garmin workout JSON it was pushed as.
+
+    `fit_steps` numbers the steps as the watch does in the FIT file: from 0
+    in order, a repeat group's own steps first and then the repeat step."""
     steps = workout["workoutSegments"][0]["workoutSteps"]
     warmup = cooldown = None
     parts: list[PartPlan] = []
+    fit: FitSteps = {"warmup": None, "parts": [], "cooldown": None, "count": 0}
     km = 0.0
+    index = 0
     for step in steps:
         if step["type"] == "RepeatGroupDTO":
             inner = step["workoutSteps"]
-            work = next(s for s in inner if s["stepType"]["stepTypeKey"] == "interval")
+            at = next(i for i, s in enumerate(inner) if s["stepType"]["stepTypeKey"] == "interval")
+            work = inner[at]
             rest = next((s for s in inner if s["stepType"]["stepTypeKey"] == "recovery"), None)
+            work_index = index + at
+            index += len(inner) + 1
             pace = _pace_plan(work)
             if pace is None:
                 continue
             reps = int(step["numberOfIterations"])
             parts.append({**pace, "reps": reps, "rest": _rest_text(rest)})
+            fit["parts"].append(work_index)
             km += reps * pace["dist_m"] / 1000
             if rest is not None and rest["endCondition"]["conditionTypeKey"] == "distance":
                 km += (reps - 1) * rest["endConditionValue"] / 1000
             continue
         key = step["stepType"]["stepTypeKey"]
+        step_index = index
+        index += 1
         pace = _pace_plan(step)
         if pace is None:
             continue
         km += pace["dist_m"] / 1000
         if key == "warmup":
             warmup = pace
+            fit["warmup"] = step_index
         elif key == "cooldown":
             cooldown = pace
+            fit["cooldown"] = step_index
         elif key == "interval":
             parts.append({**pace, "reps": 1, "rest": ""})
+            fit["parts"].append(step_index)
+    fit["count"] = index
     race = re.search(r"parkrun|race", name, re.IGNORECASE) is not None
     if race:
         kind: Kind = "race"
@@ -246,6 +275,7 @@ def planned_steps(name: str, workout: dict[str, Any]) -> Planned:
         "cooldown": cooldown,
         "target_s": target,
         "km": round(km, 2),
+        "fit_steps": fit,
     }
 
 
@@ -257,13 +287,15 @@ class Samples:
     """Per-second samples of one run. Each sample owns the interval since the
     previous one (`dt`, `dd`; 0 across a pause); `t` and `d` are the moving
     time and distance up to and including it. `spm` is the cadence of both
-    feet; empty when the run has none."""
+    feet; empty when the run has none. `ts` is each sample's time, naive UTC;
+    empty when not known."""
 
     t: list[float]
     d: list[float]
     dt: list[float]
     hr: list[float | None]
     spm: list[float | None] = field(default_factory=list)
+    ts: list[datetime] = field(default_factory=list)
 
     @classmethod
     def from_steps(
@@ -272,6 +304,7 @@ class Samples:
         dd: list[float],
         hr: list[float | None],
         spm: list[float | None] | None = None,
+        ts: list[datetime] | None = None,
     ) -> Samples:
         t, d, tt, dist = [], [], 0.0, 0.0
         for a, b in zip(dt, dd, strict=True):
@@ -279,7 +312,7 @@ class Samples:
             dist += b
             t.append(tt)
             d.append(dist)
-        return cls(t=t, d=d, dt=list(dt), hr=list(hr), spm=list(spm or []))
+        return cls(t=t, d=d, dt=list(dt), hr=list(hr), spm=list(spm or []), ts=list(ts or []))
 
     def __len__(self) -> int:
         return len(self.t)
@@ -332,6 +365,12 @@ class Samples:
     def index_at(self, metres: float) -> int:
         """First sample whose cumulative distance reaches `metres`."""
         return min(bisect.bisect_left(self.d, metres), len(self) - 1)
+
+    def between(self, start: datetime, end: datetime) -> tuple[int, int] | None:
+        """Samples a..b with start < ts <= end (each sample owns the second
+        before it); None without timestamps or samples in that window."""
+        a, b = bisect.bisect_right(self.ts, start), bisect.bisect_right(self.ts, end) - 1
+        return (a, b) if self.ts and a <= b else None
 
 
 EMPTY = Samples(t=[], d=[], dt=[], hr=[])
@@ -403,18 +442,113 @@ def find_reps(s: Samples, planned: Planned) -> list[Rep]:
             "start_m": s.before(a)[0],
         }
         if part < len(parts):
-            p = parts[part]
             count += 1
             rep["part"], rep["n"] = part, count
-            if pace < p["fast"] - PACE_TOLERANCE_S:
-                rep["verdict"], rep["off_s"] = "fast", p["fast"] - pace
-            elif pace > p["slow"] + PACE_TOLERANCE_S:
-                rep["verdict"], rep["off_s"] = "slow", pace - p["slow"]
-            else:
-                rep["verdict"] = "ok"
+            _judge(rep, parts[part])
         reps.append(rep)
         prev_end = b
     return reps
+
+
+def _judge(rep: Rep, p: PacePlan) -> None:
+    pace = rep["pace"]
+    if pace < p["fast"] - PACE_TOLERANCE_S:
+        rep["verdict"], rep["off_s"] = "fast", p["fast"] - pace
+    elif pace > p["slow"] + PACE_TOLERANCE_S:
+        rep["verdict"], rep["off_s"] = "slow", pace - p["slow"]
+    else:
+        rep["verdict"], rep["off_s"] = "ok", 0.0
+
+
+# --- quality reps from the watch laps --------------------------------------------
+
+
+def _utc(text: str | None) -> datetime | None:
+    if not text:
+        return None
+    return datetime.fromisoformat(text).astimezone(UTC).replace(tzinfo=None)
+
+
+def _lap_secs(lap: dict[str, Any]) -> float:
+    return float(lap.get("timer_duration_s") or lap.get("elapsed_duration_s") or 0.0)
+
+
+def _lap_m(lap: dict[str, Any]) -> float:
+    return float(lap.get("distance_m") or 0.0)
+
+
+def laps_follow_plan(laps: list[dict[str, Any]], planned: Planned) -> bool:
+    """Whether the watch ran this session's workout: every lap carries a
+    workout step inside the planned workout, and some lap is a work step."""
+    steps = [lap.get("wkt_step_index") for lap in laps]
+    if not steps or any(s is None for s in steps):
+        return False
+    fit = planned["fit_steps"]
+    return max(steps) < fit["count"] and any(s in fit["parts"] for s in steps)
+
+
+def reps_from_laps(
+    laps: list[dict[str, Any]], planned: Planned, samples: Samples
+) -> tuple[list[Rep], float, float]:
+    """The work reps and the warm-up and cool-down metres from the laps of a
+    run of this workout (see `laps_follow_plan`). Consecutive laps of one work
+    step are one rep: distance, time and heart rate from the laps, cadence and
+    stride from the samples inside it when they are timed."""
+    fit = planned["fit_steps"]
+    part_of = {step: i for i, step in enumerate(fit["parts"])}
+    groups: list[tuple[int, list[dict[str, Any]], float, float | None]] = []
+    metres = rest = warm = cool = 0.0
+    last_work: int | None = None
+    for lap in laps:
+        step = lap["wkt_step_index"]
+        if step == fit["warmup"]:
+            warm += _lap_m(lap)
+        elif step == fit["cooldown"]:
+            cool += _lap_m(lap)
+        if step in part_of:
+            if step == last_work:
+                groups[-1][1].append(lap)
+            else:
+                groups.append((step, [lap], metres, rest if groups else None))
+            rest = 0.0
+            last_work = step
+        else:
+            rest += _lap_secs(lap)
+            last_work = None
+        metres += _lap_m(lap)
+    reps: list[Rep] = []
+    counts = [0] * len(fit["parts"])
+    for step, group, start_m, rest_s in groups:
+        part = part_of[step]
+        counts[part] += 1
+        dist = sum(_lap_m(lap) for lap in group)
+        secs = sum(_lap_secs(lap) for lap in group)
+        timed = [(lap["avg_hr_bpm"], _lap_secs(lap)) for lap in group if lap.get("avg_hr_bpm")]
+        weight = sum(w for _, w in timed)
+        maxes = [lap["max_hr_bpm"] for lap in group if lap.get("max_hr_bpm")]
+        cadence = stride = None
+        start, end = _utc(group[0].get("start_time_utc")), _utc(group[-1].get("end_time_utc"))
+        if start is not None and end is not None and (span := samples.between(start, end)):
+            cadence, stride = samples.gait(*span)
+        rep: Rep = {
+            "part": part,
+            "n": counts[part],
+            "dist_m": dist,
+            "time_s": secs,
+            "pace": secs / dist * 1000 if dist > 0 else 0.0,
+            "hr_avg": sum(h * w for h, w in timed) / weight if weight > 0 else None,
+            "hr_max": max(maxes) if maxes else None,
+            "cadence_spm": cadence,
+            "stride_m": stride,
+            "rest_s": rest_s,
+            "verdict": "ok",
+            "off_s": 0.0,
+            "start_m": start_m,
+        }
+        if dist > 0:
+            _judge(rep, planned["parts"][part])
+        reps.append(rep)
+    return reps, warm, cool
 
 
 # --- 5 km effort -----------------------------------------------------------------
@@ -629,15 +763,21 @@ def _totals_actual(row: dict[str, Any]) -> Actual:
         "warmup_m": None,
         "cooldown_m": None,
         "reps": [],
+        "rep_source": None,
         "effort": None,
     }
 
 
 def review_session(
-    planned: Planned, samples: Samples, activity: dict[str, Any], name: str = ""
+    planned: Planned,
+    samples: Samples,
+    activity: dict[str, Any],
+    name: str = "",
+    laps: list[dict[str, Any]] | None = None,
 ) -> tuple[Actual, list[Note]]:
     """Judge one run against its planned session. `activity` is the
-    `activities` row (id, type, start time, totals); `samples` may be empty."""
+    `activities` row (id, type, start time, totals); `samples` may be empty;
+    `laps` are its `laps` rows in order."""
     actual = _totals_actual(activity)
     has = len(samples) > 0 and samples.d[-1] > 0
     if has:
@@ -647,12 +787,21 @@ def review_session(
         actual["cadence_spm"], actual["stride_m"] = samples.gait(0, len(samples) - 1)
     if planned["kind"] in ("easy", "long"):
         return actual, _easy_notes(planned, actual)
+    if planned["kind"] == "quality" and laps and laps_follow_plan(laps, planned):
+        reps, warm, cool = reps_from_laps(laps, planned, samples)
+        actual["reps"], actual["rep_source"] = reps, "laps"
+        actual["warmup_m"], actual["cooldown_m"] = warm, cool
+        notes = _quality_notes(planned, reps)
+        note = _warm_cool_note(planned, warm, cool)
+        if note is not None:
+            notes.append(note)
+        return actual, notes
     if not has:
         return actual, [{"verdict": "watch", "text": "没有逐秒记录，分不出快段。"}]
     span: tuple[float, float] | None = None  # metres where the work starts and ends
     if planned["kind"] == "quality":
         reps = find_reps(samples, planned)
-        actual["reps"] = reps
+        actual["reps"], actual["rep_source"] = reps, "records"
         notes = _quality_notes(planned, reps)
         work = [r for r in reps if r["part"] is not None]
         if work:
@@ -750,7 +899,29 @@ def _samples(root: Path, activity_ids: list[int], run_walk: RunWalk) -> dict[int
             part["dd_m"].to_list(),
             part["heart_rate"].to_list(),
             part["spm"].to_list(),
+            part["ts"].to_list(),
         )
+    return out
+
+
+def _laps(root: Path, activity_ids: list[int]) -> dict[int, list[dict[str, Any]]]:
+    """The `laps` rows of these activities in order. `SELECT *`: a database
+    from before `wkt_step_index` has no such column, and the reps then come
+    from the records."""
+    db = open_analysis_db(root) if activity_ids else None
+    if db is None:
+        return {}
+    with db:
+        if "laps" not in db.tables():
+            return {}
+        marks = ",".join("?" * len(activity_ids))
+        rows = db.query(
+            f"SELECT * FROM a.laps WHERE activity_id IN ({marks}) ORDER BY activity_id, lap_index",
+            activity_ids,
+        ).to_dicts()
+    out: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        out.setdefault(int(row["activity_id"]), []).append(row)
     return out
 
 
@@ -759,9 +930,13 @@ METHOD: Method = {
     "description": (
         "计划来自最后一次推送到 Garmin 的 5K 计划（state/plan5k_push.json），"
         "每节课按推送时的步骤比；当天最长的一次跑步算这节课。"
-        "质量课：逐秒速度做 11 秒平滑，快于“E 配速和最慢工作配速的中点”的连续段算一组，"
+        "质量课：手表按课表跑时，每一圈都记着属于课表第几步，"
+        "同一工作步骤连续的圈合成一组（1.6 km 一组、1 km 自动分圈就是两圈），"
+        "距离、用时、心率取自圈；热身、放松步骤的圈加起来算热身、放松距离。"
+        "圈里没有步骤（没按课表跑，或数据是加这一列之前导入的）时退回逐秒记录："
+        "逐秒速度做 11 秒平滑，快于“E 配速和最慢工作配速的中点”的连续段算一组，"
         "相隔不到 8 秒的合并，太短的丢掉；按顺序分给计划里的各段，"
-        "每组配速和区间比（容差 1 秒/km）。第一组之前算热身，最后一组之后算放松。"
+        "第一组之前算热身，最后一组之后算放松。每组配速和区间比（容差 1 秒/km）。"
         "parkrun/比赛：最快的连续 5 km 和计划用时比，看第 1 km 有没有冲太快；"
         "不到 5 km 按全程算。热身和放松只列出来，跑短了不算未完成。"
         "E 跑/长距离：距离和计划比，平均配速只在快于 E 区间时提醒。"
@@ -854,6 +1029,7 @@ def plan_review(today: date | None = None, root: Path | None = None) -> PlanRevi
         if (p := planned_by.get(d)) is not None and p["kind"] in ("quality", "race")
     ]
     samples = _samples(inputs.root, detailed, inputs.config.run_walk)
+    laps = _laps(inputs.root, detailed)
     sessions: list[SessionReview] = []
     for w in pushed:
         d, planned, row = w["date"], planned_by[w["date"]], chosen.get(w["date"])
@@ -863,8 +1039,10 @@ def plan_review(today: date | None = None, root: Path | None = None) -> PlanRevi
             if planned is None:
                 actual = _totals_actual(row)
             else:
-                one = samples.get(int(row["activity_id"]), EMPTY)
-                actual, notes = review_session(planned, one, row, w["name"])
+                aid = int(row["activity_id"])
+                actual, notes = review_session(
+                    planned, samples.get(aid, EMPTY), row, w["name"], laps.get(aid)
+                )
             actual["others"] = len(runs[d]) - 1
         sessions.append(
             {

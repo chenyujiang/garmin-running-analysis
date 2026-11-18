@@ -45,7 +45,10 @@ fn full_run_fit() -> Vec<u8> {
             ],
         );
     }
-    for (start, secs) in [(START_1001, 3i64), (START_1001 + 3, 2)] {
+    for (step, (start, secs)) in [(START_1001, 3i64), (START_1001 + 3, 2)]
+        .into_iter()
+        .enumerate()
+    {
         w = w.message(
             MESG_LAP,
             &[
@@ -61,6 +64,7 @@ fn full_run_fit() -> Vec<u8> {
                 field(17, UINT8, 85),          // avg_cadence, single foot
                 field(21, UINT16, 3),          // total_ascent m
                 field(22, UINT16, 1),          // total_descent m
+                field(71, UINT16, step as i64), // wkt_step_index
             ],
         );
     }
@@ -238,6 +242,27 @@ fn rebuild_stores_the_watch_laps_in_si_units() {
     assert_eq!(
         lap.2,
         [2.0, 2.0, 5.0, 2.5, 2.6, 142.0, 144.0, 85.0, 3.0, 1.0]
+    );
+}
+
+#[test]
+fn rebuild_stores_each_laps_workout_step_and_null_outside_a_workout() {
+    let dir = data_dir_from_fixture();
+    std::fs::write(fit_path(dir.path(), 1001), full_run_fit()).unwrap();
+    std::fs::write(fit_path(dir.path(), 1002), sparse_run_fit(START_1001)).unwrap();
+    rebuild_ok(dir.path());
+
+    let conn = db(dir.path());
+    let steps: Vec<(i64, i64, Option<i64>)> = conn
+        .prepare("SELECT activity_id, lap_index, wkt_step_index FROM laps ORDER BY 1, 2")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(
+        steps,
+        [(1001, 0, Some(0)), (1001, 1, Some(1)), (1002, 0, None)]
     );
 }
 

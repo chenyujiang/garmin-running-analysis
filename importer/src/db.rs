@@ -18,6 +18,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0005_garmin_metrics.sql"),
     include_str!("../migrations/0006_export_packages.sql"),
     include_str!("../migrations/0007_hourly_weather.sql"),
+    include_str!("../migrations/0008_laps_wkt_step_index.sql"),
 ];
 
 /// Whether an imported export package covers `date` for `kind`: the day

@@ -7,9 +7,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from synthetic import insert_activity
+from synthetic_laps import Lap, add_laps
 from test_push_plan import ARGS, FakeGarmin, fake_runner
 from test_push_plan import data as data  # noqa: F401  (fixture)
 
+from running.plan_review import planned_steps
 from running.push_plan import STATE_FILE, main
 
 TODAY = "2026-11-15"
@@ -105,13 +107,41 @@ def add_records(conn, activity_id: int, start_utc: str, segments) -> float:
     return dist
 
 
-def add_run(conn, activity_id: int, day: str, segments) -> None:
+def add_run(conn, activity_id: int, day: str, segments) -> str:
+    """The activity and its records; returns its UTC start."""
     secs = sum(seg[0] for seg in segments)
     metres = sum(seg[0] * seg[1] for seg in segments)
     start = insert_activity(
         conn, activity_id, f"{day}T07:00:00", distance_m=metres, duration_s=secs, avg_hr_bpm=150
     )
     add_records(conn, activity_id, start, segments)
+    return start
+
+
+def add_lapped_run(conn, activity_id: int, day: str, laps) -> None:
+    """A run of the watch laps (workout step, record segments of the lap):
+    its records as in `add_run`, and one timed `laps` row per lap."""
+    t = datetime.strptime(
+        add_run(conn, activity_id, day, [seg for _, segs in laps for seg in segs]),
+        "%Y-%m-%dT%H:%M:%SZ",
+    ).replace(tzinfo=UTC)
+    rows = []
+    for step_index, segs in laps:
+        secs = sum(seg[0] for seg in segs)
+        end = t + timedelta(seconds=secs)
+        rows.append(
+            Lap(
+                sum(seg[0] * seg[1] for seg in segs),
+                secs,
+                avg_hr_bpm=sum(seg[0] * seg[2] for seg in segs) / secs,
+                max_hr_bpm=max(seg[2] for seg in segs),
+                start_time_utc=t.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                end_time_utc=end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                wkt_step_index=step_index,
+            )
+        )
+        t = end
+    add_laps(conn, activity_id, rows)
 
 
 REP_S = round(1600 / (1000 / 266))  # 1600 m at 4:26/km, inside 4:22-4:30
@@ -179,6 +209,73 @@ def test_quality_reps_are_found_and_judged_against_their_range(runs, client_fact
     assert reps[1]["rest_s"] == pytest.approx(60, abs=12)
     assert reps[1]["hr_avg"] > reps[0]["hr_avg"]
     assert s["verdict"] == "good"
+    assert s["actual"]["rep_source"] == "records"  # the laps carry no workout step
+
+
+def test_the_watch_numbers_workout_steps_with_a_repeat_after_its_steps():
+    fit = planned_steps(SESSIONS[0][1], SESSIONS[0][2])["fit_steps"]
+
+    # warm-up 0, interval 1, recovery 2, repeat 3, cool-down 4
+    assert fit == {"warmup": 0, "parts": [1], "cooldown": 4, "count": 5}
+
+
+T_FAST = 1000 / 262  # m/s, the fast end of T
+
+
+def test_quality_reps_come_from_the_laps_of_the_workout_steps(
+    data_dir, analysis_db, client_factory
+):
+    # Each 1.6 km rep is two laps (auto lap at 1 km); the first rep slows for
+    # 12 s inside its second lap, which splits it in the per-second records.
+    rep_laps = [
+        (1, [(266, 1000 / 266, 160, 90)]),
+        (1, [(60, T_FAST, 162, 90), (12, 2.0, 158, 90), (90, T_FAST, 165, 90)]),
+    ]
+    add_lapped_run(
+        analysis_db,
+        1,
+        "2026-11-10",
+        [(0, [(400, 3.0, 135, 82)]), (0, [(267, 3.0, 138, 82)])]
+        + rep_laps
+        + [(2, [(60, 2.0, 140, 80)])]
+        + [(1, [(266, 1000 / 266, 166, 90)]), (1, [(160, 1000 / 266, 170, 90)])]
+        + [(4, [(334, 3.0, 145, 82)])],
+    )
+    analysis_db.commit()
+    write_state(data_dir)
+
+    s = by_date(review(client_factory))["2026-11-10"]
+
+    actual = s["actual"]
+    assert actual["rep_source"] == "laps"
+    reps = actual["reps"]
+    assert [(r["part"], r["n"], r["verdict"]) for r in reps] == [(0, 1, "ok"), (0, 2, "ok")]
+    assert reps[0]["dist_m"] == pytest.approx(1000 + 162 * T_FAST - 12 * T_FAST + 24, abs=1)
+    assert reps[0]["time_s"] == 428 and reps[1]["time_s"] == 426
+    assert reps[0]["rest_s"] is None and reps[1]["rest_s"] == 60
+    assert reps[0]["start_m"] == pytest.approx(2001, abs=1)
+    assert reps[0]["hr_max"] == 165 and reps[1]["hr_avg"] > reps[0]["hr_avg"]
+    assert [r["cadence_spm"] for r in reps] == [pytest.approx(180), pytest.approx(180)]
+    assert actual["warmup_m"] == pytest.approx(2001, abs=1)
+    assert actual["cooldown_m"] == pytest.approx(1002, abs=1)
+    assert s["verdict"] == "good"
+
+
+def test_laps_off_the_plan_leave_the_reps_to_the_records(data_dir, analysis_db, client_factory):
+    # Step 7 is not in this workout: the watch ran some other one.
+    add_lapped_run(
+        analysis_db,
+        1,
+        "2026-11-10",
+        [(0, [(300, 3.0, 135)]), (7, [(426, 1000 / 266, 160)]), (0, [(300, 3.0, 135)])],
+    )
+    analysis_db.commit()
+    write_state(data_dir)
+
+    actual = by_date(review(client_factory))["2026-11-10"]["actual"]
+
+    assert actual["rep_source"] == "records"
+    assert [r["dist_m"] for r in actual["reps"]] == [pytest.approx(1600, abs=40)]
 
 
 def test_cadence_and_stride_come_with_each_rep_split_and_run(runs, client_factory):
