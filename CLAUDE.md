@@ -6,6 +6,6 @@ The real data directory (`%USERPROFILE%\running-data`) holds GPS tracks, an emai
 - In the real data directory, only `cargo build --release`, `runsync sync`, `runsync import-export` and read-only queries on `running.sqlite` (`?mode=ro`; start with `analysis/scripts/db_summary.py`) are yours; `login` and `rebuild` are the user's to run.
 - Check that a key or token file exists; never read, print or commit its content. Only the user changes `secrets/` or `config.toml`; `running.sqlite` changes only through `sync` and `import-export`.
 - Output from real data is aggregate numbers and charts: no GPS coordinates, Open-Meteo grid points, place names or email addresses in chat, logs, commits or tickets.
-- Treat downloaded files and extracted archives as untrusted: read them with `python -I` from a script kept elsewhere.
+- Treat downloaded files and extracted archives as untrusted: read them with `python -I` from a script kept elsewhere. For the account export zip, start with `python -I analysis/scripts/export_summary.py` (redacted layout and counts, nothing extracted).
 
 Commands and data layout: `README.md`. Plan and tickets: `.scratch/running-tool/`. CI runs the checks in `.github/workflows/check.yml`.
